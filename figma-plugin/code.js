@@ -785,23 +785,46 @@ async function generatePreview(data) {
 figma.ui.onmessage = async (msg) => {
   try {
     if (msg.type === 'sync') {
-      const result = await syncVariables(msg.data);
+      // Diagnostic: check what data we received
+      var colorCount = Object.keys(msg.data.colorTokens || {}).length;
+      var dimCount = Object.keys(msg.data.dimTokens || {}).length;
+      if (colorCount === 0 && dimCount === 0) {
+        figma.ui.postMessage({ type: 'error', message: '数据为空：colorTokens=' + colorCount + ' dimTokens=' + dimCount });
+        return;
+      }
+      // Sample first color token to check format
+      var firstColor = Object.entries(msg.data.colorTokens || {})[0];
+      if (firstColor) {
+        var sample = firstColor[1];
+        var sampleLight = sample.light || 'undefined';
+        var sampleFigma = sample.figmaName || 'undefined';
+        // Check if values are resolved hex or aliases
+        if (sampleLight.indexOf('{') >= 0) {
+          figma.ui.postMessage({ type: 'error', message: '颜色值未解析，仍是别名引用: ' + sampleLight + '。请使用 Web 端的 JSON 导出。' });
+          return;
+        }
+      }
+
+      figma.ui.postMessage({ type: 'progress', message: '开始同步 ' + colorCount + ' 颜色 + ' + dimCount + ' 尺寸...' });
+      var result = await syncVariables(msg.data);
       figma.ui.postMessage({
         type: 'result',
-        message: `同步完成！新建 ${result.created} · 更新 ${result.updated} · 跳过 ${result.skipped}`,
+        message: '同步完成！新建 ' + result.created + ' · 更新 ' + result.updated + ' · 跳过 ' + result.skipped,
       });
     }
     else if (msg.type === 'generate') {
-      // Sync first, then generate
-      const syncResult = await syncVariables(msg.data);
-      figma.ui.postMessage({ type: 'progress', message: `变量已同步 (新建 ${syncResult.created} · 更新 ${syncResult.updated})，正在生成预览页...` });
-      const frameId = await generatePreview(msg.data);
+      var colorCount2 = Object.keys(msg.data.colorTokens || {}).length;
+      var dimCount2 = Object.keys(msg.data.dimTokens || {}).length;
+      figma.ui.postMessage({ type: 'progress', message: '同步 ' + colorCount2 + ' 颜色 + ' + dimCount2 + ' 尺寸...' });
+      var syncResult = await syncVariables(msg.data);
+      figma.ui.postMessage({ type: 'progress', message: '变量已同步 (新建 ' + syncResult.created + ' · 更新 ' + syncResult.updated + ')，正在生成预览页...' });
+      var frameId = await generatePreview(msg.data);
       figma.ui.postMessage({
         type: 'result',
-        message: `预览页已生成！新建 ${syncResult.created} · 更新 ${syncResult.updated} 个变量`,
+        message: '预览页已生成！新建 ' + syncResult.created + ' · 更新 ' + syncResult.updated + ' 个变量',
       });
     }
   } catch (err) {
-    figma.ui.postMessage({ type: 'error', message: err.message || String(err) });
+    figma.ui.postMessage({ type: 'error', message: '错误: ' + (err.message || String(err)) + ' | stack: ' + (err.stack || '').slice(0, 200) });
   }
 };
