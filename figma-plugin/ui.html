@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', -apple-system, sans-serif;
+      font-size: 12px; color: #333; padding: 16px; background: #fff;
+    }
+    h2 { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+    .subtitle { font-size: 11px; color: #999; margin-bottom: 16px; }
+    .field { margin-bottom: 12px; }
+    .field label { display: block; font-size: 11px; color: #666; margin-bottom: 4px; font-weight: 500; }
+    textarea {
+      width: 100%; height: 120px; border: 1.5px solid #ddd; border-radius: 8px;
+      padding: 10px; font-size: 11px; font-family: 'SF Mono', monospace;
+      resize: vertical; line-height: 1.5; color: #333;
+      transition: border-color 0.15s;
+    }
+    textarea:focus { outline: none; border-color: #6533E8; }
+    textarea.valid { border-color: #16a34a; }
+    textarea.invalid { border-color: #dc2626; }
+    .json-meta {
+      font-size: 10px; color: #999; margin-top: 4px; line-height: 1.5;
+      min-height: 30px;
+    }
+    .json-meta.parsed { color: #16a34a; }
+    .btn {
+      width: 100%; height: 38px; border: none; border-radius: 8px;
+      font-size: 13px; font-weight: 600; cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn:disabled { opacity: 0.35; cursor: not-allowed; }
+    .btn-primary { background: #6533E8; color: #fff; }
+    .btn-outline {
+      background: #fff; color: #6533E8; border: 1.5px solid #6533E8;
+      margin-top: 8px;
+    }
+    .divider { height: 1px; background: #eee; margin: 16px 0; }
+    .status {
+      font-size: 11px; color: #666; margin-top: 12px;
+      padding: 8px 10px; background: #f8f8f8; border-radius: 6px;
+      display: none; line-height: 1.5;
+    }
+    .status.show { display: block; }
+    .status.success { color: #16a34a; background: #f0fdf4; }
+    .status.error { color: #dc2626; background: #fef2f2; }
+    .status.progress { color: #2563eb; background: #eff6ff; }
+    .steps {
+      font-size: 10px; color: #888; margin-top: 12px; line-height: 1.7;
+      padding: 10px 12px; background: #fafafa; border-radius: 6px;
+    }
+    .steps strong { color: #555; }
+    .steps ol { padding-left: 16px; }
+  </style>
+</head>
+<body>
+  <h2>Design System v2</h2>
+  <p class="subtitle">从 Web 端导入 JSON，同步变量并生成预览页</p>
+
+  <div class="field">
+    <label>粘贴 JSON（从 Web 端复制）</label>
+    <textarea id="jsonInput" placeholder='在 Web 端点击 JSON 标签 → 复制当前内容 → 粘贴到这里'></textarea>
+    <div class="json-meta" id="jsonMeta">等待粘贴 JSON...</div>
+  </div>
+
+  <button class="btn btn-primary" id="syncBtn" disabled>同步 Figma 变量</button>
+  <button class="btn btn-outline" id="generateBtn" disabled>生成预览页</button>
+
+  <div class="status" id="status"></div>
+
+  <div class="divider"></div>
+
+  <div class="steps">
+    <strong>使用流程</strong>
+    <ol>
+      <li>在 Web 端调好主色、模式、字体等参数</li>
+      <li>选择 JSON 导出，点击「复制当前内容」</li>
+      <li>回到 Figma 打开此插件，粘贴 JSON</li>
+      <li>点击「同步变量」更新所有 Figma Variables</li>
+      <li>需要时点击「生成预览页」创建可视文档</li>
+    </ol>
+  </div>
+
+  <script>
+    const jsonInput = document.getElementById('jsonInput');
+    const jsonMeta = document.getElementById('jsonMeta');
+    const syncBtn = document.getElementById('syncBtn');
+    const generateBtn = document.getElementById('generateBtn');
+    const status = document.getElementById('status');
+
+    let parsedData = null;
+
+    jsonInput.addEventListener('input', () => {
+      const raw = jsonInput.value.trim();
+      if (!raw) {
+        parsedData = null;
+        jsonInput.className = '';
+        jsonMeta.className = 'json-meta';
+        jsonMeta.textContent = '等待粘贴 JSON...';
+        syncBtn.disabled = true;
+        generateBtn.disabled = true;
+        return;
+      }
+
+      try {
+        const data = JSON.parse(raw);
+        parsedData = normalizeData(data);
+        if (!parsedData) throw new Error('无法识别的 JSON 结构');
+
+        jsonInput.className = 'valid';
+        jsonMeta.className = 'json-meta parsed';
+        var modeLabel = parsedData.defaultMode === 'light' ? 'Light' : 'Dark';
+        jsonMeta.textContent = `✓ ${parsedData.name} · ${parsedData.platform} · ${modeLabel} · v${parsedData.version} · 颜色 ${parsedData.colorCount} · 尺寸 ${parsedData.dimCount}`;
+        syncBtn.disabled = false;
+        generateBtn.disabled = false;
+      } catch (e) {
+        parsedData = null;
+        jsonInput.className = 'invalid';
+        jsonMeta.className = 'json-meta';
+        jsonMeta.textContent = `✗ JSON 解析失败: ${e.message}`;
+        syncBtn.disabled = true;
+        generateBtn.disabled = true;
+      }
+    });
+
+    function normalizeData(data) {
+      // Format 1: Web 端完整导出 { name, platform, version, seed, tokens }
+      if (data.tokens && data.seed) {
+        const colorTokens = {};
+        const dimTokens = {};
+        const tokens = data.tokens;
+
+        for (const [key, token] of Object.entries(tokens)) {
+          const figmaName = token.figma?.variable || key.replaceAll('.', '/');
+          const tier = token.tier || 'primitive';
+
+          if (token.type === 'color' && token.value && typeof token.value === 'object') {
+            // Resolve alias references
+            let lightVal = token.value.light;
+            let darkVal = token.value.dark;
+
+            // Resolve {xxx.light} alias pattern
+            const resolveAlias = (val, mode) => {
+              const match = typeof val === 'string' ? val.match(/^\{(.+)\.(light|dark)\}$/) : null;
+              if (match && tokens[match[1]]) {
+                return resolveAlias(tokens[match[1]].value[match[2]], match[2]);
+              }
+              return val;
+            };
+            lightVal = resolveAlias(lightVal, 'light');
+            darkVal = resolveAlias(darkVal, 'dark');
+
+            if (typeof lightVal === 'string' && typeof darkVal === 'string') {
+              colorTokens[key] = { figmaName, tier, light: lightVal, dark: darkVal, usage: token.usage || '' };
+            }
+          } else if (['dimension', 'number', 'fontFamily'].includes(token.type)) {
+            const value = typeof token.value === 'object' ? token.value : token.value;
+            dimTokens[key] = { figmaName, tier, value, usage: token.usage || '' };
+          }
+        }
+
+        return {
+          name: data.name || data.seed.specName || '未命名规范',
+          platform: data.platform || data.seed.platform || 'ios-app',
+          defaultMode: (data.seed && data.seed.defaultMode) || 'dark',
+          version: data.version || 'draft',
+          seed: data.seed,
+          colorTokens,
+          dimTokens,
+          colorCount: Object.keys(colorTokens).length,
+          dimCount: Object.keys(dimTokens).length,
+        };
+      }
+
+      // Format 2: 简化格式 { colorTokens, dimTokens }
+      if (data.colorTokens) {
+        return {
+          name: data.name || '未命名规范',
+          platform: data.platform || 'ios-app',
+          defaultMode: data.defaultMode || (data.seed && data.seed.defaultMode) || 'dark',
+          version: data.version || 'draft',
+          seed: data.seed || null,
+          colorTokens: data.colorTokens,
+          dimTokens: data.dimTokens || {},
+          colorCount: Object.keys(data.colorTokens).length,
+          dimCount: Object.keys(data.dimTokens || {}).length,
+        };
+      }
+
+      return null;
+    }
+
+    syncBtn.addEventListener('click', () => {
+      if (!parsedData) return;
+      syncBtn.disabled = true;
+      generateBtn.disabled = true;
+      showStatus('正在同步变量...', 'progress');
+      parent.postMessage({ pluginMessage: { type: 'sync', data: parsedData } }, '*');
+    });
+
+    generateBtn.addEventListener('click', () => {
+      if (!parsedData) return;
+      syncBtn.disabled = true;
+      generateBtn.disabled = true;
+      showStatus('正在生成预览页...（约 10 秒）', 'progress');
+      parent.postMessage({ pluginMessage: { type: 'generate', data: parsedData } }, '*');
+    });
+
+    window.onmessage = (event) => {
+      const msg = event.data.pluginMessage;
+      if (msg.type === 'result') {
+        showStatus(`✅ ${msg.message}`, 'success');
+        syncBtn.disabled = false;
+        generateBtn.disabled = false;
+      } else if (msg.type === 'error') {
+        showStatus(`❌ ${msg.message}`, 'error');
+        syncBtn.disabled = false;
+        generateBtn.disabled = false;
+      } else if (msg.type === 'progress') {
+        showStatus(`⏳ ${msg.message}`, 'progress');
+      }
+    };
+
+    function showStatus(text, cls) {
+      status.textContent = text;
+      status.className = 'status show' + (cls ? ` ${cls}` : '');
+    }
+  </script>
+</body>
+</html>
