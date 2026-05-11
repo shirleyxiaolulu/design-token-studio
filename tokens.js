@@ -409,60 +409,37 @@
     namingStrategy = strategy === "prefixed" ? "prefixed" : "flat";
   }
 
-  // Category name mapping: English → Chinese
-  var categoryNames = {
-    "color": "颜色",
-    "font": "字体",
-    "radius": "圆角",
-    "space": "间距",
-    "opacity": "透明度",
-    "shadow": "阴影",
-    "ios": "iOS",
-  };
-
-  function translateCategory(path) {
-    // Replace the first segment with Chinese if available
-    var parts = path.split("/");
-    if (categoryNames[parts[0]]) {
-      parts[0] = categoryNames[parts[0]];
-    }
-    return parts.join("/");
-  }
-
   function figmaVariableName(name, tier) {
     if (namingStrategy === "flat") {
-      // Flat: color.palette.primary.5 → 颜色/primary/5
-      //       color.brand.primary → 颜色/brand/primary
-      var raw;
       if (name.startsWith("color.palette.")) {
-        raw = name.replace("color.palette.", "color/").replaceAll(".", "/");
-      } else if (name.startsWith("color.common.")) {
-        raw = name.replace("color.common.", "color/common/").replaceAll(".", "/");
-      } else if (name.startsWith("color.custom.")) {
-        raw = name.replace("color.custom.", "color/auxiliary/").replaceAll(".", "/");
-      } else {
-        raw = name.replaceAll(".", "/");
+        return name.replace("color.palette.", "color/").replaceAll(".", "/");
       }
-      return translateCategory(raw);
+      if (name.startsWith("color.common.")) {
+        return name.replace("color.common.", "color/common/").replaceAll(".", "/");
+      }
+      if (name.startsWith("color.custom.")) {
+        return name.replace("color.custom.", "color/auxiliary/").replaceAll(".", "/");
+      }
+      return name.replaceAll(".", "/");
     }
 
     // Prefixed: original behavior
     if (tier === "primitive") {
       if (name.startsWith("color.palette.")) {
-        return translateCategory(name.replace("color.palette.", "primitive/color/").replaceAll(".", "/"));
+        return name.replace("color.palette.", "primitive/color/").replaceAll(".", "/");
       }
       if (name.startsWith("color.common.")) {
-        return translateCategory(name.replace("color.common.", "primitive/color/common/").replaceAll(".", "/"));
+        return name.replace("color.common.", "primitive/color/common/").replaceAll(".", "/");
       }
       if (name.startsWith("color.custom.")) {
-        return translateCategory(name.replace("color.custom.", "primitive/color/auxiliary/").replaceAll(".", "/"));
+        return name.replace("color.custom.", "primitive/color/auxiliary/").replaceAll(".", "/");
       }
-      return translateCategory("primitive/" + name.replaceAll(".", "/"));
+      return "primitive/" + name.replaceAll(".", "/");
     }
     if (tier === "semantic") {
-      return translateCategory("semantic/" + name.replaceAll(".", "/"));
+      return "semantic/" + name.replaceAll(".", "/");
     }
-    return translateCategory(name.replaceAll(".", "/"));
+    return name.replaceAll(".", "/");
   }
 
   function makeToken(name, type, value, usage = "", extra = {}) {
