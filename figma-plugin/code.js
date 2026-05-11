@@ -68,37 +68,33 @@ async function syncVariables(data) {
   var updated = 0;
   var skipped = 0;
 
-  // Track which collection each variable belongs to (avoid expensive lookup)
-  var varColMap = {};
-
-  // Index existing variables and their collections
-  for (var ci = 0; ci < collections.length; ci++) {
-    var existCol = collections[ci];
-    for (var vi = 0; vi < existCol.variableIds.length; vi++) {
-      var existVar = await figma.variables.getVariableByIdAsync(existCol.variableIds[vi]);
-      if (existVar) {
-        varColMap[existVar.name] = existCol.name;
-      }
-    }
+  // Build collection ID → modes lookup (works for ANY collection)
+  var allCollections = await figma.variables.getLocalVariableCollectionsAsync();
+  var colModesById = {};
+  for (var ci2 = 0; ci2 < allCollections.length; ci2++) {
+    var c = allCollections[ci2];
+    var lm = c.modes.find(function(m) { return m.name === 'Light'; });
+    var dm = c.modes.find(function(m) { return m.name === 'Dark'; });
+    colModesById[c.id] = {
+      light: lm ? lm.modeId : c.modes[0].modeId,
+      dark: dm ? dm.modeId : (c.modes[1] ? c.modes[1].modeId : c.modes[0].modeId)
+    };
   }
 
-  // Mode IDs lookup by collection name
-  var modeMap = {
-    'Primitives': { light: primLightMode.modeId, dark: primDarkMode.modeId },
-    'Tokens': { light: tokLightMode.modeId, dark: tokDarkMode.modeId }
-  };
+  // Helper: get modes for a variable by reading its own collectionId
+  function getVarModes(variable) {
+    return colModesById[variable.variableCollectionId];
+  }
 
   // Helper: find or create a variable, return { variable, modes }
   function syncVar(name, type, tier) {
     var existing = varMap[name];
     if (existing) {
-      var colName = varColMap[name] || 'Primitives';
-      return { variable: existing, modes: modeMap[colName] || modeMap['Primitives'] };
+      return { variable: existing, modes: getVarModes(existing) };
     }
 
     var isSemantic = (tier === 'semantic');
     var targetCol = isSemantic ? tokCol : primCol;
-    var colName2 = isSemantic ? 'Tokens' : 'Primitives';
     var resolvedType = type === 'FLOAT' ? 'FLOAT' : type === 'STRING' ? 'STRING' : 'COLOR';
 
     var newVar = figma.variables.createVariable(name, targetCol, resolvedType);
@@ -118,9 +114,13 @@ async function syncVariables(data) {
     }
 
     varMap[name] = newVar;
-    varColMap[name] = colName2;
+    // Update colModesById for the new variable's collection
+    colModesById[targetCol.id] = colModesById[targetCol.id] || {
+      light: primLightMode.modeId,
+      dark: primDarkMode.modeId
+    };
     created++;
-    return { variable: newVar, modes: modeMap[colName2] };
+    return { variable: newVar, modes: getVarModes(newVar) };
   }
 
   // Sync color tokens
