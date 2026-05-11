@@ -29,72 +29,135 @@ function figmaRgbToHex(c) {
 async function syncVariables(data) {
   const collections = await figma.variables.getLocalVariableCollectionsAsync();
 
-  // Build variable lookup by name
-  const varMap = {};
-  const colMap = {};
-  for (const col of collections) {
-    for (const vid of col.variableIds) {
-      const v = await figma.variables.getVariableByIdAsync(vid);
-      if (v) {
-        varMap[v.name] = v;
-        colMap[v.name] = col;
-      }
+  // Find or create Primitives and Tokens collections
+  var primCol = collections.find(function(c) { return c.name === 'Primitives'; });
+  var tokCol = collections.find(function(c) { return c.name === 'Tokens'; });
+
+  if (!primCol) {
+    primCol = figma.variables.createVariableCollection('Primitives');
+    primCol.renameMode(primCol.modes[0].modeId, 'Light');
+    primCol.addMode('Dark');
+  }
+  if (!tokCol) {
+    tokCol = figma.variables.createVariableCollection('Tokens');
+    tokCol.renameMode(tokCol.modes[0].modeId, 'Light');
+    tokCol.addMode('Dark');
+  }
+
+  // Ensure both collections have Light + Dark modes
+  var primLightMode = primCol.modes.find(function(m) { return m.name === 'Light'; });
+  var primDarkMode = primCol.modes.find(function(m) { return m.name === 'Dark'; });
+  if (!primDarkMode) { primCol.addMode('Dark'); primDarkMode = primCol.modes.find(function(m) { return m.name === 'Dark'; }); }
+
+  var tokLightMode = tokCol.modes.find(function(m) { return m.name === 'Light'; });
+  var tokDarkMode = tokCol.modes.find(function(m) { return m.name === 'Dark'; });
+  if (!tokDarkMode) { tokCol.addMode('Dark'); tokDarkMode = tokCol.modes.find(function(m) { return m.name === 'Dark'; }); }
+
+  // Build variable lookup from existing variables
+  var varMap = {};
+  for (var ci = 0; ci < collections.length; ci++) {
+    var col = collections[ci];
+    for (var vi = 0; vi < col.variableIds.length; vi++) {
+      var v = await figma.variables.getVariableByIdAsync(col.variableIds[vi]);
+      if (v) varMap[v.name] = v;
     }
   }
+  // Also index newly created collections (if they were just created, they're empty)
 
-  let updatedColors = 0;
-  let updatedDims = 0;
-  let skipped = 0;
+  var created = 0;
+  var updated = 0;
+  var skipped = 0;
 
-  // Sync color tokens
-  for (const [key, token] of Object.entries(data.colorTokens || {})) {
-    const v = varMap[token.figmaName];
-    if (!v || v.resolvedType !== 'COLOR') { skipped++; continue; }
+  // Helper: find or create a variable
+  function getOrCreateVar(name, type, tier) {
+    var existing = varMap[name];
+    if (existing) return existing;
 
-    const col = colMap[token.figmaName];
-    const lightMode = col.modes.find(m => m.name === 'Light');
-    const darkMode = col.modes.find(m => m.name === 'Dark');
-    if (!lightMode || !darkMode) continue;
+    var targetCol = (tier === 'semantic') ? tokCol : primCol;
+    var resolvedType = 'COLOR';
+    if (type === 'FLOAT') resolvedType = 'FLOAT';
+    if (type === 'STRING') resolvedType = 'STRING';
 
-    const lightRgb = hexToFigmaRgb(token.light);
-    const darkRgb = hexToFigmaRgb(token.dark);
-    if (!lightRgb || !darkRgb) { skipped++; continue; }
+    var newVar = figma.variables.createVariable(name, targetCol, resolvedType);
 
-    v.setValueForMode(lightMode.modeId, lightRgb);
-    v.setValueForMode(darkMode.modeId, darkRgb);
-    updatedColors++;
+    // Set appropriate scopes
+    if (resolvedType === 'COLOR') {
+      newVar.scopes = ['ALL_FILLS'];
+    } else if (name.indexOf('radius') >= 0) {
+      newVar.scopes = ['CORNER_RADIUS'];
+    } else if (name.indexOf('space') >= 0) {
+      newVar.scopes = ['GAP', 'WIDTH_HEIGHT'];
+    } else if (name.indexOf('font/size') >= 0) {
+      newVar.scopes = ['FONT_SIZE'];
+    } else if (name.indexOf('font/lineHeight') >= 0) {
+      newVar.scopes = ['LINE_HEIGHT'];
+    } else {
+      newVar.scopes = ['ALL_SCOPES'];
+    }
+
+    varMap[name] = newVar;
+    created++;
+    return newVar;
   }
 
-  // Sync dimension tokens (font sizes, radius, spacing)
-  for (const [key, token] of Object.entries(data.dimTokens || {})) {
-    const v = varMap[token.figmaName];
-    if (!v) { skipped++; continue; }
+  // Helper: get light/dark mode IDs for a variable's collection
+  function getModesForVar(variable) {
+    // Check which collection this variable belongs to
+    var isPrim = false;
+    for (var i = 0; i < primCol.variableIds.length; i++) {
+      if (primCol.variableIds[i] === variable.id) { isPrim = true; break; }
+    }
+    if (isPrim) {
+      return { light: primLightMode.modeId, dark: primDarkMode.modeId };
+    }
+    return { light: tokLightMode.modeId, dark: tokDarkMode.modeId };
+  }
 
-    const col = colMap[token.figmaName];
-    const lightMode = col.modes.find(m => m.name === 'Light');
-    if (!lightMode) continue;
+  // Sync color tokens
+  var colorEntries = Object.entries(data.colorTokens || {});
+  for (var i = 0; i < colorEntries.length; i++) {
+    var key = colorEntries[i][0];
+    var token = colorEntries[i][1];
 
-    let val = token.value;
-    // Strip px suffix for dimension values
+    var lightRgb = hexToFigmaRgb(token.light);
+    var darkRgb = hexToFigmaRgb(token.dark);
+    if (!lightRgb || !darkRgb) { skipped++; continue; }
+
+    var colorVar = getOrCreateVar(token.figmaName, 'COLOR', token.tier);
+    var modes = getModesForVar(colorVar);
+    colorVar.setValueForMode(modes.light, lightRgb);
+    colorVar.setValueForMode(modes.dark, darkRgb);
+    updated++;
+  }
+
+  // Sync dimension tokens
+  var dimEntries = Object.entries(data.dimTokens || {});
+  for (var j = 0; j < dimEntries.length; j++) {
+    var dKey = dimEntries[j][0];
+    var dToken = dimEntries[j][1];
+
+    var val = dToken.value;
     if (typeof val === 'string' && val.endsWith('px')) {
       val = parseFloat(val);
     }
 
-    if (v.resolvedType === 'FLOAT' && typeof val === 'number') {
-      v.setValueForMode(lightMode.modeId, val);
-      // Set dark mode to same value for dimensions
-      const darkMode = col.modes.find(m => m.name === 'Dark');
-      if (darkMode) v.setValueForMode(darkMode.modeId, val);
-      updatedDims++;
-    } else if (v.resolvedType === 'STRING' && typeof val === 'string') {
-      v.setValueForMode(lightMode.modeId, val);
-      updatedDims++;
+    if (typeof val === 'number') {
+      var numVar = getOrCreateVar(dToken.figmaName, 'FLOAT', dToken.tier);
+      var numModes = getModesForVar(numVar);
+      numVar.setValueForMode(numModes.light, val);
+      numVar.setValueForMode(numModes.dark, val);
+      updated++;
+    } else if (typeof val === 'string') {
+      var strVar = getOrCreateVar(dToken.figmaName, 'STRING', dToken.tier);
+      var strModes = getModesForVar(strVar);
+      strVar.setValueForMode(strModes.light, val);
+      updated++;
     } else {
       skipped++;
     }
   }
 
-  return { updatedColors, updatedDims, skipped };
+  return { created: created, updated: updated, skipped: skipped };
 }
 
 // =============================================
@@ -724,17 +787,17 @@ figma.ui.onmessage = async (msg) => {
       const result = await syncVariables(msg.data);
       figma.ui.postMessage({
         type: 'result',
-        message: `同步完成！颜色 ${result.updatedColors} · 尺寸 ${result.updatedDims} · 跳过 ${result.skipped}`,
+        message: `同步完成！新建 ${result.created} · 更新 ${result.updated} · 跳过 ${result.skipped}`,
       });
     }
     else if (msg.type === 'generate') {
       // Sync first, then generate
       const syncResult = await syncVariables(msg.data);
-      figma.ui.postMessage({ type: 'progress', message: `变量已同步 (${syncResult.updatedColors + syncResult.updatedDims})，正在生成预览页...` });
+      figma.ui.postMessage({ type: 'progress', message: `变量已同步 (新建 ${syncResult.created} · 更新 ${syncResult.updated})，正在生成预览页...` });
       const frameId = await generatePreview(msg.data);
       figma.ui.postMessage({
         type: 'result',
-        message: `预览页已生成！同步 ${syncResult.updatedColors + syncResult.updatedDims} 变量`,
+        message: `预览页已生成！新建 ${syncResult.created} · 更新 ${syncResult.updated} 个变量`,
       });
     }
   } catch (err) {
