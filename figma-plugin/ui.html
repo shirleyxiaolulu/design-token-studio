@@ -105,22 +105,43 @@
 
     let parsedData = null;
 
-    // Paste button
-    document.getElementById('pasteBtn').addEventListener('click', async () => {
-      try {
-        const text = await navigator.clipboard.readText();
-        jsonInput.value = text;
-        jsonInput.dispatchEvent(new Event('input'));
-      } catch (e) {
-        jsonInput.focus();
-        document.execCommand('paste');
-      }
+    // Paste button — Figma iframe 不支持 clipboard API，用 execCommand
+    document.getElementById('pasteBtn').addEventListener('click', function() {
+      jsonInput.value = '';
+      jsonInput.focus();
+      // 创建一个临时的 contenteditable 区域来接收粘贴
+      var temp = document.createElement('div');
+      temp.contentEditable = true;
+      temp.style.cssText = 'position:fixed;left:-9999px;top:0;';
+      document.body.appendChild(temp);
+      temp.focus();
+      document.execCommand('paste');
+      // 延迟读取粘贴内容
+      setTimeout(function() {
+        var text = temp.innerText || temp.textContent || '';
+        document.body.removeChild(temp);
+        if (text.trim()) {
+          jsonInput.value = text;
+          jsonInput.dispatchEvent(new Event('input'));
+        } else {
+          // execCommand 也失败了，提示用户手动粘贴
+          jsonInput.focus();
+          jsonInput.placeholder = '请按 Cmd+V 手动粘贴';
+          setTimeout(function() { jsonInput.placeholder = '在 Web 端点击 JSON 标签 → 复制当前内容 → 粘贴到这里'; }, 2000);
+        }
+      }, 100);
     });
 
     // Clear button
-    document.getElementById('clearBtn').addEventListener('click', () => {
+    document.getElementById('clearBtn').addEventListener('click', function() {
       jsonInput.value = '';
-      jsonInput.dispatchEvent(new Event('input'));
+      parsedData = null;
+      jsonInput.className = '';
+      jsonMeta.className = 'json-meta';
+      jsonMeta.textContent = '等待粘贴 JSON...';
+      syncBtn.disabled = true;
+      generateBtn.disabled = true;
+      status.className = 'status';
       jsonInput.focus();
     });
 
