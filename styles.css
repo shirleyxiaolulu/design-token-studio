@@ -694,9 +694,20 @@ textarea {
   line-height: 1.2;
 }
 
-.topbar-actions {
+.topbar-right {
   display: flex;
-  gap: 10px;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.designer-tag {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 4px 10px;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 6px;
+  white-space: nowrap;
 }
 
 .ghost-button,
