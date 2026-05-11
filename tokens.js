@@ -415,7 +415,6 @@
     "font": "字体",
     "radius": "圆角",
     "space": "间距",
-    "zIndex": "层级",
     "opacity": "透明度",
     "shadow": "阴影",
     "ios": "iOS",
@@ -609,16 +608,6 @@
       tokens[name] = makeToken(name, "shadow", value, "阴影变量", { tier: "semantic" });
     });
 
-    const zIndexes = {
-      "zIndex.base": 0,
-      "zIndex.sticky": 10,
-      "zIndex.dropdown": 100,
-      "zIndex.modal": 1000,
-      "zIndex.toast": 1100,
-    };
-    Object.entries(zIndexes).forEach(([name, value]) => {
-      tokens[name] = makeToken(name, "number", value, "层级变量", { tier: "primitive" });
-    });
 
     // ===== v2: Extra Semantic Colors =====
     const extraSemanticColors = {
