@@ -202,7 +202,7 @@ async function generatePreview(data) {
     t.fontName = { family: FONT_FAMILY, style: fontStyle };
     t.fontSize = size || 14;
     t.characters = String(text);
-    t.fills = [{ type: 'SOLID', color: color || W, opacity: opacity !== undefined ? opacity : 1 }];
+    t.fills = [{ type: 'SOLID', color: color || TEXT_BRIGHT, opacity: opacity !== undefined ? opacity : 1 }];
     return t;
   }
 
@@ -215,8 +215,8 @@ async function generatePreview(data) {
   var SEC_ACCENT = { r: 0.18, g: 0.9, b: 0.55 };
   function addSection(parent, y, num, title, desc) {
     addText(parent, 64, y, num + ' / ' + title, 12, 'Regular', SEC_ACCENT, 0.9);
-    addText(parent, 64, y + 26, title, 32, 'Semi Bold', W);
-    if (desc) addText(parent, 64, y + 70, desc, 14, 'Regular', W, 0.6);
+    addText(parent, 64, y + 26, title, 32, 'Semi Bold', TEXT_BRIGHT);
+    if (desc) addText(parent, 64, y + 70, desc, 14, 'Regular', TEXT_BRIGHT, 0.6);
     addLine(parent, 64, y + (desc ? 112 : 70), 1052);
     return y + (desc ? 130 : 88);
   }
@@ -245,10 +245,10 @@ async function generatePreview(data) {
       const v = allVars[varName];
       if (v) { dot.fills = [figma.variables.setBoundVariableForPaint(dot.fills[0], 'color', v)]; }
     }
-    addText(parent, 100, y + 3, name, 12, 'Regular', W, 0.9);
-    addText(parent, 380, y + 3, lightHex || '-', 12, 'Regular', W, 0.5);
-    addText(parent, 540, y + 3, darkHex || '-', 12, 'Regular', W, 0.5);
-    addText(parent, 700, y + 3, usage, 12, 'Regular', W, 0.4);
+    addText(parent, 100, y + 3, name, 12, 'Regular', TEXT_BRIGHT, 0.9);
+    addText(parent, 380, y + 3, lightHex || '-', 12, 'Regular', TEXT_BRIGHT, 0.5);
+    addText(parent, 540, y + 3, darkHex || '-', 12, 'Regular', TEXT_BRIGHT, 0.5);
+    addText(parent, 700, y + 3, usage, 12, 'Regular', TEXT_BRIGHT, 0.4);
   }
 
   // ===== Categorize tokens =====
@@ -276,10 +276,10 @@ async function generatePreview(data) {
   const swW = 194, swH = 108, gH = 14, startX = 64;
 
   // ===== HEADER =====
-  addText(frame, 64, 64, data.name, 42, 'Bold', W);
+  addText(frame, 64, 64, data.name, 42, 'Bold', TEXT_BRIGHT);
   const platLabel = data.platform === 'ios-app' ? 'iOS App' : 'Web 后台';
-  addText(frame, 64, 116, `v${data.version} · ${platLabel} · Brand: ${brandHex}`, 14, 'Regular', W, 0.5);
-  addText(frame, 64, 146, '由 Web 端设计规范生成器导出，经 Figma 插件同步。色块已绑定 Variables。', 14, 'Regular', W, 0.6);
+  addText(frame, 64, 116, `v${data.version} · ${platLabel} · Brand: ${brandHex}`, 14, 'Regular', TEXT_BRIGHT, 0.5);
+  addText(frame, 64, 146, '由 Web 端设计规范生成器导出，经 Figma 插件同步。色块已绑定 Variables。', 14, 'Regular', TEXT_BRIGHT, 0.6);
 
   // ===== SECTION 01: PALETTE SWATCHES =====
   let Y = addSection(frame, 220, '01', '色彩系统', '由品牌主色推导出的完整色阶，作为语义色、组件状态和插画用色的基础。');
@@ -298,7 +298,7 @@ async function generatePreview(data) {
     });
 
     const label = family.charAt(0).toUpperCase() + family.slice(1);
-    addText(frame, 64, Y, label, 14, 'Semi Bold', W, 0.8);
+    addText(frame, 64, Y, label, 14, 'Semi Bold', TEXT_BRIGHT, 0.8);
     Y += 28;
 
     const isExtended = family !== 'primary' && family !== 'gray';
@@ -321,13 +321,13 @@ async function generatePreview(data) {
 
   // Auxiliary scales
   if (auxFamilies.length > 0) {
-    addText(frame, 64, Y, 'Auxiliary Scales', 14, 'Semi Bold', W, 0.8);
+    addText(frame, 64, Y, 'Auxiliary Scales', 14, 'Semi Bold', TEXT_BRIGHT, 0.8);
     Y += 28;
     for (const fam of auxFamilies) {
       const tokens = colorsByPrefix[`auxscale:${fam}`];
       if (!tokens) continue;
       tokens.sort((a, b) => parseInt(a.key.split('.').pop()) - parseInt(b.key.split('.').pop()));
-      addText(frame, 64, Y, fam, 11, 'Regular', W, 0.5);
+      addText(frame, 64, Y, fam, 11, 'Regular', TEXT_BRIGHT, 0.5);
       for (let i = 0; i < tokens.length; i++) {
         const t = tokens[i];
         await makeSwatch(frame, startX + i * 102, Y + 18, 94, 70, `${fam}/${i}`, t.light, t.figmaName, i < 4);
@@ -345,9 +345,9 @@ async function generatePreview(data) {
   var ROW_H = 52;
 
   // Section header
-  addText(frame, 64, Y + 32, '02 / 语义色', 12, 'Regular', W, 0.5);
-  addText(frame, 64, Y + 58, '语义色', 32, 'Semi Bold', W);
-  addText(frame, 64, Y + 102, '语义色描述界面角色，而不是具体色值；Figma 组件应优先引用这些变量。', 14, 'Regular', W, 0.6);
+  addText(frame, 64, Y + 32, '02 / 语义色', 12, 'Regular', TEXT_BRIGHT, 0.5);
+  addText(frame, 64, Y + 58, '语义色', 32, 'Semi Bold', TEXT_BRIGHT);
+  addText(frame, 64, Y + 102, '语义色描述界面角色，而不是具体色值；Figma 组件应优先引用这些变量。', 14, 'Regular', TEXT_BRIGHT, 0.6);
   addLine(frame, 64, Y + 144, CARD_W);
   Y += 174;
 
