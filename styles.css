@@ -515,11 +515,23 @@ input[type="range"] {
   width: 100%;
   height: 34px;
   margin: 0;
-  border: 1px solid rgba(78,255,175,0.24);
+  border: 1px solid var(--primary);
   border-radius: var(--radius-md);
-  background: rgba(78,255,175,0.08);
+  background: transparent;
   color: var(--primary);
   font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+}
+
+.download-button:hover {
+  background: rgba(var(--primary-rgb, 101, 51, 232), 0.12);
+  transform: translateY(-1px);
+}
+
+.download-button:active {
+  transform: translateY(0);
+  background: rgba(var(--primary-rgb, 101, 51, 232), 0.2);
 }
 
 .download-button.secondary {
@@ -528,9 +540,12 @@ input[type="range"] {
   color: var(--text);
 }
 
+.download-button.secondary:hover {
+  background: rgba(255,255,255,0.06);
+}
+
 body[data-default-mode="light"] .download-button {
-  border-color: rgba(51,102,255,0.18);
-  background: rgba(51,102,255,0.06);
+  border-color: var(--primary);
 }
 
 body[data-default-mode="light"] .download-button.secondary {
@@ -539,10 +554,14 @@ body[data-default-mode="light"] .download-button.secondary {
   color: var(--text);
 }
 
+body[data-default-mode="light"] .download-button.secondary:hover {
+  background: #f5f5f5;
+}
+
 .action-button.active,
 .action-button:hover {
-  border-color: rgba(78,255,175,0.34);
-  background: rgba(78,255,175,0.10);
+  border-color: var(--primary);
+  background: rgba(var(--primary-rgb, 101, 51, 232), 0.12);
   color: var(--primary);
 }
 

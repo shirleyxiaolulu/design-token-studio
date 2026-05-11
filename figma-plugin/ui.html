@@ -53,6 +53,13 @@
     }
     .steps strong { color: #555; }
     .steps ol { padding-left: 16px; }
+    .field-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+    .mini-actions { display: flex; gap: 4px; }
+    .mini-btn {
+      height: 22px; padding: 0 8px; border: 1px solid #ddd; border-radius: 4px;
+      background: #fff; color: #666; font-size: 10px; cursor: pointer; transition: all 0.15s;
+    }
+    .mini-btn:hover { border-color: #6533E8; color: #6533E8; }
   </style>
 </head>
 <body>
@@ -60,7 +67,13 @@
   <p class="subtitle">从 Web 端导入 JSON，同步变量并生成预览页</p>
 
   <div class="field">
-    <label>粘贴 JSON（从 Web 端复制）</label>
+    <div class="field-row">
+      <label>粘贴 JSON（从 Web 端复制）</label>
+      <div class="mini-actions">
+        <button class="mini-btn" id="pasteBtn" title="从剪贴板粘贴">粘贴</button>
+        <button class="mini-btn" id="clearBtn" title="清除内容">清除</button>
+      </div>
+    </div>
     <textarea id="jsonInput" placeholder='在 Web 端点击 JSON 标签 → 复制当前内容 → 粘贴到这里'></textarea>
     <div class="json-meta" id="jsonMeta">等待粘贴 JSON...</div>
   </div>
@@ -91,6 +104,25 @@
     const status = document.getElementById('status');
 
     let parsedData = null;
+
+    // Paste button
+    document.getElementById('pasteBtn').addEventListener('click', async () => {
+      try {
+        const text = await navigator.clipboard.readText();
+        jsonInput.value = text;
+        jsonInput.dispatchEvent(new Event('input'));
+      } catch (e) {
+        jsonInput.focus();
+        document.execCommand('paste');
+      }
+    });
+
+    // Clear button
+    document.getElementById('clearBtn').addEventListener('click', () => {
+      jsonInput.value = '';
+      jsonInput.dispatchEvent(new Event('input'));
+      jsonInput.focus();
+    });
 
     jsonInput.addEventListener('input', () => {
       const raw = jsonInput.value.trim();

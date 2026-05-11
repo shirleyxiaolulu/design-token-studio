@@ -427,6 +427,12 @@ function render() {
 
   document.documentElement.style.setProperty("--primary", seed.primaryColor);
   document.documentElement.style.setProperty("--primary-weak", palette.primary[0]);
+  // Set --primary-rgb for rgba() usage
+  var pRgb = seed.primaryColor.replace("#", "");
+  var pR = parseInt(pRgb.slice(0,2), 16);
+  var pG = parseInt(pRgb.slice(2,4), 16);
+  var pB = parseInt(pRgb.slice(4,6), 16);
+  document.documentElement.style.setProperty("--primary-rgb", pR + "," + pG + "," + pB);
   document.documentElement.style.setProperty("--local-font", seed.fontStack);
   document.body.dataset.defaultMode = seed.defaultMode;
 
@@ -793,8 +799,20 @@ function bindEvents() {
     if (button) restoreVersion(button.dataset.restoreVersion);
   });
 
-  els.downloadButton.addEventListener("click", downloadExport);
-  els.copyExportButton.addEventListener("click", copyExport);
+  els.downloadButton.addEventListener("click", () => {
+    downloadExport();
+    const btn = els.downloadButton;
+    const original = btn.textContent;
+    btn.textContent = "已下载 ✓";
+    setTimeout(() => { btn.textContent = original; }, 1500);
+  });
+  els.copyExportButton.addEventListener("click", () => {
+    copyExport();
+    const btn = els.copyExportButton;
+    const original = btn.textContent;
+    btn.textContent = "已复制 ✓";
+    setTimeout(() => { btn.textContent = original; }, 1500);
+  });
 
   els.publishButton.addEventListener("click", () => {
     els.publishVersion.value = state.version;
