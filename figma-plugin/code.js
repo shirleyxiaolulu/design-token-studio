@@ -158,7 +158,25 @@ async function syncVariables(data) {
     }
   }
 
-  return { created: created, updated: updated, skipped: skipped };
+  // Verify: read back a sample variable to confirm values were written
+  var verifyMsg = '';
+  var sampleEntries = Object.entries(data.colorTokens || {}).slice(0, 1);
+  if (sampleEntries.length > 0) {
+    var sampleToken = sampleEntries[0][1];
+    var sampleVar = varMap[sampleToken.figmaName];
+    if (sampleVar) {
+      var sampleModes = getVarModes(sampleVar);
+      var actualValues = sampleVar.valuesByMode;
+      var writtenLight = actualValues[sampleModes.light];
+      var writtenDark = actualValues[sampleModes.dark];
+      var wlHex = writtenLight ? ('#' + Math.round(writtenLight.r*255).toString(16).padStart(2,'0') + Math.round(writtenLight.g*255).toString(16).padStart(2,'0') + Math.round(writtenLight.b*255).toString(16).padStart(2,'0')).toUpperCase() : 'N/A';
+      verifyMsg = ' | 验证 ' + sampleToken.figmaName + ': Light=' + wlHex + ' 期望=' + sampleToken.light;
+      verifyMsg += ' | modeIds: L=' + sampleModes.light + ' D=' + sampleModes.dark;
+      verifyMsg += ' | allModeKeys=' + Object.keys(actualValues).join(',');
+    }
+  }
+
+  return { created: created, updated: updated, skipped: skipped, verify: verifyMsg };
 }
 
 // =============================================
@@ -809,7 +827,7 @@ figma.ui.onmessage = async (msg) => {
       var result = await syncVariables(msg.data);
       figma.ui.postMessage({
         type: 'result',
-        message: '同步完成！新建 ' + result.created + ' · 更新 ' + result.updated + ' · 跳过 ' + result.skipped,
+        message: '同步完成！新建 ' + result.created + ' · 更新 ' + result.updated + ' · 跳过 ' + result.skipped + (result.verify || ''),
       });
     }
     else if (msg.type === 'generate') {
