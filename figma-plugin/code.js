@@ -68,19 +68,41 @@ async function syncVariables(data) {
   var updated = 0;
   var skipped = 0;
 
-  // Helper: find or create a variable
-  function getOrCreateVar(name, type, tier) {
-    var existing = varMap[name];
-    if (existing) return existing;
+  // Track which collection each variable belongs to (avoid expensive lookup)
+  var varColMap = {};
 
-    var targetCol = (tier === 'semantic') ? tokCol : primCol;
-    var resolvedType = 'COLOR';
-    if (type === 'FLOAT') resolvedType = 'FLOAT';
-    if (type === 'STRING') resolvedType = 'STRING';
+  // Index existing variables and their collections
+  for (var ci = 0; ci < collections.length; ci++) {
+    var existCol = collections[ci];
+    for (var vi = 0; vi < existCol.variableIds.length; vi++) {
+      var existVar = await figma.variables.getVariableByIdAsync(existCol.variableIds[vi]);
+      if (existVar) {
+        varColMap[existVar.name] = existCol.name;
+      }
+    }
+  }
+
+  // Mode IDs lookup by collection name
+  var modeMap = {
+    'Primitives': { light: primLightMode.modeId, dark: primDarkMode.modeId },
+    'Tokens': { light: tokLightMode.modeId, dark: tokDarkMode.modeId }
+  };
+
+  // Helper: find or create a variable, return { variable, modes }
+  function syncVar(name, type, tier) {
+    var existing = varMap[name];
+    if (existing) {
+      var colName = varColMap[name] || 'Primitives';
+      return { variable: existing, modes: modeMap[colName] || modeMap['Primitives'] };
+    }
+
+    var isSemantic = (tier === 'semantic');
+    var targetCol = isSemantic ? tokCol : primCol;
+    var colName2 = isSemantic ? 'Tokens' : 'Primitives';
+    var resolvedType = type === 'FLOAT' ? 'FLOAT' : type === 'STRING' ? 'STRING' : 'COLOR';
 
     var newVar = figma.variables.createVariable(name, targetCol, resolvedType);
 
-    // Set appropriate scopes
     if (resolvedType === 'COLOR') {
       newVar.scopes = ['ALL_FILLS'];
     } else if (name.indexOf('radius') >= 0) {
@@ -96,61 +118,40 @@ async function syncVariables(data) {
     }
 
     varMap[name] = newVar;
+    varColMap[name] = colName2;
     created++;
-    return newVar;
-  }
-
-  // Helper: get light/dark mode IDs for a variable's collection
-  function getModesForVar(variable) {
-    // Check which collection this variable belongs to
-    var isPrim = false;
-    for (var i = 0; i < primCol.variableIds.length; i++) {
-      if (primCol.variableIds[i] === variable.id) { isPrim = true; break; }
-    }
-    if (isPrim) {
-      return { light: primLightMode.modeId, dark: primDarkMode.modeId };
-    }
-    return { light: tokLightMode.modeId, dark: tokDarkMode.modeId };
+    return { variable: newVar, modes: modeMap[colName2] };
   }
 
   // Sync color tokens
   var colorEntries = Object.entries(data.colorTokens || {});
   for (var i = 0; i < colorEntries.length; i++) {
-    var key = colorEntries[i][0];
     var token = colorEntries[i][1];
-
     var lightRgb = hexToFigmaRgb(token.light);
     var darkRgb = hexToFigmaRgb(token.dark);
     if (!lightRgb || !darkRgb) { skipped++; continue; }
 
-    var colorVar = getOrCreateVar(token.figmaName, 'COLOR', token.tier);
-    var modes = getModesForVar(colorVar);
-    colorVar.setValueForMode(modes.light, lightRgb);
-    colorVar.setValueForMode(modes.dark, darkRgb);
+    var result = syncVar(token.figmaName, 'COLOR', token.tier);
+    result.variable.setValueForMode(result.modes.light, lightRgb);
+    result.variable.setValueForMode(result.modes.dark, darkRgb);
     updated++;
   }
 
   // Sync dimension tokens
   var dimEntries = Object.entries(data.dimTokens || {});
   for (var j = 0; j < dimEntries.length; j++) {
-    var dKey = dimEntries[j][0];
     var dToken = dimEntries[j][1];
-
     var val = dToken.value;
-    if (typeof val === 'string' && val.endsWith('px')) {
-      val = parseFloat(val);
-    }
+    if (typeof val === 'string' && val.endsWith('px')) val = parseFloat(val);
 
     if (typeof val === 'number') {
-      var numVar = getOrCreateVar(dToken.figmaName, 'FLOAT', dToken.tier);
-      var numModes = getModesForVar(numVar);
-      numVar.setValueForMode(numModes.light, val);
-      numVar.setValueForMode(numModes.dark, val);
+      var numResult = syncVar(dToken.figmaName, 'FLOAT', dToken.tier);
+      numResult.variable.setValueForMode(numResult.modes.light, val);
+      numResult.variable.setValueForMode(numResult.modes.dark, val);
       updated++;
     } else if (typeof val === 'string') {
-      var strVar = getOrCreateVar(dToken.figmaName, 'STRING', dToken.tier);
-      var strModes = getModesForVar(strVar);
-      strVar.setValueForMode(strModes.light, val);
+      var strResult = syncVar(dToken.figmaName, 'STRING', dToken.tier);
+      strResult.variable.setValueForMode(strResult.modes.light, val);
       updated++;
     } else {
       skipped++;
