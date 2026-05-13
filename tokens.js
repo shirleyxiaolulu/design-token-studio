@@ -515,7 +515,7 @@
       "color.brand.primary.active": ["color.palette.primary.6", "color.palette.primary.6", "品牌主操作按下"],
       "color.brand.emphasis": ["color.palette.primary.7", "color.palette.primary.3", "品牌深强调色（图标、边框）"],
       "color.brand.strong": ["color.palette.primary.8", "color.palette.primary.2", "品牌最深色（深底文字、暗调CTA）"],
-      "color.function.success": ["color.palette.green.5", "color.palette.green.4", "成功反馈"],
+      "color.function.success": ["color.palette.green.6", "color.palette.green.4", "成功反馈"],
       "color.function.warning": ["color.palette.orange.5", "color.palette.orange.4", "警示反馈"],
       "color.function.danger": ["color.palette.red.5", "color.palette.red.4", "危险反馈"],
       "color.function.info": ["color.palette.blue.5", "color.palette.blue.4", "信息反馈"],
