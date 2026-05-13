@@ -283,87 +283,25 @@
 
   // AI Prompt: concise design guidelines for pasting into any AI tool
   function exportAiPrompt(seed, tokens) {
-    const T = DesignTokens;
     const platNames = { "ios-app": "iOS App (375×812)", "web-admin": "Web 后台 (1440)", "app-web": "App+Web 同步" };
     const platLabel = platNames[seed.platform] || seed.platform;
 
-    // Collect semantic colors (resolved)
-    const colorLines = [];
-    const semanticPrefixes = ["color.brand.", "color.function.", "color.text.", "color.bg.", "color.border.", "color.constant."];
-    semanticPrefixes.forEach((prefix) => {
-      Object.values(tokens).forEach((t) => {
-        if (t.name.startsWith(prefix) && t.tier === "semantic") {
-          const light = T.tokenValue(t, "light", tokens);
-          if (light && !light.startsWith("{") && !light.startsWith("rgba")) {
-            colorLines.push(`${t.name}: ${light} — ${t.usage}`);
-          }
-        }
-      });
-    });
+    return `你是一位严格遵循设计规范的 UI 设计师。当前项目为「${seed.specName}」，平台 ${platLabel}，品牌色 ${seed.primaryColor}，${seed.defaultMode === "dark" ? "深色" : "浅色"}模式优先。
 
-    // Font sizes
-    const fontLines = [];
-    Object.values(tokens).forEach((t) => {
-      if (t.name.startsWith("font.size.")) {
-        fontLines.push(`${t.name}: ${t.value}px`);
-      }
-    });
+所有色值、字号、间距、组件映射的具体数据在 AI JSON 中，此处只说明使用规则。
 
-    // Spacing
-    const spaceLines = [];
-    Object.values(tokens).forEach((t) => {
-      if (t.name.startsWith("space.")) {
-        spaceLines.push(`${t.name}: ${t.value}`);
-      }
-    });
+## 如何使用设计规范
 
-    // Radius
-    const radiusLines = [];
-    Object.values(tokens).forEach((t) => {
-      if (t.name.startsWith("radius.")) {
-        radiusLines.push(`${t.name}: ${t.value}`);
-      }
-    });
-
-    return `你是一位严格遵循设计规范的 UI 设计师。以下是当前项目的设计规范，生成设计稿时必须遵循。
-
-## 项目
-${seed.specName} · ${platLabel} · 品牌色 ${seed.primaryColor} · ${seed.defaultMode === "dark" ? "深色" : "浅色"}模式
-
-## 语义色（${seed.defaultMode} 模式值）
-${colorLines.join("\n")}
-
-## 字号
-${fontLines.join(" / ")}
-
-## 间距（4px 基准）
-${spaceLines.join(" / ")}
-
-## 圆角
-${radiusLines.join(" / ")}
-
-## 组件规则
-- 主按钮：brand.primary 背景 + constant.white 文字 + radius.md + 间距 space.4×space.2
-- 次按钮：bg.surface 背景 + text.primary 文字 + border.default 描边 + radius.md
-- 危险按钮：function.danger 背景 + constant.white 文字 + radius.md
-- 输入框：bg.surface 背景 + border.default 描边 + 聚焦 brand.primary + radius.md + 间距 space.3×space.2
-- 卡片：bg.surface 背景 + border.subtle 描边 + radius.lg + shadow.sm + 内边距 space.4
-- 标签：brand.subtle 背景 + brand.primary 文字 + radius.full
-- 列表项：bg.surface 背景 + border.subtle 底部分割 + 间距 space.4×space.3
-- 弹窗：bg.elevated 背景 + shadow.overlay + radius.xl + 内边距 space.6
-- 导航栏：bg.surface 背景 + text.primary 标题 + border.subtle 底部线 + 高度 44px
-- Tab 栏：bg.surface 背景 + brand.primary 选中 + text.tertiary 未选中 + 高度 49px
-
-## 动效
-快速 100ms / 常规 200ms / 缓慢 350ms / 页面 500ms
-缓动 cubic-bezier(0.25,0.1,0.25,1) / 弹性 cubic-bezier(0.34,1.56,0.64,1)
-
-## 约束
-- 所有颜色、字号、间距必须从以上 token 取值，禁止自创
-- 原型图只提取功能结构和信息层级，不复制其布局、颜色和字号
-- 间距使用 4px 倍数
-- 文本至少区分 primary/secondary/tertiary 三个层级
-- 品牌色（primary/hover/active）和辅助色不跟随深浅模式变化`;
+1. 颜色只从 JSON 的 colors 对象取值，禁止自创颜色。语义色按名称含义使用（brand 用于品牌表达，function 用于状态反馈，text 用于文字层级，bg 用于背景层级）。
+2. 品牌色（brand.primary / hover / active）和辅助色在深浅模式下保持不变，不要调亮或调暗。
+3. 字号只从 JSON 的 typography.sizes 取值。标题用 Semibold 或 Bold，正文用 Regular。标题与正文之间间距用 space.2，段落间用 space.3。
+4. 间距基于 4px 倍数，只从 JSON 的 dimensions 中 space/* 取值。组件内 padding 用 space.2~space.4，模块间距用 space.6~space.8，页面边距用 space.4。
+5. 圆角：按钮和输入框用 radius.md，卡片用 radius.lg，标签和头像用 radius.full，弹窗用 radius.xl。
+6. 阴影：卡片用 shadow.sm，弹窗用 shadow.lg，浮层用 shadow.overlay。
+7. 组件结构参考 JSON 的 components 映射，每个组件的背景、文字、描边、圆角、间距都已定义。
+8. 动效参考 JSON 的 motion 对象。微交互用 fast，常规过渡用 normal，展开收起用 slow，页面切换用 slower。
+9. 原型图只提取功能结构和信息层级，不复制其布局、颜色和字号，设计稿的视觉表现必须来自设计规范。
+10. 文本至少区分 primary / secondary / tertiary 三个层级，确保信息有清晰的视觉优先级。${seed.platform === "ios-app" ? "\n11. iOS 安全区：顶部 44px，底部 34px。导航栏高度 44px，Tab 栏高度 49px。" : ""}`;
   }
 
   function createExports(seed, tokens, version) {
