@@ -1862,10 +1862,10 @@ body[data-default-mode="light"] .toast {
   width: 100%;
   height: 34px;
   margin-top: 10px;
-  border: 1px solid var(--primary);
+  border: none;
   border-radius: var(--radius-md);
-  background: var(--primary);
-  color: #fff;
+  background: #fff;
+  color: #000;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
@@ -1874,12 +1874,6 @@ body[data-default-mode="light"] .toast {
 
 .ai-prompt-button:hover {
   opacity: 0.85;
-}
-
-body[data-default-mode="light"] .ai-prompt-button {
-  background: var(--text);
-  border-color: var(--text);
-  color: #fff;
 }
 
 /* ===== v2: Export tabs overflow ===== */
