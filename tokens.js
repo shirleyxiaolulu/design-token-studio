@@ -556,7 +556,7 @@
       const name = `color.auxiliary.${item.id}`;
       tokens[name] = makeToken(name, "color", {
         light: `{color.custom.${item.id}.light}`,
-        dark: `{color.custom.${item.id}.dark}`,
+        dark: `{color.custom.${item.id}.light}`,
       }, `${item.name} 辅助色`, {
         tier: "semantic",
         alias: { light: `color.custom.${item.id}`, dark: `color.custom.${item.id}` },
