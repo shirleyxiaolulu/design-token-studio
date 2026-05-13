@@ -72,11 +72,16 @@ body[data-default-mode="light"] .hero-band {
   box-shadow: var(--shadow-pop);
 }
 
-body[data-default-mode="light"] .preview-document,
 body[data-default-mode="light"] .history-panel {
   border-color: rgba(20, 26, 33, 0.10);
   background: rgba(255,255,255,0.94);
   box-shadow: 0 18px 48px rgba(24, 32, 43, 0.07);
+}
+
+body[data-default-mode="light"] .doc-section,
+body[data-default-mode="light"] .doc-heading {
+  border-color: #ececef;
+  background: #ffffff;
 }
 
 body[data-default-mode="light"] .timeline-item {
@@ -790,16 +795,9 @@ textarea {
   align-items: start;
 }
 
-.preview-document,
-.figma-card {
-  border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 16px;
-  background: rgba(14, 19, 25, 0.92);
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
-}
-
 .preview-document {
-  padding: 42px;
+  /* No wrapper background — each section is its own card */
+  padding: 0;
 }
 
 .doc-heading {
@@ -807,8 +805,11 @@ textarea {
   align-items: flex-start;
   justify-content: space-between;
   gap: 18px;
-  padding-bottom: 26px;
-  border-bottom: 1px solid var(--line);
+  padding: 28px;
+  margin-bottom: 20px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
 }
 
 .doc-heading h3 {
@@ -836,8 +837,13 @@ textarea {
   font-size: 12px;
 }
 
+/* Each section is an independent card */
 .doc-section {
-  padding: 28px 0 0;
+  padding: 28px;
+  margin-bottom: 20px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
 }
 
 .doc-section h4 {
@@ -1049,10 +1055,9 @@ textarea {
   color: var(--summary-text, #fff);
 }
 
+/* two-columns is now a doc-section card, grid is inside */
 .two-columns {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
+  /* inherits card styles from doc-section */
 }
 
 .palette-grid {
@@ -1087,12 +1092,12 @@ textarea {
 
 .mode-preview {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 10px;
   padding: 16px;
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.4);
+  overflow: hidden;
 }
 
 .light-mode {
@@ -1772,16 +1777,16 @@ body[data-default-mode="light"] .toast {
 .sidebar-tabs {
   display: flex;
   gap: 2px;
-  padding: 0 12px;
-  margin-bottom: 8px;
-  background: var(--surface-subtle);
-  border-radius: var(--radius-md);
+  padding: 3px;
   margin: 0 12px 8px;
+  background: var(--surface-muted);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
 }
 
 .sidebar-tab {
   flex: 1;
-  height: 36px;
+  height: 32px;
   border: none;
   border-radius: 6px;
   background: transparent;
@@ -1793,13 +1798,18 @@ body[data-default-mode="light"] .toast {
 }
 
 .sidebar-tab.active {
-  background: var(--surface);
-  color: var(--text);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  background: var(--primary);
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
 }
 
 .sidebar-tab:hover:not(.active) {
-  color: var(--text-soft);
+  color: var(--text);
+  background: rgba(255,255,255,0.06);
+}
+
+body[data-default-mode="light"] .sidebar-tab:hover:not(.active) {
+  background: rgba(0,0,0,0.04);
 }
 
 .sidebar-tab-content {
@@ -1855,8 +1865,6 @@ body[data-default-mode="light"] .toc-link.active {
   justify-content: space-between;
   align-items: flex-start;
   margin-bottom: 24px;
-  padding-bottom: 20px;
-  border-bottom: 1px solid var(--line);
 }
 
 .section-header-full {
@@ -1950,7 +1958,7 @@ body[data-default-mode="light"] .toc-link.active {
 .font-family-card {
   padding: 28px;
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: 12px;
   background: var(--surface-subtle);
 }
 
