@@ -266,12 +266,18 @@ function renderShapes(tokens, defaultMode) {
     `;
   }).join("");
 
-  // Shadow: card grid
+  // Shadow: card grid with layer parameters
   const shadowNames = Object.keys(tokens).filter((name) => name.startsWith("shadow."));
   const shadowLabels = { "shadow.none": "None", "shadow.sm": "SM", "shadow.md": "MD", "shadow.lg": "LG", "shadow.overlay": "Overlay" };
   els.shadowTable.innerHTML = shadowNames.map((name) => {
     const token = tokens[name];
     const cssValueText = DesignTokens.tokenValue(token, defaultMode, tokens);
+    const layers = token.value[defaultMode];
+    const layerHtml = layers === "none"
+      ? `<div class="shadow-layers"><span class="shadow-layer-item">无阴影</span></div>`
+      : `<div class="shadow-layers">${layers.map((layer) => {
+          return `<span class="shadow-layer-item">${layer.label} · X${layer.x} Y${layer.y} B${layer.blur} S${layer.spread} α${Math.round(layer.alpha * 100)}%</span>`;
+        }).join("")}</div>`;
     return `
       <div class="shadow-card">
         <div class="shadow-preview-box" style="box-shadow:${cssValueText}"></div>
@@ -279,6 +285,7 @@ function renderShapes(tokens, defaultMode) {
           <span class="shadow-card-name">${name}</span>
           <span class="shadow-card-label">${shadowLabels[name] || name.split(".")[1].toUpperCase()}</span>
         </div>
+        ${layerHtml}
       </div>
     `;
   }).join("");

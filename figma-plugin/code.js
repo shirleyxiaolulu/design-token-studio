@@ -294,13 +294,30 @@ async function generatePreview(data) {
     r.fills = [{ type: 'SOLID', color: CARD_BORDER }];
   }
 
-  var SEC_ACCENT = { r: 0.18, g: 0.9, b: 0.55 };
+  // Section header: pill kicker badge + title + description (matching web)
   function addSection(parent, y, num, title, desc) {
-    addText(parent, 64, y, num + ' / ' + title, 12, 'Regular', SEC_ACCENT, 0.9);
-    addText(parent, 64, y + 26, title, 32, 'Semi Bold', TEXT_BRIGHT);
-    if (desc) addText(parent, 64, y + 70, desc, 14, 'Regular', TEXT_BRIGHT, 0.6);
-    addLine(parent, 64, y + (desc ? 112 : 70), 1052);
-    return y + (desc ? 130 : 88);
+    // Kicker pill badge: rounded bg + dot + uppercase label
+    var kickerW = 120;
+    var kickerBg = figma.createRectangle();
+    parent.appendChild(kickerBg);
+    kickerBg.x = 64; kickerBg.y = y;
+    kickerBg.resize(kickerW, 22);
+    kickerBg.cornerRadius = 999;
+    kickerBg.fills = [{ type: 'SOLID', color: brandRgb, opacity: 0.12 }];
+    // Kicker dot
+    var kickerDot = figma.createEllipse();
+    parent.appendChild(kickerDot);
+    kickerDot.x = 72; kickerDot.y = y + 8.5;
+    kickerDot.resize(5, 5);
+    kickerDot.fills = [{ type: 'SOLID', color: brandRgb }];
+    // Kicker text
+    addText(parent, 83, y + 3, 'section · ' + num, 11, 'Semi Bold', brandRgb);
+
+    // Title
+    addText(parent, 64, y + 32, title, 22, 'Semi Bold', TEXT_BRIGHT);
+    // Description
+    if (desc) addText(parent, 64, y + 64, desc, 13, 'Regular', TEXT_DIM);
+    return y + (desc ? 100 : 64);
   }
 
   async function makeSwatch(parent, x, y, w, h, label, hex, varName, lightText) {
@@ -703,14 +720,16 @@ async function generatePreview(data) {
       rCard.fills = [{ type: 'SOLID', color: CARD_BG }];
       rCard.strokes = [{ type: 'SOLID', color: CARD_BORDER }]; rCard.strokeWeight = 1;
 
-      // Preview swatch 72×40
+      // Preview swatch 72×40 with dashed border
       var rSwatch = figma.createRectangle();
       rCard.appendChild(rSwatch);
       rSwatch.x = 24; rSwatch.y = 20;
       rSwatch.resize(72, 40);
       rSwatch.cornerRadius = Math.min(rVal, 20);
-      rSwatch.fills = [{ type: 'SOLID', color: SWATCH_INNER }];
-      rSwatch.strokes = [{ type: 'SOLID', color: CARD_BORDER }]; rSwatch.strokeWeight = 1;
+      rSwatch.fills = [{ type: 'SOLID', color: brandRgb, opacity: 0.06 }];
+      rSwatch.strokes = [{ type: 'SOLID', color: brandRgb, opacity: 0.4 }];
+      rSwatch.strokeWeight = 1.5;
+      rSwatch.dashPattern = [4, 4];
 
       addText(rCard, 116, 20, rKey, 12, 'Regular', TEXT_BRIGHT);
       addText(rCard, 116, 42, rVal + 'px', 12, 'Regular', TEXT_DIM);

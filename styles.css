@@ -2199,6 +2199,20 @@ body[data-default-mode="light"] .toc-link.active {
   font-family: 'SF Mono', Menlo, monospace;
 }
 
+.shadow-layers {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.shadow-layer-item {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-family: 'SF Mono', Menlo, monospace;
+  line-height: 1.5;
+}
+
 /* =============================================
    v3: Spacing Bar List (horizontal bars)
    ============================================= */
