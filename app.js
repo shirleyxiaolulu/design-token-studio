@@ -355,6 +355,7 @@ function renderTypeShowcase(seed, tokens) {
 function renderExport(seed, tokens) {
   const exporters = {
     json: () => DesignExports.exportJson(seed, tokens, state.published ? state.version : "draft"),
+    ai: () => DesignExports.exportAiJson(seed, tokens, state.published ? state.version : "draft"),
     css: () => DesignExports.exportCss(tokens, seed.defaultMode),
     less: () => DesignExports.exportLess(tokens),
     ts: () => DesignExports.exportTs(seed, tokens, state.published ? state.version : "draft"),
