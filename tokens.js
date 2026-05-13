@@ -621,6 +621,22 @@
       tokens[name] = makeToken(name, "number", value, usage, { tier: "semantic" });
     });
 
+    // ===== v3: Motion / Transition Tokens =====
+    const motions = {
+      "motion.duration.fast": ["100ms", "微交互：开关、复选框"],
+      "motion.duration.normal": ["200ms", "常规过渡：按钮、颜色变化"],
+      "motion.duration.slow": ["350ms", "展开收起：手风琴、抽屉"],
+      "motion.duration.slower": ["500ms", "页面切换、模态弹窗"],
+      "motion.easing.default": ["cubic-bezier(0.25, 0.1, 0.25, 1)", "默认缓动"],
+      "motion.easing.in": ["cubic-bezier(0.42, 0, 1, 1)", "加速进入（元素退出时）"],
+      "motion.easing.out": ["cubic-bezier(0, 0, 0.58, 1)", "减速退出（元素进入时）"],
+      "motion.easing.spring": ["cubic-bezier(0.34, 1.56, 0.64, 1)", "弹性效果（按钮按下回弹）"],
+    };
+
+    Object.entries(motions).forEach(([name, [value, usage]]) => {
+      tokens[name] = makeToken(name, "string", value, usage, { tier: "primitive" });
+    });
+
     // ===== v2: Spacing Extras =====
     const extraSpaces = { 16: 64, 20: 80 };
     Object.entries(extraSpaces).forEach(([step, value]) => {

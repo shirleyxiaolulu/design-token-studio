@@ -461,6 +461,7 @@ function render() {
   els.constantColorTable.innerHTML = table(tokens, constantColorNames, { defaultMode: seed.defaultMode });
   // typeTable removed — type scale preview already shows all font tokens
   renderShapes(tokens, seed.defaultMode);
+  renderMotion(tokens);
   renderTypeShowcase(seed, tokens);
   renderContrast(tokens);
   renderOpacity(tokens);
@@ -517,6 +518,44 @@ function renderOpacity(tokens) {
       </div>
     `;
   }).join("");
+}
+
+function renderMotion(tokens) {
+  const container = document.querySelector("#motionTable");
+  if (!container) return;
+
+  const motionTokens = Object.values(tokens).filter((t) => t.name.startsWith("motion."));
+  const durations = motionTokens.filter((t) => t.name.includes("duration"));
+  const easings = motionTokens.filter((t) => t.name.includes("easing"));
+
+  const durationHtml = durations.map((t) => {
+    const ms = parseInt(t.value, 10);
+    return `
+      <div class="motion-card">
+        <div class="motion-preview">
+          <div class="motion-dot" style="animation-duration:${ms}ms"></div>
+        </div>
+        <span class="motion-name">${t.name}</span>
+        <span class="motion-value">${t.value}</span>
+        <span class="motion-usage">${t.usage}</span>
+      </div>
+    `;
+  }).join("");
+
+  const easingHtml = easings.map((t) => {
+    return `
+      <div class="motion-card">
+        <div class="motion-preview">
+          <div class="motion-dot" style="animation-timing-function:${t.value}"></div>
+        </div>
+        <span class="motion-name">${t.name}</span>
+        <span class="motion-value">${t.value}</span>
+        <span class="motion-usage">${t.usage}</span>
+      </div>
+    `;
+  }).join("");
+
+  container.innerHTML = durationHtml + easingHtml;
 }
 
 function showToast(message) {
