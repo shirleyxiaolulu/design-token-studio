@@ -559,9 +559,9 @@ async function generatePreview(data) {
 
   for (var gi = 0; gi < semanticGroups.length; gi++) {
     var group = semanticGroups[gi];
+    // Keep definition order from JSON (no sort), matching web display
     var tokens = Object.entries(data.colorTokens)
-      .filter(function(e) { return e[0].startsWith(group.prefix) && e[1].tier === 'semantic'; })
-      .sort(function(a, b) { return a[0].localeCompare(b[0]); });
+      .filter(function(e) { return e[0].startsWith(group.prefix) && e[1].tier === 'semantic'; });
 
     if (tokens.length === 0) continue;
 
