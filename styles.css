@@ -361,6 +361,13 @@ body[data-default-mode="light"] .sidebar::-webkit-scrollbar-thumb:hover {
   border: 1px solid var(--line);
   border-radius: 10px;
   background: rgba(8,12,16,0.42);
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.version-item.active {
+  border-color: var(--primary);
+  background: rgba(var(--primary-rgb, 101, 51, 232), 0.06);
 }
 
 .version-item button {
@@ -370,6 +377,13 @@ body[data-default-mode="light"] .sidebar::-webkit-scrollbar-thumb:hover {
   border-radius: 8px;
   background: transparent;
   color: var(--text-soft);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.version-item.active button {
+  border-color: var(--primary);
+  color: var(--primary);
 }
 
 body[data-default-mode="light"] .project-item,

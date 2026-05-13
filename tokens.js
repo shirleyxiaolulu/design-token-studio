@@ -391,14 +391,17 @@
         value: fontStack,
         usage: "Web 后台默认字体栈",
       },
-      "font.size.xs": { value: 12 },
+      "font.size.mini": { value: 10 },
+      "font.size.caption": { value: 12 },
       "font.size.sm": { value: 13 },
-      "font.size.md": { value: base },
+      "font.size.md": { value: 14 },
       "font.size.lg": { value: 16 },
-      "font.size.xl": { value: 20 },
-      "font.size.2xl": { value: 24 },
-      "font.size.3xl": { value: 32 },
-      "font.lineHeight.body": { value: Math.round(base * 1.55) },
+      "font.size.xl": { value: 18 },
+      "font.size.2xl": { value: 20 },
+      "font.size.3xl": { value: 24 },
+      "font.size.4xl": { value: 32 },
+      "font.size.5xl": { value: 40 },
+      "font.lineHeight.body": { value: 22 },
     };
   }
 

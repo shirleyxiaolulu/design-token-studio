@@ -4,6 +4,7 @@ const state = {
   version: "1.0.0",
   projects: [],
   activeProjectId: null,
+  activeVersionId: null,
   currentSeed: null,
   currentTokens: null,
   currentExport: "",
@@ -323,12 +324,16 @@ function renderTypeShowcase(seed, tokens) {
       ["mini", "角标、最小标注", "font.size.mini", 400, "0.04em", "角标、最小标注"],
     ]
     : [
-      ["3xl", "迅捷从未如此上头", "font.size.3xl", 800, "-0.03em", "展示标题、Hero 区"],
-      ["2xl", "无偏移、最高能瞬间", "font.size.2xl", 700, "-0.02em", "页面标题"],
-      ["xl", "起范也起波澜", "font.size.xl", 700, "-0.01em", "模块标题"],
-      ["lg", "写法规整", "font.size.lg", 400, "0em", "大正文、导语"],
+      ["5xl", "迅捷从未如此上头", "font.size.5xl", 800, "-0.03em", "展示标题、Hero 区"],
+      ["4xl", "无偏移、最高能瞬间", "font.size.4xl", 700, "-0.02em", "页面大标题"],
+      ["3xl", "起范也起波澜", "font.size.3xl", 700, "-0.01em", "页面标题"],
+      ["2xl", "写法规整", "font.size.2xl", 600, "0em", "模块标题"],
+      ["xl", "节制留白、动效轻提示", "font.size.xl", 600, "0em", "卡片标题"],
+      ["lg", "正文常用尺寸", "font.size.lg", 400, "0em", "大正文、导语"],
       ["md", "辅助说明 / 表格", "font.size.md", 400, "0em", "正文默认"],
-      ["xs", "Label / Caption", "font.size.xs", 500, "0.04em", "标签、辅助"],
+      ["sm", "脚注、次要信息", "font.size.sm", 400, "0.02em", "辅助文本"],
+      ["caption", "时间戳、标签", "font.size.caption", 400, "0.04em", "标签、图注"],
+      ["mini", "角标、最小标注", "font.size.mini", 400, "0.04em", "角标、最小标注"],
     ];
 
   els.typeIntro.textContent = label.intro;
@@ -399,19 +404,34 @@ function renderVersions() {
   const project = activeProject();
   const versions = project?.versions || [];
   els.versionCount.textContent = String(versions.length);
-  els.versionList.innerHTML = versions.length ? versions.map((version) => {
+  // "当前草稿" entry at top
+  const draftActive = !state.activeVersionId ? "active" : "";
+  const draftEntry = `
+    <div class="version-item ${draftActive}">
+      <div>
+        <strong>当前草稿</strong>
+        <span>编辑中</span>
+      </div>
+      <button type="button" data-restore-version="current">${draftActive ? "当前" : "切换"}</button>
+    </div>
+  `;
+
+  const versionEntries = versions.map((version) => {
     const date = new Date(version.publishedAt).toLocaleString("zh-CN", { hour12: false });
+    const isActive = state.activeVersionId === version.id ? "active" : "";
     return `
-      <div class="version-item">
+      <div class="version-item ${isActive}">
         <div>
           <strong>v${version.version}</strong>
           <span>${date}</span>
-          <p>${version.changelog || "无 changelog"}</p>
+          <p>${version.changelog || "无变更说明"}</p>
         </div>
-        <button type="button" data-restore-version="${version.id}">恢复</button>
+        <button type="button" data-restore-version="${version.id}">${isActive ? "当前" : "切换"}</button>
       </div>
     `;
-  }).join("") : `<p class="empty-state">还没有发布版本</p>`;
+  }).join("");
+
+  els.versionList.innerHTML = draftEntry + versionEntries;
 }
 
 function render() {
@@ -656,14 +676,34 @@ function publishSnapshot() {
   showToast(`已发布本地版本 v${version}`);
 }
 
-function restoreVersion(versionId) {
+function switchToVersion(versionId) {
   const project = activeProject();
+  if (!project) return;
+
+  // "current" means go back to draft
+  if (versionId === "current") {
+    state.activeVersionId = null;
+    state.published = false;
+    applySeed(project.draft || currentSeed());
+    showToast("已切回当前草稿");
+    render();
+    return;
+  }
+
   const version = project.versions.find((item) => item.id === versionId);
   if (!version) return;
+
+  // Save current draft before switching
+  if (!state.activeVersionId) {
+    project.draft = currentSeed();
+    project.updatedAt = new Date().toISOString();
+  }
+
+  state.activeVersionId = versionId;
   state.version = version.version;
   state.published = true;
   applySeed(version.seed);
-  showToast(`已恢复 v${version.version}`);
+  showToast(`已切换到 v${version.version}（点击"当前草稿"切回）`);
   render();
 }
 
@@ -839,7 +879,7 @@ function bindEvents() {
   });
   els.versionList.addEventListener("click", (event) => {
     const button = event.target.closest("[data-restore-version]");
-    if (button) restoreVersion(button.dataset.restoreVersion);
+    if (button) switchToVersion(button.dataset.restoreVersion);
   });
 
   els.downloadButton.addEventListener("click", () => {
