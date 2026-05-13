@@ -927,6 +927,25 @@ function bindEvents() {
     setTimeout(() => { btn.textContent = original; }, 1500);
   });
 
+  document.getElementById("copyAiPromptButton").addEventListener("click", async () => {
+    const seed = currentSeed();
+    const { tokens } = DesignTokens.generateTokens(seed);
+    const prompt = DesignExports.exportAiPrompt(seed, tokens);
+    try {
+      await navigator.clipboard.writeText(prompt);
+    } catch (e) {
+      const ta = document.createElement("textarea");
+      ta.value = prompt;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      ta.remove();
+    }
+    const btn = document.getElementById("copyAiPromptButton");
+    btn.textContent = "已复制 ✓";
+    setTimeout(() => { btn.textContent = "复制 AI Prompt"; }, 1500);
+  });
+
   els.publishButton.addEventListener("click", () => {
     els.publishVersion.value = state.version;
     els.publishDialog.showModal();

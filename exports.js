@@ -281,6 +281,91 @@
     return JSON.stringify(flat, null, 2);
   }
 
+  // AI Prompt: concise design guidelines for pasting into any AI tool
+  function exportAiPrompt(seed, tokens) {
+    const T = DesignTokens;
+    const platNames = { "ios-app": "iOS App (375×812)", "web-admin": "Web 后台 (1440)", "app-web": "App+Web 同步" };
+    const platLabel = platNames[seed.platform] || seed.platform;
+
+    // Collect semantic colors (resolved)
+    const colorLines = [];
+    const semanticPrefixes = ["color.brand.", "color.function.", "color.text.", "color.bg.", "color.border.", "color.constant."];
+    semanticPrefixes.forEach((prefix) => {
+      Object.values(tokens).forEach((t) => {
+        if (t.name.startsWith(prefix) && t.tier === "semantic") {
+          const light = T.tokenValue(t, "light", tokens);
+          if (light && !light.startsWith("{") && !light.startsWith("rgba")) {
+            colorLines.push(`${t.name}: ${light} — ${t.usage}`);
+          }
+        }
+      });
+    });
+
+    // Font sizes
+    const fontLines = [];
+    Object.values(tokens).forEach((t) => {
+      if (t.name.startsWith("font.size.")) {
+        fontLines.push(`${t.name}: ${t.value}px`);
+      }
+    });
+
+    // Spacing
+    const spaceLines = [];
+    Object.values(tokens).forEach((t) => {
+      if (t.name.startsWith("space.")) {
+        spaceLines.push(`${t.name}: ${t.value}`);
+      }
+    });
+
+    // Radius
+    const radiusLines = [];
+    Object.values(tokens).forEach((t) => {
+      if (t.name.startsWith("radius.")) {
+        radiusLines.push(`${t.name}: ${t.value}`);
+      }
+    });
+
+    return `你是一位严格遵循设计规范的 UI 设计师。以下是当前项目的设计规范，生成设计稿时必须遵循。
+
+## 项目
+${seed.specName} · ${platLabel} · 品牌色 ${seed.primaryColor} · ${seed.defaultMode === "dark" ? "深色" : "浅色"}模式
+
+## 语义色（${seed.defaultMode} 模式值）
+${colorLines.join("\n")}
+
+## 字号
+${fontLines.join(" / ")}
+
+## 间距（4px 基准）
+${spaceLines.join(" / ")}
+
+## 圆角
+${radiusLines.join(" / ")}
+
+## 组件规则
+- 主按钮：brand.primary 背景 + constant.white 文字 + radius.md + 间距 space.4×space.2
+- 次按钮：bg.surface 背景 + text.primary 文字 + border.default 描边 + radius.md
+- 危险按钮：function.danger 背景 + constant.white 文字 + radius.md
+- 输入框：bg.surface 背景 + border.default 描边 + 聚焦 brand.primary + radius.md + 间距 space.3×space.2
+- 卡片：bg.surface 背景 + border.subtle 描边 + radius.lg + shadow.sm + 内边距 space.4
+- 标签：brand.subtle 背景 + brand.primary 文字 + radius.full
+- 列表项：bg.surface 背景 + border.subtle 底部分割 + 间距 space.4×space.3
+- 弹窗：bg.elevated 背景 + shadow.overlay + radius.xl + 内边距 space.6
+- 导航栏：bg.surface 背景 + text.primary 标题 + border.subtle 底部线 + 高度 44px
+- Tab 栏：bg.surface 背景 + brand.primary 选中 + text.tertiary 未选中 + 高度 49px
+
+## 动效
+快速 100ms / 常规 200ms / 缓慢 350ms / 页面 500ms
+缓动 cubic-bezier(0.25,0.1,0.25,1) / 弹性 cubic-bezier(0.34,1.56,0.64,1)
+
+## 约束
+- 所有颜色、字号、间距必须从以上 token 取值，禁止自创
+- 原型图只提取功能结构和信息层级，不复制其布局、颜色和字号
+- 间距使用 4px 倍数
+- 文本至少区分 primary/secondary/tertiary 三个层级
+- 品牌色（primary/hover/active）和辅助色不跟随深浅模式变化`;
+  }
+
   function createExports(seed, tokens, version) {
     return {
       json: exportJson(seed, tokens, version),
@@ -302,6 +387,7 @@
       exportTailwind,
       exportFigmaPlugin,
       exportAiJson,
+      exportAiPrompt,
       createExports,
     },
   });
