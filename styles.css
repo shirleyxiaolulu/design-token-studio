@@ -2122,8 +2122,8 @@ body[data-default-mode="light"] .toc-link.active {
 .radius-preview {
   width: 64px;
   height: 64px;
-  background: rgba(var(--primary-rgb, 101, 51, 232), 0.18);
-  border: 1px solid rgba(var(--primary-rgb, 101, 51, 232), 0.25);
+  background: rgba(var(--primary-rgb, 101, 51, 232), 0.06);
+  border: 1.5px dashed rgba(var(--primary-rgb, 101, 51, 232), 0.4);
   flex-shrink: 0;
 }
 

@@ -609,11 +609,12 @@
 
     // ===== v2: Opacity Tokens =====
     const opacities = {
-      "opacity.hover": [0.08, "悬停叠加透明度"],
-      "opacity.pressed": [0.12, "按下叠加透明度"],
-      "opacity.disabled": [0.38, "禁用元素透明度"],
-      "opacity.overlay": [0.5, "遮罩层透明度"],
-      "opacity.subtle": [0.04, "微弱叠加透明度"],
+      "opacity.5": [0.05, "微弱叠加、极轻悬停"],
+      "opacity.10": [0.10, "悬停态、轻量叠加"],
+      "opacity.20": [0.20, "按下态、次级遮罩"],
+      "opacity.40": [0.40, "禁用态、中度遮罩"],
+      "opacity.60": [0.60, "遮罩层、浮层底"],
+      "opacity.80": [0.80, "重度遮罩、模态背景"],
     };
 
     Object.entries(opacities).forEach(([name, [value, usage]]) => {
