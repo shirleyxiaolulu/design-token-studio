@@ -305,15 +305,15 @@ function renderTypeShowcase(seed, tokens) {
   const bodyLineHeight = tokens["font.lineHeight.body"].value;
   const rows = seed.platform === "ios-app"
     ? [
-      ["largeTitle", "迅捷从未如此上头", "font.size.largeTitle", 800, "-0.04em", "页面大标题、首屏展示"],
-      ["title1", "无偏移、最高能瞬间", "font.size.title1", 700, "-0.02em", "一级标题、模块头"],
-      ["title2", "起范也起波澜", "font.size.title2", 700, "-0.01em", "二级标题、卡片头"],
+      ["largeTitle", "迅捷从未如此上头", "font.size.largeTitle", 700, "-0.02em", "大标题、首屏展示"],
+      ["title1", "无偏移、最高能瞬间", "font.size.title1", 700, "-0.01em", "一级标题、模块头"],
+      ["title2", "起范也起波澜", "font.size.title2", 600, "0em", "二级标题、卡片头"],
       ["title3", "写法规整", "font.size.title3", 600, "0em", "三级标题、列表组头"],
       ["body", "正文常用尺寸", "font.size.body", 400, "0em", "正文、段落"],
-      ["subhead", "节制留白、动效轻提示", "font.size.subhead", 400, "0em", "副标题、辅助说明"],
-      ["footnote", "层级清晰", "font.size.footnote", 500, "0.02em", "脚注、次要信息"],
-      ["caption1", "辅助说明 / 表格", "font.size.caption1", 500, "0.04em", "标签、图注"],
-      ["caption2", "Label / Caption", "font.size.caption2", 500, "0.04em", "最小标注"],
+      ["subhead", "节制留白、动效轻提示", "font.size.subhead", 400, "0em", "副标题、列表描述"],
+      ["footnote", "脚注、次要信息", "font.size.footnote", 400, "0.02em", "脚注、次要信息"],
+      ["caption", "时间戳、辅助标签", "font.size.caption", 400, "0.04em", "时间戳、辅助标签"],
+      ["mini", "角标、最小标注", "font.size.mini", 400, "0.04em", "角标、最小标注"],
     ]
     : [
       ["3xl", "迅捷从未如此上头", "font.size.3xl", 800, "-0.03em", "展示标题、Hero 区"],
