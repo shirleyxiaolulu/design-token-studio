@@ -563,55 +563,81 @@ async function generatePreview(data) {
 
   figma.ui.postMessage({ type: 'progress', message: '语义色完成，正在生成字体/圆角/间距...' });
 
-  // ===== SECTION 03: TYPOGRAPHY — matching source =====
-  Y = addSection(frame, Y + 16, '03', '字体排版',
-    '字体、字号和行高共同决定信息层级，iOS 设计稿默认以苹方为中文主字体。');
+  // ===== SECTION 03: FONT FAMILY =====
+  Y = addSection(frame, Y + 16, '03', '字体家族',
+    '系统默认采用苹方 PingFang SC，保持中文界面在设计稿中的清晰度与一致性。');
 
-  // Latin font card: 500×178 at x=64
-  var latCard = figma.createFrame();
-  frame.appendChild(latCard);
-  latCard.name = 'Font Card / Latin';
-  latCard.x = 64; latCard.y = Y;
-  latCard.resize(500, 178); latCard.cornerRadius = 12;
-  latCard.fills = [{ type: 'SOLID', color: CARD_BG }];
-  latCard.strokes = [{ type: 'SOLID', color: CARD_BORDER }]; latCard.strokeWeight = 1;
-  addText(latCard, 28, 24, 'PRIMARY · LATIN', 12, 'Regular', TEXT_MUTED);
-  addText(latCard, 28, 58, 'PingFang SC', 50, 'Regular', TEXT_BRIGHT);
-  addText(latCard, 28, 130, 'Regular 400    Medium 500    Semibold 600    Bold 700', 13, 'Regular', TEXT_DIM);
-
-  // CJK font card: 520×178 at x=596
+  // CJK font card: left half
   var cjkCard = figma.createFrame();
   frame.appendChild(cjkCard);
   cjkCard.name = 'Font Card / CJK';
-  cjkCard.x = 596; cjkCard.y = Y;
-  cjkCard.resize(520, 178); cjkCard.cornerRadius = 12;
+  cjkCard.x = 64; cjkCard.y = Y;
+  cjkCard.resize(510, 240); cjkCard.cornerRadius = 12;
   cjkCard.fills = [{ type: 'SOLID', color: CARD_BG }];
   cjkCard.strokes = [{ type: 'SOLID', color: CARD_BORDER }]; cjkCard.strokeWeight = 1;
-  addText(cjkCard, 28, 24, 'PRIMARY · CJK', 12, 'Regular', TEXT_MUTED);
-  addText(cjkCard, 28, 58, '苹方', 50, 'Regular', TEXT_BRIGHT);
-  addText(cjkCard, 28, 130, '系统默认采用苹方 PingFang SC，保持中文界面在 macOS / iOS 设计稿中的清晰度。', 12, 'Regular', TEXT_DIM);
+  addText(cjkCard, 25, 24, 'CJK · 中文', 12, 'Regular', TEXT_MUTED);
+  addText(cjkCard, 25, 50, '苹方', 56, 'Regular', TEXT_BRIGHT);
+  addText(cjkCard, 25, 116, 'PingFang SC, system-ui', 12, 'Regular', TEXT_MUTED);
+  // Weight specimens
+  var cjkWeights = [['字', 'Light', '300', 0], ['字', 'Regular', '400', 72], ['字', 'Medium', '500', 144], ['字', 'Semibold', '600', 216], ['字', 'Bold', '700', 288]];
+  for (var cwi = 0; cwi < cjkWeights.length; cwi++) {
+    var cw = cjkWeights[cwi];
+    addText(cjkCard, 25 + cw[3], 148, cw[0], 32, 'Regular', TEXT_BRIGHT);
+    addText(cjkCard, 25 + cw[3], 186, cw[1], 11, 'Regular', TEXT_DIM);
+    addText(cjkCard, 25 + cw[3], 202, cw[2], 11, 'Regular', TEXT_MUTED);
+  }
 
-  Y += 214; // 178 + 36 gap
+  // Latin font card: right half
+  var latCard = figma.createFrame();
+  frame.appendChild(latCard);
+  latCard.name = 'Font Card / Latin';
+  latCard.x = 590; latCard.y = Y;
+  latCard.resize(526, 240); latCard.cornerRadius = 12;
+  latCard.fills = [{ type: 'SOLID', color: CARD_BG }];
+  latCard.strokes = [{ type: 'SOLID', color: CARD_BORDER }]; latCard.strokeWeight = 1;
+  addText(latCard, 25, 24, 'Latin · 西文', 12, 'Regular', TEXT_MUTED);
+  addText(latCard, 25, 50, 'Inter', 56, 'Regular', TEXT_BRIGHT);
+  addText(latCard, 25, 116, 'Inter, system-ui', 12, 'Regular', TEXT_MUTED);
+  var latWeights = [['Aa', 'Regular', '400', 0], ['Aa', 'Medium', '500', 72], ['Aa', 'Semibold', '600', 144], ['Aa', 'Bold', '700', 216]];
+  for (var lwi = 0; lwi < latWeights.length; lwi++) {
+    var lw = latWeights[lwi];
+    addText(latCard, 25 + lw[3], 148, lw[0], 32, 'Regular', TEXT_BRIGHT);
+    addText(latCard, 25 + lw[3], 186, lw[1], 11, 'Regular', TEXT_DIM);
+    addText(latCard, 25 + lw[3], 202, lw[2], 11, 'Regular', TEXT_MUTED);
+  }
 
-  // Type Scale card: 1052×auto
-  var fontTokens = Object.entries(data.dimTokens || {}).filter(function(e) { return e[0].startsWith('font.size.'); });
+  Y += 276; // 240 + 36 gap
+
+  // ===== SECTION 04: TYPE SCALE =====
+  Y = addSection(frame, Y, '04', '字号规范',
+    '字体、字号和行高共同决定信息层级。每个 token 定义从展示标题到辅助说明的完整排印体系。');
+
   var typeScaleRows;
   if (data.platform === 'ios-app') {
     typeScaleRows = [
-      ['caption2', 11, '700'], ['caption1', 12, '700'], ['footnote', 13, '700'],
-      ['subhead', 15, '700'], ['body', 17, '700'], ['title3', 20, '400'],
-      ['title2', 22, '400'], ['title1', 28, '400'], ['largeTitle', 34, '400']
+      ['text.largeTitle', 28, '700', '大标题、首屏展示'],
+      ['text.title1', 22, '700', '一级标题、模块头'],
+      ['text.title2', 18, '600', '二级标题、卡片头'],
+      ['text.title3', 16, '600', '三级标题、列表组头'],
+      ['text.body', 14, '400', '正文常用尺寸'],
+      ['text.subhead', 13, '400', '副标题、列表描述'],
+      ['text.footnote', 12, '400', '脚注、次要信息'],
+      ['text.caption', 11, '400', '时间戳、辅助标签'],
+      ['text.mini', 10, '400', '角标、最小标注']
     ];
   } else {
     typeScaleRows = [
-      ['xs', 12, '500'], ['sm', 13, '500'], ['md', 14, '400'],
-      ['lg', 16, '400'], ['xl', 20, '700'], ['2xl', 24, '700'], ['3xl', 32, '800']
+      ['text.3xl', 32, '800', '展示标题、Hero 区'],
+      ['text.2xl', 24, '700', '页面标题'],
+      ['text.xl', 20, '700', '模块标题'],
+      ['text.lg', 16, '400', '大正文、导语'],
+      ['text.md', 14, '400', '正文默认'],
+      ['text.xs', 12, '500', '标签、辅助']
     ];
   }
+
   var tsRowH = 64;
   var tsCardH = 64 + typeScaleRows.length * tsRowH + 10;
-  var bodyToken = (data.dimTokens || {})['font.size.body'] || (data.dimTokens || {})['font.size.md'];
-  var baseSize = bodyToken ? (typeof bodyToken.value === 'string' ? parseInt(bodyToken.value) : bodyToken.value) : 17;
 
   var tsCard = figma.createFrame();
   frame.appendChild(tsCard);
@@ -622,26 +648,24 @@ async function generatePreview(data) {
   tsCard.strokes = [{ type: 'SOLID', color: CARD_BORDER }]; tsCard.strokeWeight = 1;
   tsCard.clipsContent = true;
 
-  addText(tsCard, CARD_PAD, 22, '类型层级 · Type Scale', 18, 'Regular', TEXT_BRIGHT);
-  addText(tsCard, 850, 24, 'BASE · ' + baseSize + 'px', 12, 'Regular', TEXT_MUTED);
+  addText(tsCard, CARD_PAD, 22, '字号规范 · Type Scale', 18, 'Regular', TEXT_BRIGHT);
+  addText(tsCard, 850, 24, 'BASE · 14px', 12, 'Regular', TEXT_MUTED);
   var tsDivTop = figma.createRectangle();
   tsCard.appendChild(tsDivTop); tsDivTop.x = CARD_PAD; tsDivTop.y = 64;
   tsDivTop.resize(INNER_W, 1); tsDivTop.fills = [{ type: 'SOLID', color: CARD_BORDER }];
 
   for (var tsi = 0; tsi < typeScaleRows.length; tsi++) {
     var tsRow = typeScaleRows[tsi];
-    var tsName = tsRow[0], tsSize = tsRow[1], tsWeight = tsRow[2];
+    var tsName = tsRow[0], tsSize = tsRow[1], tsWeight = tsRow[2], tsUsage = tsRow[3];
     var tsY = 64 + tsi * tsRowH;
-    // Token name
-    addText(tsCard, CARD_PAD, tsY + 36, tsName, 12, 'Regular', TEXT_MUTED);
-    // Sample text at actual size
-    var sampleText = data.platform === 'ios-app' ? '追剧从未如此上头' : 'Design System';
-    if (tsSize >= 20) sampleText = data.platform === 'ios-app' ? '今日更新 3 集，会员抢先看完结' : 'Design System v2';
-    addText(tsCard, 230, tsY + 24, sampleText, tsSize, 'Regular', TEXT_BRIGHT);
-    // Size
-    addText(tsCard, 820, tsY + 36, tsSize + 'px', 12, 'Regular', TEXT_MUTED);
-    // Weight
-    addText(tsCard, 900, tsY + 36, '字重 ' + tsWeight, 12, 'Regular', TEXT_MUTED);
+    var tsLh = Math.round(tsSize * 1.5);
+    // Left: token name + spec
+    addText(tsCard, CARD_PAD, tsY + 18, tsName, 13, 'Semi Bold', TEXT_BRIGHT);
+    addText(tsCard, CARD_PAD, tsY + 38, tsSize + ' / ' + tsLh + ' · w' + tsWeight, 11, 'Regular', TEXT_MUTED);
+    // Center: usage text at actual size
+    addText(tsCard, 230, tsY + 22, tsUsage, tsSize, 'Regular', TEXT_BRIGHT);
+    // Right: size badge
+    addText(tsCard, 950, tsY + 22, tsSize + 'px', 11, 'Semi Bold', TEXT_DIM);
     // Row divider
     if (tsi < typeScaleRows.length - 1) {
       var tsDiv = figma.createRectangle();
@@ -651,11 +675,11 @@ async function generatePreview(data) {
   }
   Y += tsCardH + 48;
 
-  // ===== SECTION 04: RADIUS — card grid matching source =====
+  // ===== SECTION 05: RADIUS =====
   var radiusTokens = Object.entries(data.dimTokens || {}).filter(function(e) { return e[0].startsWith('radius.'); });
   if (radiusTokens.length > 0) {
-    Y = addSection(frame, Y, '04', '圆角',
-      '圆角用于控制界面气质，从克制的工具界面到柔和的移动体验都可以映射到统一变量。');
+    Y = addSection(frame, Y, '05', '圆角',
+      '7 个圆角变量定义界面的视觉气质，柔和策略适合移动端，克制策略适合工具型产品。');
     radiusTokens.sort(function(a, b) {
       var av = typeof a[1].value === 'string' ? parseInt(a[1].value) : a[1].value;
       var bv = typeof b[1].value === 'string' ? parseInt(b[1].value) : b[1].value;
@@ -695,8 +719,8 @@ async function generatePreview(data) {
     Y += rTotalRows * (rCardH + rGapV) + 16;
   }
 
-  // ===== SECTION 05: SHADOWS — horizontal cards matching source =====
-  Y = addSection(frame, Y + 16, '05', '阴影',
+  // ===== SECTION 06: SHADOWS =====
+  Y = addSection(frame, Y + 16, '06', '阴影',
     '阴影区分浅色和深色界面，深色模式使用高光、轮廓和投影组合来表达层级。');
 
   var shadowDefs = [
@@ -740,10 +764,10 @@ async function generatePreview(data) {
   }
   Y += shadowDefs.length * 112 + 32;
 
-  // ===== SECTION 06: SPACING — card grid matching source =====
+  // ===== SECTION 07: SPACING =====
   var spaceTokens = Object.entries(data.dimTokens || {}).filter(function(e) { return e[0].startsWith('space.'); });
   if (spaceTokens.length > 0) {
-    Y = addSection(frame, Y, '06', '间距与栅格',
+    Y = addSection(frame, Y, '07', '间距',
       '间距变量用于页面留白、组件内边距和列表节奏，保证界面在不同页面中保持一致密度。');
 
     spaceTokens.sort(function(a, b) {
