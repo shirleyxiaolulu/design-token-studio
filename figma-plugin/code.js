@@ -582,7 +582,7 @@ async function generatePreview(data) {
     for (var oi = 0; oi < opacityTokens.length; oi++) {
       var oEntry = opacityTokens[oi];
       var oVal = typeof oEntry[1].value === 'number' ? oEntry[1].value : parseFloat(oEntry[1].value);
-      opRows.push({ name: oEntry[0], light: String(oVal), dark: '-', usage: oEntry[1].usage || '', varName: '' });
+      opRows.push({ name: oEntry[0], light: Math.round(oVal * 100) + '%', dark: Math.round(oVal * 100) + '%', usage: oEntry[1].usage || '', varName: '' });
     }
     Y = await buildCategoryCard(frame, Y, 'Opacity (v2)', '交互状态和遮罩层的透明度变量。', opRows);
     Y += 28;
