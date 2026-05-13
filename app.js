@@ -311,50 +311,76 @@ function renderShapes(tokens, defaultMode) {
 function renderTypeShowcase(seed, tokens) {
   const label = DesignTokens.fontLabels[seed.localFont];
   const bodyLineHeight = tokens["font.lineHeight.body"].value;
-  const rows = seed.platform === "ios-app"
-    ? [
-      ["largeTitle", "迅捷从未如此上头", "font.size.largeTitle", 700, "-0.02em", "大标题、首屏展示"],
-      ["title1", "无偏移、最高能瞬间", "font.size.title1", 700, "-0.01em", "一级标题、模块头"],
-      ["title2", "起范也起波澜", "font.size.title2", 600, "0em", "二级标题、卡片头"],
-      ["title3", "写法规整", "font.size.title3", 600, "0em", "三级标题、列表组头"],
-      ["body", "正文常用尺寸", "font.size.body", 400, "0em", "正文、段落"],
-      ["subhead", "节制留白、动效轻提示", "font.size.subhead", 400, "0em", "副标题、列表描述"],
-      ["footnote", "脚注、次要信息", "font.size.footnote", 400, "0.02em", "脚注、次要信息"],
-      ["caption", "时间戳、辅助标签", "font.size.caption", 400, "0.04em", "时间戳、辅助标签"],
-      ["mini", "角标、最小标注", "font.size.mini", 400, "0.04em", "角标、最小标注"],
-    ]
-    : [
-      ["5xl", "迅捷从未如此上头", "font.size.5xl", 800, "-0.03em", "展示标题、Hero 区"],
-      ["4xl", "无偏移、最高能瞬间", "font.size.4xl", 700, "-0.02em", "页面大标题"],
-      ["3xl", "起范也起波澜", "font.size.3xl", 700, "-0.01em", "页面标题"],
-      ["2xl", "写法规整", "font.size.2xl", 600, "0em", "模块标题"],
-      ["xl", "节制留白、动效轻提示", "font.size.xl", 600, "0em", "卡片标题"],
-      ["lg", "正文常用尺寸", "font.size.lg", 400, "0em", "大正文、导语"],
-      ["md", "辅助说明 / 表格", "font.size.md", 400, "0em", "正文默认"],
-      ["sm", "脚注、次要信息", "font.size.sm", 400, "0.02em", "辅助文本"],
-      ["caption", "时间戳、标签", "font.size.caption", 400, "0.04em", "标签、图注"],
-      ["mini", "角标、最小标注", "font.size.mini", 400, "0.04em", "角标、最小标注"],
-    ];
+  const iosRows = [
+    ["largeTitle", "font.size.largeTitle", 700, "大标题、首屏展示"],
+    ["title1", "font.size.title1", 700, "一级标题、模块头"],
+    ["title2", "font.size.title2", 600, "二级标题、卡片头"],
+    ["title3", "font.size.title3", 600, "三级标题、列表组头"],
+    ["body", "font.size.body", 400, "正文、段落"],
+    ["subhead", "font.size.subhead", 400, "副标题、列表描述"],
+    ["footnote", "font.size.footnote", 400, "脚注、次要信息"],
+    ["caption", "font.size.caption", 400, "时间戳、辅助标签"],
+    ["mini", "font.size.mini", 400, "角标、最小标注"],
+  ];
+  const webRows = [
+    ["5xl", "font.size.5xl", 800, "展示标题、Hero 区"],
+    ["4xl", "font.size.4xl", 700, "页面大标题"],
+    ["3xl", "font.size.3xl", 700, "页面标题"],
+    ["2xl", "font.size.2xl", 600, "模块标题"],
+    ["xl", "font.size.xl", 600, "卡片标题"],
+    ["lg", "font.size.lg", 400, "大正文、导语"],
+    ["md", "font.size.md", 400, "正文默认"],
+    ["sm", "font.size.sm", 400, "辅助文本"],
+    ["caption", "font.size.caption", 400, "标签、图注"],
+    ["mini", "font.size.mini", 400, "角标、最小标注"],
+  ];
+
+  // App+Web: token names have ios./web. prefix
+  const iosRowsAW = iosRows.map(([n, t, w, u]) => [n, t.replace("font.size.", "font.size.ios."), w, u]);
+  const webRowsAW = webRows.map(([n, t, w, u]) => [n, t.replace("font.size.", "font.size.web."), w, u]);
+
+  function renderScaleRows(rows, tokenPrefix) {
+    return rows.map(([level, tokenName, weight, usage]) => {
+      const token = tokens[tokenName];
+      if (!token) return "";
+      const size = token.value;
+      const lh = Math.round(size * 1.42);
+      const isLarge = size >= 22;
+      const displayName = tokenName.replace("font.size.", "text.");
+      return `
+        <div class="type-scale-row${isLarge ? ' large' : ''}">
+          <div class="type-scale-token">
+            <strong>${displayName}</strong>
+            <span>${size} / ${lh} · w${weight}</span>
+          </div>
+          <span class="type-scale-sample" style="font-size:${size}px;font-weight:${weight};line-height:1.3">${usage}</span>
+          <span class="type-scale-size">${size}px</span>
+        </div>
+      `;
+    }).join("");
+  }
 
   els.typeIntro.textContent = label.intro;
   els.fontCjkName.textContent = label.cjk;
   els.fontLatinName.textContent = label.latin;
-  els.typeScaleMeta.textContent = `BASE · ${seed.baseFontSize}px`;
-  els.typeScalePreview.innerHTML = rows.map(([level, sample, tokenName, weight, tracking, usage]) => {
-    const size = tokens[tokenName].value;
-    const lh = Math.round(size * 1.42);
-    const isLarge = size >= 22;
-    return `
-      <div class="type-scale-row${isLarge ? ' large' : ''}">
-        <div class="type-scale-token">
-          <strong>${tokenName.replace("font.size.", "text.")}</strong>
-          <span>${size} / ${lh} · w${weight}</span>
-        </div>
-        <span class="type-scale-sample" style="font-size:${size}px;font-weight:${weight};letter-spacing:${tracking};line-height:1.3">${usage || sample}</span>
-        <span class="type-scale-size">${size}px</span>
+  els.typeScaleMeta.textContent = `BASE · 14px`;
+
+  if (seed.platform === "app-web") {
+    els.typeScalePreview.innerHTML = `
+      <div class="type-scale-group">
+        <div class="type-scale-group-title">iOS · 375×812</div>
+        ${renderScaleRows(iosRowsAW)}
+      </div>
+      <div class="type-scale-group">
+        <div class="type-scale-group-title">Web · Desktop</div>
+        ${renderScaleRows(webRowsAW)}
       </div>
     `;
-  }).join("");
+  } else if (seed.platform === "ios-app") {
+    els.typeScalePreview.innerHTML = renderScaleRows(iosRows);
+  } else {
+    els.typeScalePreview.innerHTML = renderScaleRows(webRows);
+  }
 }
 
 function renderExport(seed, tokens) {
@@ -385,7 +411,8 @@ function renderProjects() {
       const active = project.id === state.activeProjectId ? "active" : "";
       const date = new Date(project.updatedAt).toLocaleDateString("zh-CN");
       const color = project.draft?.primaryColor || "#6533E8";
-      const platform = project.draft?.platform === "ios-app" ? "iOS" : "Web";
+      const platNames = { "ios-app": "iOS", "web-admin": "Web", "app-web": "App+Web" };
+      const platform = platNames[project.draft?.platform] || "iOS";
       return `
         <div class="timeline-item ${active}" data-project-id="${project.id}">
           <span class="timeline-color" style="background:${color}"></span>
@@ -447,7 +474,8 @@ function render() {
   const borderColorNames = Object.keys(tokens).filter((name) => name.startsWith("color.border."));
   const constantColorNames = Object.keys(tokens).filter((name) => name.startsWith("color.constant."));
   const typeNames = Object.keys(tokens).filter((name) => name.startsWith("font."));
-  const platformName = seed.platform === "ios-app" ? "iOS App" : "Web 后台";
+  const platformNames = { "ios-app": "iOS App", "web-admin": "Web 后台", "app-web": "App+Web" };
+  const platformName = platformNames[seed.platform] || seed.platform;
   const modeName = seed.defaultMode === "dark" ? "Dark 默认" : "Light 默认";
 
   document.documentElement.style.setProperty("--primary", seed.primaryColor);

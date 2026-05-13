@@ -2165,6 +2165,21 @@ body[data-default-mode="light"] .toc-link.active {
   color: var(--text);
 }
 
+.type-scale-group {
+  margin-bottom: 8px;
+}
+
+.type-scale-group-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--primary);
+  padding: 12px 0 8px;
+  border-bottom: 2px solid var(--primary);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 .type-scale-size {
   font-size: 11px;
   font-weight: 600;

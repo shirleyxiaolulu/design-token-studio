@@ -389,7 +389,8 @@ async function generatePreview(data) {
 
   // ===== HEADER =====
   addText(frame, 64, 64, data.name, 42, 'Bold', TEXT_BRIGHT);
-  const platLabel = data.platform === 'ios-app' ? 'iOS App' : 'Web 后台';
+  var platLabels = { 'ios-app': 'iOS App', 'web-admin': 'Web 后台', 'app-web': 'App+Web' };
+  const platLabel = platLabels[data.platform] || data.platform;
   addText(frame, 64, 116, `v${data.version} · ${platLabel} · Brand: ${brandHex}`, 14, 'Regular', TEXT_BRIGHT, 0.5);
   addText(frame, 64, 146, '由 Web 端设计规范生成器导出，经 Figma 插件同步。色块已绑定 Variables。', 14, 'Regular', TEXT_BRIGHT, 0.6);
 
@@ -652,36 +653,50 @@ async function generatePreview(data) {
   Y = addSection(frame, Y, '04', '字号规范',
     '字体、字号和行高共同决定信息层级。每个 token 定义从展示标题到辅助说明的完整排印体系。');
 
-  var typeScaleRows;
-  if (data.platform === 'ios-app') {
-    typeScaleRows = [
-      ['text.largeTitle', 28, '700', '大标题、首屏展示'],
-      ['text.title1', 22, '700', '一级标题、模块头'],
-      ['text.title2', 18, '600', '二级标题、卡片头'],
-      ['text.title3', 16, '600', '三级标题、列表组头'],
-      ['text.body', 14, '400', '正文常用尺寸'],
-      ['text.subhead', 13, '400', '副标题、列表描述'],
-      ['text.footnote', 12, '400', '脚注、次要信息'],
-      ['text.caption', 11, '400', '时间戳、辅助标签'],
-      ['text.mini', 10, '400', '角标、最小标注']
-    ];
+  var iosScaleRows = [
+    ['text.largeTitle', 28, '700', '大标题、首屏展示'],
+    ['text.title1', 22, '700', '一级标题、模块头'],
+    ['text.title2', 18, '600', '二级标题、卡片头'],
+    ['text.title3', 16, '600', '三级标题、列表组头'],
+    ['text.body', 14, '400', '正文常用尺寸'],
+    ['text.subhead', 13, '400', '副标题、列表描述'],
+    ['text.footnote', 12, '400', '脚注、次要信息'],
+    ['text.caption', 11, '400', '时间戳、辅助标签'],
+    ['text.mini', 10, '400', '角标、最小标注']
+  ];
+  var webScaleRows = [
+    ['text.5xl', 40, '800', '展示标题、Hero 区'],
+    ['text.4xl', 32, '700', '页面大标题'],
+    ['text.3xl', 24, '700', '页面标题'],
+    ['text.2xl', 20, '600', '模块标题'],
+    ['text.xl', 18, '600', '卡片标题'],
+    ['text.lg', 16, '400', '大正文、导语'],
+    ['text.md', 14, '400', '正文默认'],
+    ['text.sm', 13, '400', '辅助文本'],
+    ['text.caption', 12, '400', '标签、图注'],
+    ['text.mini', 10, '400', '角标、最小标注']
+  ];
+
+  // Determine which rows to render
+  var allScaleGroups = [];
+  if (data.platform === 'app-web') {
+    allScaleGroups.push({ label: 'iOS · 375×812', rows: iosScaleRows });
+    allScaleGroups.push({ label: 'Web · Desktop', rows: webScaleRows });
+  } else if (data.platform === 'ios-app') {
+    allScaleGroups.push({ label: null, rows: iosScaleRows });
   } else {
-    typeScaleRows = [
-      ['text.5xl', 40, '800', '展示标题、Hero 区'],
-      ['text.4xl', 32, '700', '页面大标题'],
-      ['text.3xl', 24, '700', '页面标题'],
-      ['text.2xl', 20, '600', '模块标题'],
-      ['text.xl', 18, '600', '卡片标题'],
-      ['text.lg', 16, '400', '大正文、导语'],
-      ['text.md', 14, '400', '正文默认'],
-      ['text.sm', 13, '400', '辅助文本'],
-      ['text.caption', 12, '400', '标签、图注'],
-      ['text.mini', 10, '400', '角标、最小标注']
-    ];
+    allScaleGroups.push({ label: null, rows: webScaleRows });
+  }
+
+  // Calculate total rows for card height
+  var totalScaleRows = 0;
+  for (var gi = 0; gi < allScaleGroups.length; gi++) {
+    totalScaleRows += allScaleGroups[gi].rows.length;
+    if (allScaleGroups[gi].label) totalScaleRows += 1; // group header row
   }
 
   var tsRowH = 64;
-  var tsCardH = 64 + typeScaleRows.length * tsRowH + 10;
+  var tsCardH = 64 + totalScaleRows * tsRowH + 10;
 
   var tsCard = figma.createFrame();
   frame.appendChild(tsCard);
@@ -698,23 +713,33 @@ async function generatePreview(data) {
   tsCard.appendChild(tsDivTop); tsDivTop.x = CARD_PAD; tsDivTop.y = 64;
   tsDivTop.resize(INNER_W, 1); tsDivTop.fills = [{ type: 'SOLID', color: CARD_BORDER }];
 
-  for (var tsi = 0; tsi < typeScaleRows.length; tsi++) {
-    var tsRow = typeScaleRows[tsi];
-    var tsName = tsRow[0], tsSize = tsRow[1], tsWeight = tsRow[2], tsUsage = tsRow[3];
-    var tsY = 64 + tsi * tsRowH;
-    var tsLh = Math.round(tsSize * 1.5);
-    // Left: token name + spec
-    addText(tsCard, CARD_PAD, tsY + 18, tsName, 13, 'Semi Bold', TEXT_BRIGHT);
-    addText(tsCard, CARD_PAD, tsY + 38, tsSize + ' / ' + tsLh + ' · w' + tsWeight, 11, 'Regular', TEXT_MUTED);
-    // Center: usage text at actual size
-    addText(tsCard, 230, tsY + 22, tsUsage, tsSize, 'Regular', TEXT_BRIGHT);
-    // Right: size badge
-    addText(tsCard, 950, tsY + 22, tsSize + 'px', 11, 'Semi Bold', TEXT_DIM);
-    // Row divider
-    if (tsi < typeScaleRows.length - 1) {
-      var tsDiv = figma.createRectangle();
-      tsCard.appendChild(tsDiv); tsDiv.x = CARD_PAD; tsDiv.y = tsY + tsRowH;
-      tsDiv.resize(INNER_W, 1); tsDiv.fills = [{ type: 'SOLID', color: CARD_BORDER }];
+  var tsCurrentRow = 0;
+  for (var gsi = 0; gsi < allScaleGroups.length; gsi++) {
+    var scaleGroup = allScaleGroups[gsi];
+    // Group header
+    if (scaleGroup.label) {
+      var ghY = 64 + tsCurrentRow * tsRowH;
+      addText(tsCard, CARD_PAD, ghY + 22, scaleGroup.label, 12, 'Semi Bold', brandRgb);
+      var ghDiv = figma.createRectangle();
+      tsCard.appendChild(ghDiv); ghDiv.x = CARD_PAD; ghDiv.y = ghY + tsRowH;
+      ghDiv.resize(INNER_W, 2); ghDiv.fills = [{ type: 'SOLID', color: brandRgb, opacity: 0.3 }];
+      tsCurrentRow++;
+    }
+    for (var tsi = 0; tsi < scaleGroup.rows.length; tsi++) {
+      var tsRow = scaleGroup.rows[tsi];
+      var tsName = tsRow[0], tsSize = tsRow[1], tsWeight = tsRow[2], tsUsage = tsRow[3];
+      var tsY = 64 + tsCurrentRow * tsRowH;
+      var tsLh = Math.round(tsSize * 1.5);
+      addText(tsCard, CARD_PAD, tsY + 18, tsName, 13, 'Semi Bold', TEXT_BRIGHT);
+      addText(tsCard, CARD_PAD, tsY + 38, tsSize + ' / ' + tsLh + ' · w' + tsWeight, 11, 'Regular', TEXT_MUTED);
+      addText(tsCard, 230, tsY + 22, tsUsage, tsSize, 'Regular', TEXT_BRIGHT);
+      addText(tsCard, 950, tsY + 22, tsSize + 'px', 11, 'Semi Bold', TEXT_DIM);
+      if (tsi < scaleGroup.rows.length - 1) {
+        var tsDiv = figma.createRectangle();
+        tsCard.appendChild(tsDiv); tsDiv.x = CARD_PAD; tsDiv.y = tsY + tsRowH;
+        tsDiv.resize(INNER_W, 1); tsDiv.fills = [{ type: 'SOLID', color: CARD_BORDER }];
+      }
+      tsCurrentRow++;
     }
   }
   Y += tsCardH + 48;

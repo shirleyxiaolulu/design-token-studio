@@ -369,10 +369,7 @@
   function typography(platform, base, fontStack) {
     if (platform === "ios-app") {
       return {
-        "font.family.base": {
-          value: fontStack,
-          usage: "iOS 界面默认字体栈",
-        },
+        "font.family.base": { value: fontStack, usage: "iOS 界面默认字体栈" },
         "font.size.mini": { value: 10 },
         "font.size.caption": { value: 11 },
         "font.size.footnote": { value: 12 },
@@ -386,21 +383,47 @@
       };
     }
 
+    if (platform === "web-admin") {
+      return {
+        "font.family.base": { value: fontStack, usage: "Web 后台默认字体栈" },
+        "font.size.mini": { value: 10 },
+        "font.size.caption": { value: 12 },
+        "font.size.sm": { value: 13 },
+        "font.size.md": { value: 14 },
+        "font.size.lg": { value: 16 },
+        "font.size.xl": { value: 18 },
+        "font.size.2xl": { value: 20 },
+        "font.size.3xl": { value: 24 },
+        "font.size.4xl": { value: 32 },
+        "font.size.5xl": { value: 40 },
+        "font.lineHeight.body": { value: 22 },
+      };
+    }
+
+    // App+Web 同步：统一命名，两套字阶并存
     return {
-      "font.family.base": {
-        value: fontStack,
-        usage: "Web 后台默认字体栈",
-      },
-      "font.size.mini": { value: 10 },
-      "font.size.caption": { value: 12 },
-      "font.size.sm": { value: 13 },
-      "font.size.md": { value: 14 },
-      "font.size.lg": { value: 16 },
-      "font.size.xl": { value: 18 },
-      "font.size.2xl": { value: 20 },
-      "font.size.3xl": { value: 24 },
-      "font.size.4xl": { value: 32 },
-      "font.size.5xl": { value: 40 },
+      "font.family.base": { value: fontStack, usage: "App+Web 统一字体栈" },
+      // iOS 字阶
+      "font.size.ios.mini": { value: 10 },
+      "font.size.ios.caption": { value: 11 },
+      "font.size.ios.footnote": { value: 12 },
+      "font.size.ios.subhead": { value: 13 },
+      "font.size.ios.body": { value: 14 },
+      "font.size.ios.title3": { value: 16 },
+      "font.size.ios.title2": { value: 18 },
+      "font.size.ios.title1": { value: 22 },
+      "font.size.ios.largeTitle": { value: 28 },
+      // Web 字阶
+      "font.size.web.mini": { value: 10 },
+      "font.size.web.caption": { value: 12 },
+      "font.size.web.sm": { value: 13 },
+      "font.size.web.md": { value: 14 },
+      "font.size.web.lg": { value: 16 },
+      "font.size.web.xl": { value: 18 },
+      "font.size.web.2xl": { value: 20 },
+      "font.size.web.3xl": { value: 24 },
+      "font.size.web.4xl": { value: 32 },
+      "font.size.web.5xl": { value: 40 },
       "font.lineHeight.body": { value: 22 },
     };
   }
