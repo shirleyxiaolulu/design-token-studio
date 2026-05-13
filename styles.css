@@ -1676,6 +1676,10 @@ body[data-default-mode="light"] .toast {
   padding: 16px 20px;
   border: 1px solid var(--line);
   border-radius: 12px;
+  background: #fff;
+}
+
+body[data-default-mode="dark"] .contrast-item {
   background: var(--surface-subtle);
 }
 
