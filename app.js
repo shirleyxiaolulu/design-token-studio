@@ -250,61 +250,51 @@ function renderModePreview(tokens, mode, target) {
 }
 
 function renderShapes(tokens, defaultMode) {
+  // Radius: card grid
   const radiusNames = Object.keys(tokens).filter((name) => name.startsWith("radius."));
   els.radiusTable.innerHTML = radiusNames.map((name) => {
     const value = tokens[name].value;
+    const px = parseInt(value, 10);
     return `
-      <div class="shape-item">
-        <span class="token-name">${name}</span>
-        <span class="radius-demo" style="border-radius:${value}"></span>
-        <span class="token-value">${value}</span>
+      <div class="radius-card">
+        <div class="radius-preview" style="border-radius:${Math.min(px, 32)}px"></div>
+        <div class="radius-info">
+          <span class="radius-value">${value}</span>
+          <span class="radius-name">${name}</span>
+        </div>
       </div>
     `;
   }).join("");
 
+  // Shadow: card grid
   const shadowNames = Object.keys(tokens).filter((name) => name.startsWith("shadow."));
+  const shadowLabels = { "shadow.none": "None", "shadow.sm": "SM", "shadow.md": "MD", "shadow.lg": "LG", "shadow.overlay": "Overlay" };
   els.shadowTable.innerHTML = shadowNames.map((name) => {
     const token = tokens[name];
     const cssValueText = DesignTokens.tokenValue(token, defaultMode, tokens);
-    const layers = token.value[defaultMode];
-    const layerRows = layers === "none"
-      ? `<div class="shadow-layer-row empty">无阴影层</div>`
-      : layers.map((layer) => {
-        return `
-          <div class="shadow-layer-row">
-            <strong>${layer.label}</strong>
-            <span>X ${layer.x}px</span>
-            <span>Y ${layer.y}px</span>
-            <span>Blur ${layer.blur}px</span>
-            <span>Spread ${layer.spread}px</span>
-            <span>RGB ${layer.color}</span>
-            <span>${Math.round(layer.alpha * 100)}%</span>
-          </div>
-        `;
-      }).join("");
     return `
-      <div class="shape-item shadow-item">
-        <div>
-          <span class="token-name">${name}</span>
-          <small>${name === "shadow.none" ? "无层级" : "界面层级阴影"}</small>
-        </div>
-        <span class="shadow-demo" style="box-shadow:${cssValueText}"></span>
-        <div class="shadow-breakdown">
-          ${layerRows}
-          <code class="shadow-value">${cssValueText}</code>
+      <div class="shadow-card">
+        <div class="shadow-preview-box" style="box-shadow:${cssValueText}"></div>
+        <div class="shadow-card-info">
+          <span class="shadow-card-name">${name}</span>
+          <span class="shadow-card-label">${shadowLabels[name] || name.split(".")[1].toUpperCase()}</span>
         </div>
       </div>
     `;
   }).join("");
 
+  // Spacing: horizontal bar list
   const spaceNames = Object.keys(tokens).filter((name) => name.startsWith("space."));
+  const maxSpace = Math.max(...spaceNames.map((n) => parseInt(tokens[n].value, 10) || 0), 1);
   els.spacingTable.innerHTML = spaceNames.map((name) => {
     const value = tokens[name].value;
+    const px = parseInt(value, 10) || 0;
+    const pct = Math.max((px / maxSpace) * 100, 0.5);
     return `
-      <div class="spacing-item">
-        <span class="token-name">${name}</span>
-        <span class="spacing-demo" style="width:${Math.max(parseInt(value, 10), 1) * 3}px"></span>
-        <span class="token-value">${value}</span>
+      <div class="spacing-bar-row">
+        <span class="spacing-bar-name">${name}</span>
+        <div class="spacing-bar-track"><div class="spacing-bar-fill" style="width:${pct}%"></div></div>
+        <span class="spacing-bar-value">${value}</span>
       </div>
     `;
   }).join("");
@@ -335,14 +325,19 @@ function renderTypeShowcase(seed, tokens) {
   els.typeIntro.textContent = label.intro;
   els.fontCjkName.textContent = label.cjk;
   els.fontLatinName.textContent = label.latin;
-  els.typeScaleMeta.textContent = `BASE · ${seed.baseFontSize}px / LINE · ${bodyLineHeight}`;
+  els.typeScaleMeta.textContent = `BASE · ${seed.baseFontSize}px`;
   els.typeScalePreview.innerHTML = rows.map(([level, sample, tokenName, weight, tracking]) => {
     const size = tokens[tokenName].value;
+    const lh = Math.round(size * 1.42);
+    const isLarge = size >= 22;
     return `
-      <div class="type-scale-row">
-        <span class="type-level">${level}</span>
-        <strong style="font-size:${size}px;font-weight:${weight};letter-spacing:${tracking};line-height:1.2">${sample}</strong>
-        <span class="type-spec">${size}px&nbsp;&nbsp;${weight}wt&nbsp;&nbsp;${tracking}</span>
+      <div class="type-scale-row${isLarge ? ' large' : ''}">
+        <div class="type-scale-token">
+          <strong>${level}</strong>
+          <span>${size} / ${lh} · w${weight}</span>
+        </div>
+        <span class="type-scale-sample" style="font-size:${size}px;font-weight:${weight};letter-spacing:${tracking};line-height:1.3">${sample}</span>
+        <span class="type-scale-size">${size}px</span>
       </div>
     `;
   }).join("");
@@ -827,3 +822,65 @@ const initialProject = activeProject();
 applySeed(initialProject?.draft || currentSeed());
 bindEvents();
 render();
+
+// =============================================
+// Sidebar Tab Switching
+// =============================================
+document.querySelectorAll(".sidebar-tab").forEach((tab) => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".sidebar-tab").forEach((t) => t.classList.remove("active"));
+    document.querySelectorAll(".sidebar-tab-content").forEach((c) => c.classList.remove("active"));
+    tab.classList.add("active");
+    const target = tab.dataset.tab === "config" ? "tabConfig" : "tabToc";
+    document.getElementById(target).classList.add("active");
+  });
+});
+
+// =============================================
+// TOC Scroll Highlight
+// =============================================
+(function () {
+  const tocLinks = document.querySelectorAll(".toc-link");
+  const sections = [];
+  tocLinks.forEach((link) => {
+    const id = link.dataset.section;
+    const el = document.getElementById(id);
+    if (el) sections.push({ id, el, link });
+  });
+
+  if (sections.length === 0) return;
+
+  const workspace = document.querySelector(".workspace");
+  if (!workspace) return;
+
+  let ticking = false;
+  function onScroll() {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(() => {
+      const scrollTop = workspace.scrollTop || window.scrollY;
+      const offset = 200;
+      let current = sections[0].id;
+      for (const sec of sections) {
+        const rect = sec.el.getBoundingClientRect();
+        if (rect.top <= offset) current = sec.id;
+      }
+      tocLinks.forEach((link) => {
+        link.classList.toggle("active", link.dataset.section === current);
+      });
+      ticking = false;
+    });
+  }
+
+  window.addEventListener("scroll", onScroll, true);
+  onScroll();
+
+  // Smooth scroll on click
+  tocLinks.forEach((link) => {
+    link.addEventListener("click", (e) => {
+      e.preventDefault();
+      const el = document.getElementById(link.dataset.section);
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  });
+})();
