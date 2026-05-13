@@ -53,6 +53,19 @@ async function syncVariables(data) {
   var tokDarkMode = tokCol.modes.find(function(m) { return m.name === 'Dark'; });
   if (!tokDarkMode) { tokCol.addMode('Dark'); tokDarkMode = tokCol.modes.find(function(m) { return m.name === 'Dark'; }); }
 
+  // Clean up old iOS variables (removed from spec)
+  var cleaned = 0;
+  for (var ci = 0; ci < collections.length; ci++) {
+    var cleanCol = collections[ci];
+    for (var vi = cleanCol.variableIds.length - 1; vi >= 0; vi--) {
+      var cleanVar = await figma.variables.getVariableByIdAsync(cleanCol.variableIds[vi]);
+      if (cleanVar && cleanVar.name.indexOf('ios') === 0) {
+        cleanVar.remove();
+        cleaned++;
+      }
+    }
+  }
+
   // Build variable lookup from existing variables
   var varMap = {};
   for (var ci = 0; ci < collections.length; ci++) {
@@ -176,7 +189,7 @@ async function syncVariables(data) {
     }
   }
 
-  return { created: created, updated: updated, skipped: skipped, verify: verifyMsg };
+  return { created: created, updated: updated, skipped: skipped, cleaned: cleaned, verify: verifyMsg };
 }
 
 // =============================================
@@ -890,7 +903,7 @@ figma.ui.onmessage = async (msg) => {
       var result = await syncVariables(msg.data);
       figma.ui.postMessage({
         type: 'result',
-        message: '同步完成！新建 ' + result.created + ' · 更新 ' + result.updated + ' · 跳过 ' + result.skipped + (result.verify || ''),
+        message: '同步完成！新建 ' + result.created + ' · 更新 ' + result.updated + ' · 跳过 ' + result.skipped + (result.cleaned ? ' · 清理iOS变量 ' + result.cleaned : '') + (result.verify || ''),
       });
     }
     else if (msg.type === 'generate') {

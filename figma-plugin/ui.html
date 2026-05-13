@@ -137,7 +137,8 @@
         jsonInput.className = 'valid';
         jsonMeta.className = 'json-meta parsed';
         var modeLabel = parsedData.defaultMode === 'light' ? 'Light' : 'Dark';
-        jsonMeta.textContent = `✓ ${parsedData.name} · ${parsedData.platform} · ${modeLabel} · v${parsedData.version} · 颜色 ${parsedData.colorCount} · 尺寸 ${parsedData.dimCount}`;
+        jsonMeta.textContent = `✓ ${parsedData.name} · ${modeLabel} · v${parsedData.version} · 颜色 ${parsedData.colorCount} · 尺寸 ${parsedData.dimCount}`;
+        if (parsedData.dimCount === 0) jsonMeta.textContent += ' ⚠️ 尺寸变量为0，请检查JSON格式';
         syncBtn.disabled = false;
         generateBtn.disabled = false;
       } catch (e) {
@@ -182,7 +183,10 @@
             }
           } else if (['dimension', 'number', 'fontFamily'].includes(token.type)) {
             const value = typeof token.value === 'object' ? token.value : token.value;
-            dimTokens[key] = { figmaName, tier, value, usage: token.usage || '' };
+            dimTokens[key] = { figmaName, tier, value, type: token.type, usage: token.usage || '' };
+          } else if (token.type === 'shadow') {
+            // Shadow tokens are complex objects — store for preview but skip variable sync
+            dimTokens[key] = { figmaName, tier, value: token.value, type: 'shadow', usage: token.usage || '' };
           }
         }
 
