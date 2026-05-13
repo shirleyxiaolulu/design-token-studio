@@ -335,9 +335,20 @@ function renderTypeShowcase(seed, tokens) {
     ["mini", "font.size.mini", 400, "角标、最小标注"],
   ];
 
-  // App+Web: token names have ios./web. prefix
-  const iosRowsAW = iosRows.map(([n, t, w, u]) => [n, t.replace("font.size.", "font.size.ios."), w, u]);
-  const webRowsAW = webRows.map(([n, t, w, u]) => [n, t.replace("font.size.", "font.size.web."), w, u]);
+  // App+Web: unified scale, single set
+  const appWebRows = [
+    ["5xl", "font.size.5xl", 800, "展示标题、Hero 区（Web）"],
+    ["4xl", "font.size.4xl", 700, "页面大标题（Web）"],
+    ["3xl", "font.size.3xl", 700, "页面标题（Web）/ largeTitle（iOS）"],
+    ["2xl", "font.size.2xl", 600, "模块标题（Web）/ title1（iOS）"],
+    ["xl", "font.size.xl", 600, "卡片标题（Web）/ title2（iOS）"],
+    ["lg", "font.size.lg", 400, "大正文（Web）/ title3（iOS）"],
+    ["body", "font.size.body", 400, "正文（通用）"],
+    ["sm", "font.size.sm", 400, "副标题（iOS subhead）"],
+    ["footnote", "font.size.footnote", 400, "脚注（iOS footnote）/ 辅助"],
+    ["caption", "font.size.caption", 400, "标签（iOS caption）"],
+    ["mini", "font.size.mini", 400, "角标（通用最小）"],
+  ];
 
   function renderScaleRows(rows, tokenPrefix) {
     return rows.map(([level, tokenName, weight, usage]) => {
@@ -366,16 +377,7 @@ function renderTypeShowcase(seed, tokens) {
   els.typeScaleMeta.textContent = `BASE · 14px`;
 
   if (seed.platform === "app-web") {
-    els.typeScalePreview.innerHTML = `
-      <div class="type-scale-group">
-        <div class="type-scale-group-title">iOS · 375×812</div>
-        ${renderScaleRows(iosRowsAW)}
-      </div>
-      <div class="type-scale-group">
-        <div class="type-scale-group-title">Web · Desktop</div>
-        ${renderScaleRows(webRowsAW)}
-      </div>
-    `;
+    els.typeScalePreview.innerHTML = renderScaleRows(appWebRows);
   } else if (seed.platform === "ios-app") {
     els.typeScalePreview.innerHTML = renderScaleRows(iosRows);
   } else {

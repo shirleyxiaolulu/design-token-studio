@@ -677,23 +677,30 @@ async function generatePreview(data) {
     ['text.mini', 10, '400', '角标、最小标注']
   ];
 
-  // Determine which rows to render
-  var allScaleGroups = [];
+  var appWebScaleRows = [
+    ['text.5xl', 40, '800', '展示标题、Hero 区（Web）'],
+    ['text.4xl', 32, '700', '页面大标题（Web）'],
+    ['text.3xl', 24, '700', '页面标题 / largeTitle'],
+    ['text.2xl', 20, '600', '模块标题 / title1'],
+    ['text.xl', 18, '600', '卡片标题 / title2'],
+    ['text.lg', 16, '400', '大正文 / title3'],
+    ['text.body', 14, '400', '正文（通用）'],
+    ['text.sm', 13, '400', '副标题 / subhead'],
+    ['text.footnote', 12, '400', '脚注 / 辅助'],
+    ['text.caption', 11, '400', '标签 / caption'],
+    ['text.mini', 10, '400', '角标（通用最小）']
+  ];
+
+  var typeScaleRows;
   if (data.platform === 'app-web') {
-    allScaleGroups.push({ label: 'iOS · 375×812', rows: iosScaleRows });
-    allScaleGroups.push({ label: 'Web · Desktop', rows: webScaleRows });
+    typeScaleRows = appWebScaleRows;
   } else if (data.platform === 'ios-app') {
-    allScaleGroups.push({ label: null, rows: iosScaleRows });
+    typeScaleRows = iosScaleRows;
   } else {
-    allScaleGroups.push({ label: null, rows: webScaleRows });
+    typeScaleRows = webScaleRows;
   }
 
-  // Calculate total rows for card height
-  var totalScaleRows = 0;
-  for (var gi = 0; gi < allScaleGroups.length; gi++) {
-    totalScaleRows += allScaleGroups[gi].rows.length;
-    if (allScaleGroups[gi].label) totalScaleRows += 1; // group header row
-  }
+  var totalScaleRows = typeScaleRows.length;
 
   var tsRowH = 64;
   var tsCardH = 64 + totalScaleRows * tsRowH + 10;
@@ -713,33 +720,19 @@ async function generatePreview(data) {
   tsCard.appendChild(tsDivTop); tsDivTop.x = CARD_PAD; tsDivTop.y = 64;
   tsDivTop.resize(INNER_W, 1); tsDivTop.fills = [{ type: 'SOLID', color: CARD_BORDER }];
 
-  var tsCurrentRow = 0;
-  for (var gsi = 0; gsi < allScaleGroups.length; gsi++) {
-    var scaleGroup = allScaleGroups[gsi];
-    // Group header
-    if (scaleGroup.label) {
-      var ghY = 64 + tsCurrentRow * tsRowH;
-      addText(tsCard, CARD_PAD, ghY + 22, scaleGroup.label, 12, 'Semi Bold', brandRgb);
-      var ghDiv = figma.createRectangle();
-      tsCard.appendChild(ghDiv); ghDiv.x = CARD_PAD; ghDiv.y = ghY + tsRowH;
-      ghDiv.resize(INNER_W, 2); ghDiv.fills = [{ type: 'SOLID', color: brandRgb, opacity: 0.3 }];
-      tsCurrentRow++;
-    }
-    for (var tsi = 0; tsi < scaleGroup.rows.length; tsi++) {
-      var tsRow = scaleGroup.rows[tsi];
-      var tsName = tsRow[0], tsSize = tsRow[1], tsWeight = tsRow[2], tsUsage = tsRow[3];
-      var tsY = 64 + tsCurrentRow * tsRowH;
-      var tsLh = Math.round(tsSize * 1.5);
-      addText(tsCard, CARD_PAD, tsY + 18, tsName, 13, 'Semi Bold', TEXT_BRIGHT);
-      addText(tsCard, CARD_PAD, tsY + 38, tsSize + ' / ' + tsLh + ' · w' + tsWeight, 11, 'Regular', TEXT_MUTED);
-      addText(tsCard, 230, tsY + 22, tsUsage, tsSize, 'Regular', TEXT_BRIGHT);
-      addText(tsCard, 950, tsY + 22, tsSize + 'px', 11, 'Semi Bold', TEXT_DIM);
-      if (tsi < scaleGroup.rows.length - 1) {
-        var tsDiv = figma.createRectangle();
-        tsCard.appendChild(tsDiv); tsDiv.x = CARD_PAD; tsDiv.y = tsY + tsRowH;
-        tsDiv.resize(INNER_W, 1); tsDiv.fills = [{ type: 'SOLID', color: CARD_BORDER }];
-      }
-      tsCurrentRow++;
+  for (var tsi = 0; tsi < typeScaleRows.length; tsi++) {
+    var tsRow = typeScaleRows[tsi];
+    var tsName = tsRow[0], tsSize = tsRow[1], tsWeight = tsRow[2], tsUsage = tsRow[3];
+    var tsY = 64 + tsi * tsRowH;
+    var tsLh = Math.round(tsSize * 1.5);
+    addText(tsCard, CARD_PAD, tsY + 18, tsName, 13, 'Semi Bold', TEXT_BRIGHT);
+    addText(tsCard, CARD_PAD, tsY + 38, tsSize + ' / ' + tsLh + ' · w' + tsWeight, 11, 'Regular', TEXT_MUTED);
+    addText(tsCard, 230, tsY + 22, tsUsage, tsSize, 'Regular', TEXT_BRIGHT);
+    addText(tsCard, 950, tsY + 22, tsSize + 'px', 11, 'Semi Bold', TEXT_DIM);
+    if (tsi < typeScaleRows.length - 1) {
+      var tsDiv = figma.createRectangle();
+      tsCard.appendChild(tsDiv); tsDiv.x = CARD_PAD; tsDiv.y = tsY + tsRowH;
+      tsDiv.resize(INNER_W, 1); tsDiv.fills = [{ type: 'SOLID', color: CARD_BORDER }];
     }
   }
   Y += tsCardH + 48;

@@ -1736,8 +1736,14 @@ body[data-default-mode="light"] .toast {
 /* Opacity: card row — Figma replica */
 .opacity-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 12px;
+}
+
+@media (max-width: 900px) {
+  .opacity-list {
+    grid-template-columns: repeat(3, 1fr);
+  }
 }
 
 .opacity-card {
