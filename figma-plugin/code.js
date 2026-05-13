@@ -743,45 +743,55 @@ async function generatePreview(data) {
     '阴影区分浅色和深色界面，深色模式使用高光、轮廓和投影组合来表达层级。');
 
   var shadowDefs = [
-    { name: 'shadow.none', desc: '无阴影', effects: [] },
-    { name: 'shadow.sm', desc: '高光 · X 0 / Y 1 / 模糊 0 / 扩展 0 / 透明度 0.05\n轮廓 · X 0 / Y 0 / 模糊 0 / 扩展 1 / 透明度 0.1\n投影 · X 0 / Y 10 / 模糊 28 / 扩展 0 / 透明度 0.184',
-      effects: [{ type: 'DROP_SHADOW', color: {r:0,g:0,b:0,a:0.18}, offset:{x:0,y:10}, radius:28, spread:0, visible:true, blendMode:'NORMAL'}] },
-    { name: 'shadow.md', desc: '高光 · X 0 / Y 1 / 模糊 0 / 扩展 0 / 透明度 0.06\n轮廓 · X 0 / Y 0 / 模糊 0 / 扩展 1 / 透明度 0.14\n投影 · X 0 / Y 18 / 模糊 42 / 扩展 0 / 透明度 0.232',
-      effects: [{ type: 'DROP_SHADOW', color: {r:0,g:0,b:0,a:0.23}, offset:{x:0,y:18}, radius:42, spread:0, visible:true, blendMode:'NORMAL'}] },
-    { name: 'shadow.lg', desc: '高光 · X 0 / Y 1 / 模糊 0 / 扩展 0 / 透明度 0.08\n轮廓 · X 0 / Y 0 / 模糊 0 / 扩展 1 / 透明度 0.18\n投影 · X 0 / Y 28 / 模糊 70 / 扩展 0 / 透明度 0.28',
-      effects: [{ type: 'DROP_SHADOW', color: {r:0,g:0,b:0,a:0.28}, offset:{x:0,y:28}, radius:70, spread:0, visible:true, blendMode:'NORMAL'}] },
-    { name: 'shadow.overlay', desc: '轮廓 · X 0 / Y 0 / 模糊 0 / 扩展 1 / 透明度 0.22\n投影 · X 0 / Y 34 / 模糊 90 / 扩展 0 / 透明度 0.32',
-      effects: [{ type: 'DROP_SHADOW', color: {r:0,g:0,b:0,a:0.32}, offset:{x:0,y:34}, radius:90, spread:0, visible:true, blendMode:'NORMAL'}] }
+    { name: 'shadow.none', label: 'None', params: '无阴影', effects: [] },
+    { name: 'shadow.sm', label: 'SM',
+      params: '投影 · X0 Y2 B8 S0 \u03b17%',
+      effects: [{ type: 'DROP_SHADOW', color: {r:0.08,g:0.12,b:0.22,a:0.07}, offset:{x:0,y:2}, radius:8, spread:0, visible:true, blendMode:'NORMAL'}] },
+    { name: 'shadow.md', label: 'MD',
+      params: '投影 · X0 Y8 B24 S0 \u03b116%',
+      effects: [{ type: 'DROP_SHADOW', color: {r:0.08,g:0.12,b:0.22,a:0.16}, offset:{x:0,y:8}, radius:24, spread:0, visible:true, blendMode:'NORMAL'}] },
+    { name: 'shadow.lg', label: 'LG',
+      params: '投影 · X0 Y18 B48 S0 \u03b118%',
+      effects: [{ type: 'DROP_SHADOW', color: {r:0.08,g:0.12,b:0.22,a:0.18}, offset:{x:0,y:18}, radius:48, spread:0, visible:true, blendMode:'NORMAL'}] },
+    { name: 'shadow.overlay', label: 'Overlay',
+      params: '投影 · X0 Y24 B64 S0 \u03b122%',
+      effects: [{ type: 'DROP_SHADOW', color: {r:0,g:0,b:0,a:0.22}, offset:{x:0,y:24}, radius:64, spread:0, visible:true, blendMode:'NORMAL'}] }
   ];
 
-  // Each shadow card: 1052×88, stacked vertically with 24px gap
+  // 3 columns card grid, matching web layout
+  var sCardW = 340, sCardH = 170, sGapH = 16, sGapV = 16;
   for (var si = 0; si < shadowDefs.length; si++) {
     var sd = shadowDefs[si];
+    var sCol = si % 3, sRow = Math.floor(si / 3);
+    var sX = 64 + sCol * (sCardW + sGapH);
+    var sY = Y + sRow * (sCardH + sGapV);
+
     var sCard = figma.createFrame();
     frame.appendChild(sCard);
     sCard.name = sd.name;
-    sCard.x = 64; sCard.y = Y + si * 112; // 88 + 24 gap
-    sCard.resize(CARD_W, 88); sCard.cornerRadius = 12;
+    sCard.x = sX; sCard.y = sY;
+    sCard.resize(sCardW, sCardH); sCard.cornerRadius = 12;
     sCard.fills = [{ type: 'SOLID', color: CARD_BG }];
     sCard.strokes = [{ type: 'SOLID', color: CARD_BORDER }]; sCard.strokeWeight = 1;
-    sCard.clipsContent = true;
 
-    // Shadow name
-    addText(sCard, 24, 30, sd.name, 14, 'Regular', TEXT_BRIGHT);
-
-    // Preview swatch 82×52 with shadow effect
+    // Preview box
     var sSwatch = figma.createRectangle();
     sCard.appendChild(sSwatch);
-    sSwatch.x = 260; sSwatch.y = 18;
-    sSwatch.resize(82, 52); sSwatch.cornerRadius = 12;
+    sSwatch.x = 19; sSwatch.y = 19;
+    sSwatch.resize(302, 64); sSwatch.cornerRadius = 10;
     sSwatch.fills = [{ type: 'SOLID', color: SWATCH_INNER }];
     sSwatch.strokes = [{ type: 'SOLID', color: CARD_BORDER }]; sSwatch.strokeWeight = 1;
     sSwatch.effects = sd.effects;
 
-    // Description
-    addText(sCard, 390, 20, sd.desc, 11, 'Regular', TEXT_SHADOW);
+    // Token name + label
+    addText(sCard, 19, 96, sd.name, 11, 'Regular', TEXT_MUTED);
+    addText(sCard, 280, 96, sd.label, 11, 'Regular', TEXT_MUTED);
+
+    // Layer params
+    addText(sCard, 19, 120, sd.params, 10, 'Regular', TEXT_MUTED);
   }
-  Y += shadowDefs.length * 112 + 32;
+  var sTotalRows = Math.ceil(shadowDefs.length / 3);
+  Y += sTotalRows * (sCardH + sGapV) + 32;
 
   // ===== SECTION 07: SPACING =====
   var spaceTokens = Object.entries(data.dimTokens || {}).filter(function(e) { return e[0].startsWith('space.'); });
