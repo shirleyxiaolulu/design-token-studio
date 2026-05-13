@@ -22,7 +22,7 @@
         return;
       }
 
-      if (token.type === "fontFamily" || token.type === "dimension" || token.type === "number") {
+      if (token.type === "fontFamily" || token.type === "dimension" || token.type === "number" || token.type === "string") {
         root.push(`  ${token.css.name}: ${DesignTokens.cssValue(token, tokens)};`);
         return;
       }
@@ -121,6 +121,17 @@
         flat.dimensions[name] = token.value;
       } else if (token.type === "fontFamily") {
         flat.typography.fontFamily = token.value;
+      } else if (token.type === "string" && token.name.startsWith("motion.")) {
+        flat.dimensions[name] = token.value;
+      }
+    });
+
+    // Motion tokens as a readable group
+    flat.motion = {};
+    Object.values(tokens).forEach((t) => {
+      if (t.name.startsWith("motion.")) {
+        const key = t.name.replace("motion.", "");
+        flat.motion[key] = { value: t.value, usage: t.usage || "" };
       }
     });
 
