@@ -547,7 +547,7 @@ function renderContrast(tokens) {
           <span class="contrast-colors">${c.fgColor} · ${c.bgColor}</span>
         </div>
         <div class="contrast-right">
-          <span class="contrast-ratio">${c.ratio}</span>
+          <span class="contrast-ratio">${c.ratio}:1</span>
           <span class="contrast-badge ${badgeClass}">${c.level}</span>
         </div>
       </div>
