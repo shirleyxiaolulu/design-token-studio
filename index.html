@@ -128,7 +128,6 @@
         <div><span>平台</span><strong id="platformMeta">iOS App</strong></div>
         <div><span>主色</span><strong id="primaryMeta">#3366FF</strong></div>
         <div><span>模式</span><strong id="defaultModeMeta">Light 默认</strong></div>
-        <div><span>对比度</span><strong id="contrastMeta">检测中...</strong></div>
       </section>
 
       <section class="preview-layout">
@@ -170,10 +169,11 @@
           <section class="doc-section" id="sec-contrast">
             <div class="section-header">
               <div>
-                <div class="section-kicker"><span class="kicker-dot"></span>a11y · 03</div>
+                <div class="section-kicker"><span class="kicker-dot"></span>a11y · WCAG 2.1</div>
                 <h4>对比度参考</h4>
-                <p class="section-desc">常见前景/背景色对在两种模式下的 WCAG 2.1 对比度参考值。AA 标准要求正文文本 ≥ 4.5:1。</p>
+                <p class="section-desc">自动校验所有前景/背景组合的对比比率，标注 AA / AAA 通过情况。</p>
               </div>
+              <span class="section-badge contrast-pass-badge" id="contrastMeta">检测中...</span>
             </div>
             <div id="contrastGrid" class="contrast-grid"></div>
           </section>

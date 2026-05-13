@@ -530,21 +530,26 @@ function renderContrast(tokens) {
 
   if (!grid) return;
 
+  const passCount = checks.filter((c) => c.pass).length;
   if (meta) {
-    meta.textContent = `${checks.length} 组常见配对 · WCAG AA 标准 ≥ 4.5:1`;
-    meta.style.color = "";
+    meta.textContent = `${passCount}/${checks.length} AA 通过`;
+    meta.style.color = passCount === checks.length ? "#16a34a" : "";
   }
 
   grid.innerHTML = checks.map((c) => {
     const modeLabel = c.mode === "light" ? "浅色" : "深色";
+    const badgeClass = c.level === "AAA" ? "aaa" : c.level === "AA" ? "aa" : c.level === "AA-large" ? "aa-large" : "fail";
     return `
       <div class="contrast-item">
         <div class="contrast-preview" style="background:${c.bgColor};color:${c.fgColor}">Aa</div>
         <div class="contrast-info">
           <span class="contrast-label">${c.label} · ${modeLabel}</span>
-          <span class="contrast-ratio">${c.ratio}:1</span>
+          <span class="contrast-colors">${c.fgColor} · ${c.bgColor}</span>
         </div>
-        <span class="contrast-badge ${c.level === 'AAA' ? 'pass' : c.level === 'AA' ? 'pass' : 'neutral'}">${c.level}</span>
+        <div class="contrast-right">
+          <span class="contrast-ratio">${c.ratio}</span>
+          <span class="contrast-badge ${badgeClass}">${c.level}</span>
+        </div>
       </div>
     `;
   }).join("");
