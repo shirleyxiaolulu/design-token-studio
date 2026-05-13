@@ -1862,18 +1862,18 @@ body[data-default-mode="light"] .toast {
   width: 100%;
   height: 34px;
   margin-top: 10px;
-  border: 1px dashed var(--primary);
+  border: none;
   border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--primary);
+  background: var(--primary);
+  color: #fff;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: opacity 0.15s;
 }
 
 .ai-prompt-button:hover {
-  background: rgba(var(--primary-rgb, 101, 51, 232), 0.08);
+  opacity: 0.85;
 }
 
 /* ===== v2: Export tabs overflow ===== */
