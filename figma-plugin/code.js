@@ -443,12 +443,22 @@ async function generatePreview(data) {
   var CARD_PAD = 24;
   var ROW_H = 52;
 
-  // Section header
-  addText(frame, 64, Y + 32, '02 / 语义色', 12, 'Regular', TEXT_BRIGHT, 0.5);
-  addText(frame, 64, Y + 58, '语义色', 32, 'Semi Bold', TEXT_BRIGHT);
-  addText(frame, 64, Y + 102, '语义色描述界面角色，而不是具体色值；Figma 组件应优先引用这些变量。', 14, 'Regular', TEXT_BRIGHT, 0.6);
-  addLine(frame, 64, Y + 144, CARD_W);
-  Y += 174;
+  // Section header with pill kicker badge
+  Y += 32;
+  var semKickerBg = figma.createRectangle();
+  frame.appendChild(semKickerBg);
+  semKickerBg.x = 64; semKickerBg.y = Y;
+  semKickerBg.resize(120, 22); semKickerBg.cornerRadius = 999;
+  semKickerBg.fills = [{ type: 'SOLID', color: brandRgb, opacity: 0.12 }];
+  var semKickerDot = figma.createEllipse();
+  frame.appendChild(semKickerDot);
+  semKickerDot.x = 72; semKickerDot.y = Y + 8.5;
+  semKickerDot.resize(5, 5);
+  semKickerDot.fills = [{ type: 'SOLID', color: brandRgb }];
+  addText(frame, 83, Y + 3, 'section · 02', 11, 'Semi Bold', brandRgb);
+  addText(frame, 64, Y + 32, '语义色', 22, 'Semi Bold', TEXT_BRIGHT);
+  addText(frame, 64, Y + 64, '语义色描述界面角色而非具体色值，在 Light / Dark 模式之间自动切换。Figma 组件应优先引用这些变量。', 13, 'Regular', TEXT_DIM);
+  Y += 100;
 
   // Build a category card
   async function buildCategoryCard(parentFrame, startY, title, subtitle, rows) {
@@ -538,13 +548,13 @@ async function generatePreview(data) {
 
   // Define semantic groups with Chinese titles matching source
   var semanticGroups = [
-    { prefix: 'color.brand', title: '品牌色 Brand', subtitle: '主操作、品牌强调和核心可点击状态。' },
-    { prefix: 'color.auxiliary', title: '辅助色 Auxiliary', subtitle: '用于分类标签、数据可视化、运营点缀和品牌延展。' },
-    { prefix: 'color.function', title: '功能色 Function', subtitle: '成功、警告、危险、信息等反馈状态。' },
-    { prefix: 'color.text', title: '文本与图标 Text', subtitle: '四级文本、禁用文本和反色文本。' },
-    { prefix: 'color.bg', title: '背景 Background', subtitle: '页面、容器、浮层和遮罩等不同层级的界面背景。' },
-    { prefix: 'color.border', title: '边框 Border', subtitle: '分割线、输入框描边、卡片边界和强调边界。' },
-    { prefix: 'color.constant', title: '常量色 Constant', subtitle: '不跟随主题切换的固定颜色。' },
+    { prefix: 'color.brand', title: '品牌颜色 — brand', subtitle: '品牌主色及其 8 级交互梯度，从最浅底色到最深强调。覆盖按钮、标签、卡片等全部品牌表达场景。' },
+    { prefix: 'color.auxiliary', title: '辅助色 — auxiliary', subtitle: '辅助色用于分类标签、数据可视化、运营活动和品牌延展，不承担系统反馈含义。' },
+    { prefix: 'color.function', title: '功能色 — function', subtitle: '用于成功、警告、危险和信息反馈的状态色，包含正色和浅底色两组。' },
+    { prefix: 'color.text', title: '文本颜色 — text', subtitle: '从主文本到水印的 8 级灰度梯度，确保界面中每层信息都有清晰的视觉优先级。' },
+    { prefix: 'color.bg', title: '背景颜色 — background', subtitle: '页面、容器、浮层和遮罩四个层级的界面背景，构建完整的空间层次。' },
+    { prefix: 'color.border', title: '边框颜色 — border', subtitle: '分割线、输入框描边和卡片边界的三级边框色，从弱到强逐步增加存在感。' },
+    { prefix: 'color.constant', title: '常量色 — constant', subtitle: '不跟随主题和深浅模式切换的固定颜色，适用于品牌资产和特殊图形。' },
   ];
 
   for (var gi = 0; gi < semanticGroups.length; gi++) {
