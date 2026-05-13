@@ -305,38 +305,40 @@ function renderTypeShowcase(seed, tokens) {
   const bodyLineHeight = tokens["font.lineHeight.body"].value;
   const rows = seed.platform === "ios-app"
     ? [
-      ["Large Title", "追剧从未如此上头", "font.size.largeTitle", 800, "-0.04em"],
-      ["Title 1", "每集都是高能瞬间", "font.size.title1", 700, "-0.02em"],
-      ["Title 2", "热播短剧榜", "font.size.title2", 700, "-0.01em"],
-      ["Title 3", "为你推荐", "font.size.title3", 600, "0em"],
-      ["Body", "今日更新 3 集，会员抢先看完结", "font.size.body", 400, "0em"],
-      ["Footnote", "2.3 亿热度 · 已更新 48 集", "font.size.footnote", 500, "0.02em"],
-      ["Caption", "EP 012 · 02:48 / 15:00", "font.size.caption1", 500, "0.04em"],
+      ["largeTitle", "迅捷从未如此上头", "font.size.largeTitle", 800, "-0.04em", "页面大标题、首屏展示"],
+      ["title1", "无偏移、最高能瞬间", "font.size.title1", 700, "-0.02em", "一级标题、模块头"],
+      ["title2", "起范也起波澜", "font.size.title2", 700, "-0.01em", "二级标题、卡片头"],
+      ["title3", "写法规整", "font.size.title3", 600, "0em", "三级标题、列表组头"],
+      ["body", "正文常用尺寸", "font.size.body", 400, "0em", "正文、段落"],
+      ["subhead", "节制留白、动效轻提示", "font.size.subhead", 400, "0em", "副标题、辅助说明"],
+      ["footnote", "层级清晰", "font.size.footnote", 500, "0.02em", "脚注、次要信息"],
+      ["caption1", "辅助说明 / 表格", "font.size.caption1", 500, "0.04em", "标签、图注"],
+      ["caption2", "Label / Caption", "font.size.caption2", 500, "0.04em", "最小标注"],
     ]
     : [
-      ["Display", "数据总览", "font.size.3xl", 800, "-0.03em"],
-      ["Heading", "项目增长趋势", "font.size.2xl", 700, "-0.02em"],
-      ["Title", "用户留存分析", "font.size.xl", 700, "-0.01em"],
-      ["Body / L", "本周新增用户较上周提升 12.8%", "font.size.lg", 400, "0em"],
-      ["Body", "今日同步 24 条设计变量", "font.size.md", 400, "0em"],
-      ["Caption", "UPDATED · 2026-04-27", "font.size.xs", 500, "0.04em"],
+      ["3xl", "迅捷从未如此上头", "font.size.3xl", 800, "-0.03em", "展示标题、Hero 区"],
+      ["2xl", "无偏移、最高能瞬间", "font.size.2xl", 700, "-0.02em", "页面标题"],
+      ["xl", "起范也起波澜", "font.size.xl", 700, "-0.01em", "模块标题"],
+      ["lg", "写法规整", "font.size.lg", 400, "0em", "大正文、导语"],
+      ["md", "辅助说明 / 表格", "font.size.md", 400, "0em", "正文默认"],
+      ["xs", "Label / Caption", "font.size.xs", 500, "0.04em", "标签、辅助"],
     ];
 
   els.typeIntro.textContent = label.intro;
   els.fontCjkName.textContent = label.cjk;
   els.fontLatinName.textContent = label.latin;
   els.typeScaleMeta.textContent = `BASE · ${seed.baseFontSize}px`;
-  els.typeScalePreview.innerHTML = rows.map(([level, sample, tokenName, weight, tracking]) => {
+  els.typeScalePreview.innerHTML = rows.map(([level, sample, tokenName, weight, tracking, usage]) => {
     const size = tokens[tokenName].value;
     const lh = Math.round(size * 1.42);
     const isLarge = size >= 22;
     return `
       <div class="type-scale-row${isLarge ? ' large' : ''}">
         <div class="type-scale-token">
-          <strong>${level}</strong>
+          <strong>${tokenName.replace("font.size.", "text.")}</strong>
           <span>${size} / ${lh} · w${weight}</span>
         </div>
-        <span class="type-scale-sample" style="font-size:${size}px;font-weight:${weight};letter-spacing:${tracking};line-height:1.3">${sample}</span>
+        <span class="type-scale-sample" style="font-size:${size}px;font-weight:${weight};letter-spacing:${tracking};line-height:1.3">${usage || sample}</span>
         <span class="type-scale-size">${size}px</span>
       </div>
     `;
@@ -449,7 +451,7 @@ function render() {
   els.backgroundTable.innerHTML = table(tokens, backgroundColorNames, { defaultMode: seed.defaultMode });
   els.borderTable.innerHTML = table(tokens, borderColorNames, { defaultMode: seed.defaultMode });
   els.constantColorTable.innerHTML = table(tokens, constantColorNames, { defaultMode: seed.defaultMode });
-  els.typeTable.innerHTML = table(tokens, typeNames, { withColor: false, defaultMode: seed.defaultMode });
+  // typeTable removed — type scale preview already shows all font tokens
   renderShapes(tokens, seed.defaultMode);
   renderTypeShowcase(seed, tokens);
   renderContrast(tokens);
@@ -498,13 +500,12 @@ function renderOpacity(tokens) {
     const val = typeof t.value === "number" ? t.value : parseFloat(t.value);
     const pct = Math.round(val * 100);
     return `
-      <div class="opacity-item">
-        <div class="opacity-name">${t.css.name}</div>
-        <div class="opacity-bar">
-          <div class="opacity-bar-fill" style="background:var(--primary);opacity:${val}"></div>
+      <div class="opacity-card">
+        <div class="opacity-preview">
+          <div class="opacity-fill" style="opacity:${val}"></div>
         </div>
-        <div class="opacity-value">${pct}%</div>
-        <div class="opacity-usage">${t.usage}</div>
+        <span class="opacity-name">${t.name}</span>
+        <span class="opacity-value">${pct}%</span>
       </div>
     `;
   }).join("");
