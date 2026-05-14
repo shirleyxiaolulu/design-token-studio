@@ -1973,32 +1973,38 @@ body[data-default-mode="light"] .sidebar-tab:hover:not(.active) {
 .toc-link {
   display: flex;
   align-items: center;
-  height: 33px;
+  height: 36px;
   padding: 0 12px;
-  border-radius: 6px;
+  border-radius: 8px;
+  border-left: 3px solid transparent;
   color: var(--text-soft);
   text-decoration: none;
   font-size: 13px;
   transition: all 0.15s;
+  cursor: pointer;
 }
 
 .toc-link:hover {
-  background: rgba(255,255,255,0.04);
+  background: rgba(255,255,255,0.06);
   color: var(--text);
+  border-left-color: rgba(255,255,255,0.2);
 }
 
 .toc-link.active {
-  background: rgba(var(--primary-rgb, 101, 51, 232), 0.1);
+  background: rgba(var(--primary-rgb, 101, 51, 232), 0.15);
   color: var(--primary);
   font-weight: 600;
+  border-left-color: var(--primary);
 }
 
 body[data-default-mode="light"] .toc-link:hover {
-  background: rgba(0,0,0,0.04);
+  background: rgba(0,0,0,0.05);
+  border-left-color: rgba(0,0,0,0.15);
 }
 
 body[data-default-mode="light"] .toc-link.active {
-  background: rgba(var(--primary-rgb, 101, 51, 232), 0.08);
+  background: rgba(var(--primary-rgb, 101, 51, 232), 0.1);
+  border-left-color: var(--primary);
 }
 
 /* Section Header: kicker + title + desc */
