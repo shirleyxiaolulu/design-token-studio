@@ -113,7 +113,7 @@ async function syncVariables(data) {
     var newVar = figma.variables.createVariable(name, targetCol, resolvedType);
 
     if (resolvedType === 'COLOR') {
-      newVar.scopes = ['ALL_FILLS'];
+      newVar.scopes = ['ALL_FILLS', 'STROKE_COLOR'];
     } else if (name.indexOf('radius') >= 0) {
       newVar.scopes = ['CORNER_RADIUS'];
     } else if (name.indexOf('space') >= 0) {
@@ -190,6 +190,205 @@ async function syncVariables(data) {
   }
 
   return { created: created, updated: updated, skipped: skipped, cleaned: cleaned, verify: verifyMsg };
+}
+
+// =============================================
+// Sync: Text Styles from font tokens
+// =============================================
+async function syncTextStyles(data) {
+  // Load fonts
+  var fontLoaded = false;
+  try {
+    await figma.loadFontAsync({ family: 'PingFang SC', style: 'Regular' });
+    await figma.loadFontAsync({ family: 'PingFang SC', style: 'Semibold' });
+    fontLoaded = true;
+  } catch (e) {
+    await figma.loadFontAsync({ family: 'Inter', style: 'Regular' });
+    await figma.loadFontAsync({ family: 'Inter', style: 'Semi Bold' });
+  }
+  var FONT_FAMILY = fontLoaded ? 'PingFang SC' : 'Inter';
+  var FONT_BOLD = fontLoaded ? 'Semibold' : 'Semi Bold';
+
+  // Define text style specs: [tokenKey, styleName, weight, description]
+  // weight: 'bold' = Semibold/Semi Bold, 'regular' = Regular
+  var platform = data.platform || 'ios-app';
+  var styleSpecs;
+
+  if (platform === 'ios-app') {
+    styleSpecs = [
+      ['font.size.largeTitle', 'Large Title', 'bold', '大标题、首屏展示'],
+      ['font.size.title1', 'Title 1', 'bold', '一级标题、模块头'],
+      ['font.size.title2', 'Title 2', 'bold', '二级标题、卡片头'],
+      ['font.size.title3', 'Title 3', 'bold', '三级标题、列表组头'],
+      ['font.size.body', 'Body', 'regular', '正文常用尺寸'],
+      ['font.size.subhead', 'Subhead', 'regular', '副标题、列表描述'],
+      ['font.size.footnote', 'Footnote', 'regular', '脚注、次要信息'],
+      ['font.size.caption', 'Caption', 'regular', '时间戳、辅助标签'],
+      ['font.size.mini', 'Mini', 'regular', '角标、最小标注'],
+    ];
+  } else if (platform === 'web-admin') {
+    styleSpecs = [
+      ['font.size.5xl', 'Display', 'bold', '展示标题、Hero 区'],
+      ['font.size.4xl', 'Heading 1', 'bold', '页面大标题'],
+      ['font.size.3xl', 'Heading 2', 'bold', '页面标题'],
+      ['font.size.2xl', 'Heading 3', 'bold', '模块标题'],
+      ['font.size.xl', 'Heading 4', 'bold', '卡片标题'],
+      ['font.size.lg', 'Body Large', 'regular', '大正文、导语'],
+      ['font.size.md', 'Body', 'regular', '正文默认'],
+      ['font.size.sm', 'Body Small', 'regular', '辅助文本'],
+      ['font.size.caption', 'Caption', 'regular', '标签、图注'],
+      ['font.size.mini', 'Mini', 'regular', '角标、最小标注'],
+    ];
+  } else {
+    // app-web
+    styleSpecs = [
+      ['font.size.5xl', 'Display', 'bold', '展示标题、Hero 区'],
+      ['font.size.4xl', 'Heading 1', 'bold', '页面大标题'],
+      ['font.size.3xl', 'Heading 2', 'bold', '页面标题'],
+      ['font.size.2xl', 'Heading 3', 'bold', '模块标题'],
+      ['font.size.xl', 'Heading 4', 'bold', '卡片标题'],
+      ['font.size.lg', 'Body Large', 'regular', '大正文'],
+      ['font.size.body', 'Body', 'regular', '正文（通用）'],
+      ['font.size.sm', 'Body Small', 'regular', '副标题'],
+      ['font.size.footnote', 'Footnote', 'regular', '脚注、辅助'],
+      ['font.size.caption', 'Caption', 'regular', '标签'],
+      ['font.size.mini', 'Mini', 'regular', '角标'],
+    ];
+  }
+
+  // Get existing text styles
+  var existingStyles = await figma.getLocalTextStylesAsync();
+  var styleMap = {};
+  for (var i = 0; i < existingStyles.length; i++) {
+    styleMap[existingStyles[i].name] = existingStyles[i];
+  }
+
+  var created = 0;
+  var updated = 0;
+
+  for (var si = 0; si < styleSpecs.length; si++) {
+    var spec = styleSpecs[si];
+    var tokenKey = spec[0];
+    var styleName = spec[1];
+    var weight = spec[2];
+    var desc = spec[3];
+
+    // Find font size from dimTokens
+    var dimToken = data.dimTokens[tokenKey];
+    if (!dimToken) continue;
+
+    var fontSize = typeof dimToken.value === 'string' ? parseInt(dimToken.value) : dimToken.value;
+    if (!fontSize || isNaN(fontSize)) continue;
+
+    var lineHeight = Math.round(fontSize * 1.5);
+    var fontStyle = weight === 'bold' ? FONT_BOLD : 'Regular';
+
+    // Find or create style
+    var style = styleMap[styleName];
+    if (!style) {
+      style = figma.createTextStyle();
+      style.name = styleName;
+      created++;
+    } else {
+      updated++;
+    }
+
+    style.fontName = { family: FONT_FAMILY, style: fontStyle };
+    style.fontSize = fontSize;
+    style.lineHeight = { value: lineHeight, unit: 'PIXELS' };
+    style.description = desc;
+  }
+
+  return { created: created, updated: updated };
+}
+
+// =============================================
+// Sync: Effect Styles from shadow tokens
+// =============================================
+async function syncEffectStyles(data) {
+  // Shadow levels to sync
+  var shadowLevels = ['shadow.sm', 'shadow.md', 'shadow.lg', 'shadow.overlay'];
+  var styleNames = {
+    'shadow.sm': 'Shadow/SM',
+    'shadow.md': 'Shadow/MD',
+    'shadow.lg': 'Shadow/LG',
+    'shadow.overlay': 'Shadow/Overlay',
+  };
+  var styleDescs = {
+    'shadow.sm': '卡片、按钮悬停',
+    'shadow.md': '下拉菜单、弹出层',
+    'shadow.lg': '弹窗、对话框',
+    'shadow.overlay': '全屏浮层、模态',
+  };
+
+  // Get existing effect styles
+  var existingStyles = await figma.getLocalEffectStylesAsync();
+  var styleMap = {};
+  for (var i = 0; i < existingStyles.length; i++) {
+    styleMap[existingStyles[i].name] = existingStyles[i];
+  }
+
+  var created = 0;
+  var updated = 0;
+
+  // Determine mode
+  var defaultMode = 'dark';
+  if (data.seed && data.seed.defaultMode) {
+    defaultMode = data.seed.defaultMode;
+  } else if (data.defaultMode) {
+    defaultMode = data.defaultMode;
+  }
+
+  for (var si = 0; si < shadowLevels.length; si++) {
+    var key = shadowLevels[si];
+    var token = data.dimTokens[key];
+    if (!token || token.type !== 'shadow') continue;
+
+    var styleName = styleNames[key];
+    var shadowValue = token.value;
+    if (!shadowValue || typeof shadowValue !== 'object') continue;
+
+    // Get layers for default mode
+    var layers = shadowValue[defaultMode];
+    if (!layers || layers === 'none') continue;
+    if (!Array.isArray(layers)) continue;
+
+    // Convert shadow layers to Figma effects
+    var effects = [];
+    for (var li = 0; li < layers.length; li++) {
+      var layer = layers[li];
+      // Parse "r,g,b" color string
+      var colorParts = layer.color.split(',');
+      var r = parseInt(colorParts[0]) / 255;
+      var g = parseInt(colorParts[1]) / 255;
+      var b = parseInt(colorParts[2]) / 255;
+
+      effects.push({
+        type: 'DROP_SHADOW',
+        color: { r: r, g: g, b: b, a: layer.alpha },
+        offset: { x: layer.x, y: layer.y },
+        radius: layer.blur,
+        spread: layer.spread,
+        visible: true,
+        blendMode: 'NORMAL',
+      });
+    }
+
+    // Find or create style
+    var style = styleMap[styleName];
+    if (!style) {
+      style = figma.createEffectStyle();
+      style.name = styleName;
+      created++;
+    } else {
+      updated++;
+    }
+
+    style.effects = effects;
+    style.description = styleDescs[key] || '';
+  }
+
+  return { created: created, updated: updated };
 }
 
 // =============================================
@@ -282,6 +481,36 @@ async function generatePreview(data) {
   frame.fills = [{ type: 'SOLID', color: CANVAS_BG }];
   frame.clipsContent = true;
 
+  // ===== Variable Binding Helpers =====
+  // Map color object references → semantic variable names for auto-binding
+  var colorVarMap = new Map();
+  colorVarMap.set(CANVAS_BG, 'color/bg/page');
+  colorVarMap.set(CARD_BG, 'color/bg/surface');
+  colorVarMap.set(CARD_BORDER, 'color/border/subtle');
+  colorVarMap.set(TEXT_BRIGHT, 'color/text/primary');
+  colorVarMap.set(TEXT_DIM, 'color/text/secondary');
+  colorVarMap.set(TEXT_MUTED, 'color/text/tertiary');
+  colorVarMap.set(TEXT_SHADOW, 'color/text/secondary');
+  colorVarMap.set(SWATCH_BORDER, 'color/border/subtle');
+  colorVarMap.set(brandRgb, 'color/brand/primary');
+
+  function bindFill(node, colorRef) {
+    var varName = colorVarMap.get(colorRef);
+    if (varName && allVars[varName] && node.fills && node.fills.length > 0) {
+      node.fills = [figma.variables.setBoundVariableForPaint(node.fills[0], 'color', allVars[varName])];
+    }
+  }
+
+  function bindStroke(node, colorRef) {
+    var varName = colorVarMap.get(colorRef);
+    if (varName && allVars[varName] && node.strokes && node.strokes.length > 0) {
+      node.strokes = [figma.variables.setBoundVariableForPaint(node.strokes[0], 'color', allVars[varName])];
+    }
+  }
+
+  // Bind main frame background
+  bindFill(frame, CANVAS_BG);
+
   figma.ui.postMessage({ type: 'progress', message: '框架已创建，正在生成色彩系统...' });
 
   // ===== Helpers =====
@@ -297,7 +526,13 @@ async function generatePreview(data) {
     t.fontName = { family: FONT_FAMILY, style: fontStyle };
     t.fontSize = size || 14;
     t.characters = String(text);
-    t.fills = [{ type: 'SOLID', color: color || TEXT_BRIGHT, opacity: opacity !== undefined ? opacity : 1 }];
+    var resolvedColor = color || TEXT_BRIGHT;
+    t.fills = [{ type: 'SOLID', color: resolvedColor, opacity: opacity !== undefined ? opacity : 1 }];
+    // Auto-bind text fill to semantic variable
+    var varName = colorVarMap.get(resolvedColor);
+    if (varName && allVars[varName]) {
+      t.fills = [figma.variables.setBoundVariableForPaint(t.fills[0], 'color', allVars[varName])];
+    }
     return t;
   }
 
@@ -305,6 +540,7 @@ async function generatePreview(data) {
     const r = figma.createRectangle();
     parent.appendChild(r); r.x = x; r.y = y; r.resize(w, 1);
     r.fills = [{ type: 'SOLID', color: CARD_BORDER }];
+    bindFill(r, CARD_BORDER);
   }
 
   // Section header: pill kicker badge + title + description (matching web)
@@ -317,12 +553,14 @@ async function generatePreview(data) {
     kickerBg.resize(kickerW, 22);
     kickerBg.cornerRadius = 999;
     kickerBg.fills = [{ type: 'SOLID', color: brandRgb, opacity: 0.12 }];
+    bindFill(kickerBg, brandRgb);
     // Kicker dot
     var kickerDot = figma.createEllipse();
     parent.appendChild(kickerDot);
     kickerDot.x = 72; kickerDot.y = y + 8.5;
     kickerDot.resize(5, 5);
     kickerDot.fills = [{ type: 'SOLID', color: brandRgb }];
+    bindFill(kickerDot, brandRgb);
     // Kicker text
     addText(parent, 83, y + 3, 'section · ' + num, 11, 'Semi Bold', brandRgb);
 
@@ -464,11 +702,13 @@ async function generatePreview(data) {
   semKickerBg.x = 64; semKickerBg.y = Y;
   semKickerBg.resize(120, 22); semKickerBg.cornerRadius = 999;
   semKickerBg.fills = [{ type: 'SOLID', color: brandRgb, opacity: 0.12 }];
+  bindFill(semKickerBg, brandRgb);
   var semKickerDot = figma.createEllipse();
   frame.appendChild(semKickerDot);
   semKickerDot.x = 72; semKickerDot.y = Y + 8.5;
   semKickerDot.resize(5, 5);
   semKickerDot.fills = [{ type: 'SOLID', color: brandRgb }];
+  bindFill(semKickerDot, brandRgb);
   addText(frame, 83, Y + 3, 'section · 02', 11, 'Semi Bold', brandRgb);
   addText(frame, 64, Y + 32, '语义色', 22, 'Semi Bold', TEXT_BRIGHT);
   addText(frame, 64, Y + 64, '语义色描述界面角色而非具体色值，在 Light / Dark 模式之间自动切换。Figma 组件应优先引用这些变量。', 13, 'Regular', TEXT_DIM);
@@ -487,6 +727,8 @@ async function generatePreview(data) {
     card.strokes = [{ type: 'SOLID', color: CARD_BORDER }];
     card.strokeWeight = 1;
     card.clipsContent = true;
+    bindFill(card, CARD_BG);
+    bindStroke(card, CARD_BORDER);
 
     // Category title + description
     addText(card, CARD_PAD, 20, title, 18, 'Regular', TEXT_BRIGHT);
@@ -498,6 +740,7 @@ async function generatePreview(data) {
     divLine.x = CARD_PAD; divLine.y = 78;
     divLine.resize(INNER_W, 1);
     divLine.fills = [{ type: 'SOLID', color: CARD_BORDER }];
+    bindFill(divLine, CARD_BORDER);
 
     // Column headers
     addText(card, 68, 92, '变量', 10, 'Regular', TEXT_MUTED);
@@ -539,6 +782,7 @@ async function generatePreview(data) {
       }
       swatch.strokes = [{ type: 'SOLID', color: SWATCH_BORDER, opacity: 0.12 }];
       swatch.strokeWeight = 1;
+      bindStroke(swatch, SWATCH_BORDER);
 
       // Variable name — vertically centered in 52px row (52-11)/2 ≈ 18
       addText(rowFrame, 44, 18, row.name, 11, 'Regular', TEXT_BRIGHT);
@@ -555,6 +799,7 @@ async function generatePreview(data) {
       rowDiv.x = 0; rowDiv.y = 51;
       rowDiv.resize(INNER_W, 1);
       rowDiv.fills = [{ type: 'SOLID', color: CARD_BORDER }];
+      bindFill(rowDiv, CARD_BORDER);
     }
 
     return startY + cardH;
@@ -616,6 +861,7 @@ async function generatePreview(data) {
   cjkCard.resize(510, 240); cjkCard.cornerRadius = 12;
   cjkCard.fills = [{ type: 'SOLID', color: CARD_BG }];
   cjkCard.strokes = [{ type: 'SOLID', color: CARD_BORDER }]; cjkCard.strokeWeight = 1;
+  bindFill(cjkCard, CARD_BG); bindStroke(cjkCard, CARD_BORDER);
   addText(cjkCard, 25, 24, 'CJK · 中文', 12, 'Regular', TEXT_MUTED);
   addText(cjkCard, 25, 50, '苹方', 56, 'Regular', TEXT_BRIGHT);
   addText(cjkCard, 25, 116, 'PingFang SC, system-ui', 12, 'Regular', TEXT_MUTED);
@@ -636,6 +882,7 @@ async function generatePreview(data) {
   latCard.resize(526, 240); latCard.cornerRadius = 12;
   latCard.fills = [{ type: 'SOLID', color: CARD_BG }];
   latCard.strokes = [{ type: 'SOLID', color: CARD_BORDER }]; latCard.strokeWeight = 1;
+  bindFill(latCard, CARD_BG); bindStroke(latCard, CARD_BORDER);
   addText(latCard, 25, 24, 'Latin · 西文', 12, 'Regular', TEXT_MUTED);
   addText(latCard, 25, 50, 'Inter', 56, 'Regular', TEXT_BRIGHT);
   addText(latCard, 25, 116, 'Inter, system-ui', 12, 'Regular', TEXT_MUTED);
@@ -713,12 +960,14 @@ async function generatePreview(data) {
   tsCard.fills = [{ type: 'SOLID', color: CARD_BG }];
   tsCard.strokes = [{ type: 'SOLID', color: CARD_BORDER }]; tsCard.strokeWeight = 1;
   tsCard.clipsContent = true;
+  bindFill(tsCard, CARD_BG); bindStroke(tsCard, CARD_BORDER);
 
   addText(tsCard, CARD_PAD, 22, '字号规范 · Type Scale', 18, 'Regular', TEXT_BRIGHT);
   addText(tsCard, 850, 24, 'BASE · 14px', 12, 'Regular', TEXT_MUTED);
   var tsDivTop = figma.createRectangle();
   tsCard.appendChild(tsDivTop); tsDivTop.x = CARD_PAD; tsDivTop.y = 64;
   tsDivTop.resize(INNER_W, 1); tsDivTop.fills = [{ type: 'SOLID', color: CARD_BORDER }];
+  bindFill(tsDivTop, CARD_BORDER);
 
   for (var tsi = 0; tsi < typeScaleRows.length; tsi++) {
     var tsRow = typeScaleRows[tsi];
@@ -733,6 +982,7 @@ async function generatePreview(data) {
       var tsDiv = figma.createRectangle();
       tsCard.appendChild(tsDiv); tsDiv.x = CARD_PAD; tsDiv.y = tsY + tsRowH;
       tsDiv.resize(INNER_W, 1); tsDiv.fills = [{ type: 'SOLID', color: CARD_BORDER }];
+      bindFill(tsDiv, CARD_BORDER);
     }
   }
   Y += tsCardH + 48;
@@ -764,6 +1014,7 @@ async function generatePreview(data) {
       rCard.resize(rCardW, rCardH); rCard.cornerRadius = 12;
       rCard.fills = [{ type: 'SOLID', color: CARD_BG }];
       rCard.strokes = [{ type: 'SOLID', color: CARD_BORDER }]; rCard.strokeWeight = 1;
+      bindFill(rCard, CARD_BG); bindStroke(rCard, CARD_BORDER);
 
       // Preview swatch 72×40 with dashed border
       var rSwatch = figma.createRectangle();
@@ -772,7 +1023,9 @@ async function generatePreview(data) {
       rSwatch.resize(72, 40);
       rSwatch.cornerRadius = Math.min(rVal, 20);
       rSwatch.fills = [{ type: 'SOLID', color: brandRgb, opacity: 0.06 }];
+      bindFill(rSwatch, brandRgb);
       rSwatch.strokes = [{ type: 'SOLID', color: brandRgb, opacity: 0.4 }];
+      bindStroke(rSwatch, brandRgb);
       rSwatch.strokeWeight = 1.5;
       rSwatch.dashPattern = [4, 4];
 
@@ -818,6 +1071,7 @@ async function generatePreview(data) {
     sCard.resize(sCardW, sCardH); sCard.cornerRadius = 12;
     sCard.fills = [{ type: 'SOLID', color: CARD_BG }];
     sCard.strokes = [{ type: 'SOLID', color: CARD_BORDER }]; sCard.strokeWeight = 1;
+    bindFill(sCard, CARD_BG); bindStroke(sCard, CARD_BORDER);
 
     // Preview box
     var sSwatch = figma.createRectangle();
@@ -826,6 +1080,7 @@ async function generatePreview(data) {
     sSwatch.resize(302, 64); sSwatch.cornerRadius = 10;
     sSwatch.fills = [{ type: 'SOLID', color: SWATCH_INNER }];
     sSwatch.strokes = [{ type: 'SOLID', color: CARD_BORDER }]; sSwatch.strokeWeight = 1;
+    bindStroke(sSwatch, CARD_BORDER);
     sSwatch.effects = sd.effects;
 
     // Token name + label
@@ -867,6 +1122,7 @@ async function generatePreview(data) {
       spCard.resize(spCardW, spCardH); spCard.cornerRadius = 12;
       spCard.fills = [{ type: 'SOLID', color: CARD_BG }];
       spCard.strokes = [{ type: 'SOLID', color: CARD_BORDER }]; spCard.strokeWeight = 1;
+      bindFill(spCard, CARD_BG); bindStroke(spCard, CARD_BORDER);
 
       // Token name + value
       addText(spCard, 16, 14, spKey, 12, 'Regular', TEXT_BRIGHT);
@@ -923,9 +1179,15 @@ figma.ui.onmessage = async (msg) => {
 
       figma.ui.postMessage({ type: 'progress', message: '开始同步 ' + colorCount + ' 颜色 + ' + dimCount + ' 尺寸...' });
       var result = await syncVariables(msg.data);
+      figma.ui.postMessage({ type: 'progress', message: '变量已同步，正在同步样式...' });
+      var textResult = await syncTextStyles(msg.data);
+      var effectResult = await syncEffectStyles(msg.data);
       figma.ui.postMessage({
         type: 'result',
-        message: '同步完成！新建 ' + result.created + ' · 更新 ' + result.updated + ' · 跳过 ' + result.skipped + (result.cleaned ? ' · 清理iOS变量 ' + result.cleaned : '') + (result.verify || ''),
+        message: '同步完成！变量: 新建 ' + result.created + ' · 更新 ' + result.updated + ' · 跳过 ' + result.skipped
+          + (result.cleaned ? ' · 清理 ' + result.cleaned : '')
+          + ' | 文字样式: ' + textResult.created + ' 新建 · ' + textResult.updated + ' 更新'
+          + ' | 效果样式: ' + effectResult.created + ' 新建 · ' + effectResult.updated + ' 更新',
       });
     }
     else if (msg.type === 'generate') {
@@ -933,11 +1195,16 @@ figma.ui.onmessage = async (msg) => {
       var dimCount2 = Object.keys(msg.data.dimTokens || {}).length;
       figma.ui.postMessage({ type: 'progress', message: '同步 ' + colorCount2 + ' 颜色 + ' + dimCount2 + ' 尺寸...' });
       var syncResult = await syncVariables(msg.data);
-      figma.ui.postMessage({ type: 'progress', message: '变量已同步 (新建 ' + syncResult.created + ' · 更新 ' + syncResult.updated + ')，正在生成预览页...' });
+      figma.ui.postMessage({ type: 'progress', message: '变量已同步，正在同步样式...' });
+      var textResult2 = await syncTextStyles(msg.data);
+      var effectResult2 = await syncEffectStyles(msg.data);
+      figma.ui.postMessage({ type: 'progress', message: '样式已同步 (文字 ' + (textResult2.created + textResult2.updated) + ' · 效果 ' + (effectResult2.created + effectResult2.updated) + ')，正在生成预览页...' });
       var frameId = await generatePreview(msg.data);
       figma.ui.postMessage({
         type: 'result',
-        message: '预览页已生成！新建 ' + syncResult.created + ' · 更新 ' + syncResult.updated + ' 个变量',
+        message: '预览页已生成！变量: 新建 ' + syncResult.created + ' · 更新 ' + syncResult.updated
+          + ' | 文字样式 ' + (textResult2.created + textResult2.updated)
+          + ' · 效果样式 ' + (effectResult2.created + effectResult2.updated),
       });
     }
   } catch (err) {

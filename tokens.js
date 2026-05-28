@@ -434,7 +434,7 @@
         return name.replace("color.common.", "color/common/").replaceAll(".", "/");
       }
       if (name.startsWith("color.custom.")) {
-        return name.replace("color.custom.", "color/auxiliary/").replaceAll(".", "/");
+        return name.replace("color.custom.", "color/custom/").replaceAll(".", "/");
       }
       return name.replaceAll(".", "/");
     }
@@ -448,7 +448,7 @@
         return name.replace("color.common.", "primitive/color/common/").replaceAll(".", "/");
       }
       if (name.startsWith("color.custom.")) {
-        return name.replace("color.custom.", "primitive/color/auxiliary/").replaceAll(".", "/");
+        return name.replace("color.custom.", "primitive/color/custom/").replaceAll(".", "/");
       }
       return "primitive/" + name.replaceAll(".", "/");
     }
@@ -581,19 +581,19 @@
     });
 
     Object.entries(typography(seed.platform, seed.baseFontSize, seed.fontStack)).forEach(([name, item]) => {
-      tokens[name] = makeToken(name, name.includes("family") ? "fontFamily" : "dimension", item.value, item.usage || "字体变量", { tier: "primitive" });
+      tokens[name] = makeToken(name, name.includes("family") ? "fontFamily" : "dimension", item.value, item.usage || "字体变量", { tier: "semantic" });
     });
 
     const radiusNames = ["none", "xs", "sm", "md", "lg", "xl", "full"];
     radiusScale(seed.radiusScale).forEach((value, index) => {
       const name = `radius.${radiusNames[index]}`;
-      tokens[name] = makeToken(name, "dimension", `${value}px`, "圆角变量", { tier: "primitive" });
+      tokens[name] = makeToken(name, "dimension", `${value}px`, "圆角变量", { tier: "semantic" });
     });
 
     const spaces = { 0: 0, 1: 4, 2: 8, 3: 12, 4: 16, 5: 20, 6: 24, 8: 32, 10: 40, 12: 48 };
     Object.entries(spaces).forEach(([step, value]) => {
       const name = `space.${step}`;
-      tokens[name] = makeToken(name, "dimension", `${value}px`, "间距变量", { tier: "primitive" });
+      tokens[name] = makeToken(name, "dimension", `${value}px`, "间距变量", { tier: "semantic" });
     });
 
     Object.entries(shadowScale(seed.shadowStrength)).forEach(([level, value]) => {
@@ -657,7 +657,7 @@
     const extraSpaces = { 16: 64, 20: 80 };
     Object.entries(extraSpaces).forEach(([step, value]) => {
       const name = `space.${step}`;
-      tokens[name] = makeToken(name, "dimension", `${value}px`, "大间距变量", { tier: "primitive" });
+      tokens[name] = makeToken(name, "dimension", `${value}px`, "大间距变量", { tier: "semantic" });
     });
 
     // ===== v2: Auxiliary Color Full Scale =====
@@ -674,28 +674,6 @@
         });
       });
     });
-
-    if (seed.platform === "ios-app") {
-      const iosTokens = {
-        "ios.screen.background": ["color.bg.page", semanticColors["color.bg.page"]],
-        "ios.safeArea.background": ["color.bg.surface", semanticColors["color.bg.surface"]],
-        "ios.navigation.background": ["color.bg.surface", semanticColors["color.bg.surface"]],
-        "ios.navigation.title": ["color.text.primary", semanticColors["color.text.primary"]],
-        "ios.tabbar.background": ["color.bg.elevated", semanticColors["color.bg.elevated"]],
-        "ios.card.background": ["color.bg.surface", semanticColors["color.bg.surface"]],
-        "ios.list.item.background": ["color.bg.surface", semanticColors["color.bg.surface"]],
-        "ios.divider.default": ["color.border.subtle", semanticColors["color.border.subtle"]],
-        "ios.sheet.background": ["color.bg.elevated", semanticColors["color.bg.elevated"]],
-        "ios.overlay.mask": ["color.bg.overlay", semanticColors["color.bg.overlay"]],
-      };
-
-      Object.entries(iosTokens).forEach(([name, [alias, [, , usage]]]) => {
-        tokens[name] = makeToken(name, "color", {
-          light: `{${alias}.light}`,
-          dark: `{${alias}.light}`,
-        }, usage, { tier: "semantic", alias: { light: alias, dark: alias } });
-      });
-    }
 
     return { palette, tokens };
   }
