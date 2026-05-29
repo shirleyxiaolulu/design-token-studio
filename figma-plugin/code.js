@@ -423,8 +423,8 @@ async function generatePreview(data) {
 
   // Get brand color for accent
   const brandToken = data.colorTokens['color.brand.primary'] || data.colorTokens['color.palette.primary.5'];
-  const brandHex = brandToken ? brandToken.light : '#6533E8';
-  const brandRgb = hexToFigmaRgb(brandHex) || { r: 0.4, g: 0.2, b: 0.91 };
+  const brandHex = brandToken ? brandToken.light : '#5314FF';
+  const brandRgb = hexToFigmaRgb(brandHex) || { r: 0.33, g: 0.08, b: 1 };
 
   // Determine mode from seed or data
   var defaultMode = 'dark';
@@ -552,8 +552,10 @@ async function generatePreview(data) {
     kickerBg.x = 64; kickerBg.y = y;
     kickerBg.resize(kickerW, 22);
     kickerBg.cornerRadius = 999;
-    kickerBg.fills = [{ type: 'SOLID', color: brandRgb, opacity: 0.12 }];
+    kickerBg.fills = [{ type: 'SOLID', color: brandRgb }];
     bindFill(kickerBg, brandRgb);
+    // Use node opacity for the tint (paint opacity is lost when a color variable is bound)
+    kickerBg.opacity = 0.12;
     // Kicker dot
     var kickerDot = figma.createEllipse();
     parent.appendChild(kickerDot);
@@ -701,8 +703,9 @@ async function generatePreview(data) {
   frame.appendChild(semKickerBg);
   semKickerBg.x = 64; semKickerBg.y = Y;
   semKickerBg.resize(120, 22); semKickerBg.cornerRadius = 999;
-  semKickerBg.fills = [{ type: 'SOLID', color: brandRgb, opacity: 0.12 }];
+  semKickerBg.fills = [{ type: 'SOLID', color: brandRgb }];
   bindFill(semKickerBg, brandRgb);
+  semKickerBg.opacity = 0.12;
   var semKickerDot = figma.createEllipse();
   frame.appendChild(semKickerDot);
   semKickerDot.x = 72; semKickerDot.y = Y + 8.5;
@@ -1016,18 +1019,30 @@ async function generatePreview(data) {
       rCard.strokes = [{ type: 'SOLID', color: CARD_BORDER }]; rCard.strokeWeight = 1;
       bindFill(rCard, CARD_BG); bindStroke(rCard, CARD_BORDER);
 
-      // Preview swatch 72×40 with dashed border
+      // Preview swatch 72×40: translucent fill layer + dashed border layer.
+      // (Paint opacity is lost once a color variable is bound, so we use node.opacity.)
+      var rSwatchRadius = Math.min(rVal, 20);
+      // Fill layer — translucent brand tint
       var rSwatch = figma.createRectangle();
       rCard.appendChild(rSwatch);
       rSwatch.x = 24; rSwatch.y = 20;
       rSwatch.resize(72, 40);
-      rSwatch.cornerRadius = Math.min(rVal, 20);
-      rSwatch.fills = [{ type: 'SOLID', color: brandRgb, opacity: 0.06 }];
+      rSwatch.cornerRadius = rSwatchRadius;
+      rSwatch.fills = [{ type: 'SOLID', color: brandRgb }];
       bindFill(rSwatch, brandRgb);
-      rSwatch.strokes = [{ type: 'SOLID', color: brandRgb, opacity: 0.4 }];
-      bindStroke(rSwatch, brandRgb);
-      rSwatch.strokeWeight = 1.5;
-      rSwatch.dashPattern = [4, 4];
+      rSwatch.opacity = 0.1;
+      // Border layer — dashed brand outline on top
+      var rBorder = figma.createRectangle();
+      rCard.appendChild(rBorder);
+      rBorder.x = 24; rBorder.y = 20;
+      rBorder.resize(72, 40);
+      rBorder.cornerRadius = rSwatchRadius;
+      rBorder.fills = [];
+      rBorder.strokes = [{ type: 'SOLID', color: brandRgb }];
+      bindStroke(rBorder, brandRgb);
+      rBorder.strokeWeight = 1.5;
+      rBorder.dashPattern = [4, 4];
+      rBorder.opacity = 0.65;
 
       addText(rCard, 116, 20, rKey, 12, 'Regular', TEXT_BRIGHT);
       addText(rCard, 116, 42, rVal + 'px', 12, 'Regular', TEXT_DIM);
@@ -1128,13 +1143,14 @@ async function generatePreview(data) {
       addText(spCard, 16, 14, spKey, 12, 'Regular', TEXT_BRIGHT);
       addText(spCard, 126, 14, spVal + 'px', 12, 'Regular', TEXT_DIM);
 
-      // Green bar visualization
+      // Bar visualization — follows the brand/primary color
       var barW = Math.max(spVal * 2, 4);
       var spBar = figma.createRectangle();
       spCard.appendChild(spBar);
       spBar.x = 16; spBar.y = 44;
       spBar.resize(Math.min(barW, 148), 8); spBar.cornerRadius = 4;
-      spBar.fills = [{ type: 'SOLID', color: BAR_GREEN }];
+      spBar.fills = [{ type: 'SOLID', color: brandRgb }];
+      bindFill(spBar, brandRgb);
     }
     var spTotalRows = Math.ceil(spaceTokens.length / 5);
     Y += spTotalRows * (spCardH + spGapV) + 16;

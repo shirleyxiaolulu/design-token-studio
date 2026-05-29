@@ -37,12 +37,6 @@
     return `:root {\n${root.join("\n")}\n}\n\n[data-theme="light"] {\n${light.join("\n")}\n}\n\n[data-theme="dark"] {\n${dark.join("\n")}\n}\n`;
   }
 
-  function exportLess(tokens) {
-    return Object.values(tokens).map((token) => {
-      return `@${token.name.replaceAll(".", "-")}: var(${token.css.name});`;
-    }).join("\n");
-  }
-
   function exportTs(seed, tokens, version) {
     return `export const designSystem = ${JSON.stringify({
       name: seed.specName,
@@ -308,11 +302,8 @@
     return {
       json: exportJson(seed, tokens, version),
       css: exportCss(tokens, seed.defaultMode),
-      less: exportLess(tokens),
       ts: exportTs(seed, tokens, version),
       tailwind: exportTailwind(tokens),
-      figmaPlugin: exportFigmaPlugin(tokens, seed),
-      ai: exportAiJson(seed, tokens, version),
     };
   }
 
@@ -320,7 +311,6 @@
     DesignExports: {
       exportJson,
       exportCss,
-      exportLess,
       exportTs,
       exportTailwind,
       exportFigmaPlugin,
