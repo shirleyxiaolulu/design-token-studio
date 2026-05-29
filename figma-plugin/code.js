@@ -137,7 +137,25 @@ async function syncVariables(data) {
   }
 
   // Sync color tokens
-  var colorEntries = Object.entries(data.colorTokens || {});
+  // Order color categories so the Figma library groups appear as:
+  // brand → auxiliary → function → text → constant → bg → border → (others)
+  // Figma orders variable groups by creation order, so we sort before creating.
+  var CAT_ORDER = ['brand', 'auxiliary', 'function', 'text', 'constant', 'bg', 'border'];
+  function catRank(figmaName) {
+    var parts = String(figmaName || '').split('/');
+    var ci = parts.indexOf('color');     // works for color/<cat>/.. and semantic/color/<cat>/..
+    var cat = ci >= 0 ? (parts[ci + 1] || '') : '';
+    var idx = CAT_ORDER.indexOf(cat);
+    return idx === -1 ? CAT_ORDER.length : idx;
+  }
+  var colorEntries = Object.entries(data.colorTokens || {}).map(function(e, idx) {
+    return [e[0], e[1], idx];            // keep original index for stable sort
+  });
+  colorEntries.sort(function(a, b) {
+    var ra = catRank(a[1].figmaName), rb = catRank(b[1].figmaName);
+    if (ra !== rb) return ra - rb;
+    return a[2] - b[2];                  // preserve original order within a category
+  });
   for (var i = 0; i < colorEntries.length; i++) {
     var token = colorEntries[i][1];
     var lightRgb = hexToFigmaRgb(token.light);
@@ -1093,7 +1111,10 @@ async function generatePreview(data) {
     sCard.appendChild(sSwatch);
     sSwatch.x = 19; sSwatch.y = 19;
     sSwatch.resize(302, 64); sSwatch.cornerRadius = 10;
-    sSwatch.fills = [{ type: 'SOLID', color: SWATCH_INNER }];
+    // Bind the demo block to the page-bg variable so it follows the Figma display
+    // mode (light → light, dark → dark) instead of being baked at generation time.
+    sSwatch.fills = [{ type: 'SOLID', color: CANVAS_BG }];
+    bindFill(sSwatch, CANVAS_BG);
     sSwatch.strokes = [{ type: 'SOLID', color: CARD_BORDER }]; sSwatch.strokeWeight = 1;
     bindStroke(sSwatch, CARD_BORDER);
     sSwatch.effects = sd.effects;
