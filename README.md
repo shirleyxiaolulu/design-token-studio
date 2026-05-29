@@ -6,6 +6,8 @@
 
 **直接打开：https://shirleyxiaolulu.github.io/design-token-studio/**
 
+内设多模式litht/dark，需要figma付费账号才能使用（教育版都可以）
+
 无需安装，浏览器打开即可。数据保存在你的浏览器本地，不会上传到任何服务器。
 
 ## 使用流程
