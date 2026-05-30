@@ -2271,7 +2271,7 @@ body[data-default-mode="light"] .toc-link.active {
   font-size: 14px;
   line-height: 1.65;
   color: var(--text-soft);
-  max-width: 680px;
+  max-width: none;
 }
 
 .section-badge {
