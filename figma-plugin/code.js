@@ -413,19 +413,79 @@ async function syncEffectStyles(data) {
 // Generate Preview Page
 // =============================================
 async function generatePreview(data) {
-  // Load PingFang SC (primary) + Inter (fallback)
-  var fontLoaded = false;
-  try {
-    await figma.loadFontAsync({ family: 'PingFang SC', style: 'Regular' });
-    await figma.loadFontAsync({ family: 'PingFang SC', style: 'Semibold' });
-    fontLoaded = true;
-  } catch (e) {
-    // Fallback to Inter if PingFang SC not available
-    await figma.loadFontAsync({ family: 'Inter', style: 'Regular' });
-    await figma.loadFontAsync({ family: 'Inter', style: 'Semi Bold' });
+  // Pick the CJK font family to match the font selected in the web app
+  var fontKey = (data.seed && data.seed.localFont) ? data.seed.localFont : 'pingfang';
+  // Each font shows the weight ladder that font actually ships ([label, numeric]).
+  var W_PINGFANG = [['Light', '300'], ['Regular', '400'], ['Medium', '500'], ['Semibold', '600']];
+  var W_HARMONY  = [['Light', '300'], ['Regular', '400'], ['Medium', '500'], ['Bold', '700']];
+  var W_MISANS   = [['Light', '300'], ['Regular', '400'], ['Medium', '500'], ['Semibold', '600'], ['Bold', '700']];
+  var W_SOURCE   = [['Light', '300'], ['Regular', '400'], ['Medium', '500'], ['SemiBold', '600'], ['Bold', '700']];
+  var W_ALIMAMA  = [['Light', '300'], ['Regular', '400'], ['Medium', '500'], ['Bold', '700']];
+  var FONT_MAP = {
+    pingfang: { name: '苹方',          stack: 'PingFang SC, system-ui',            cjk: ['PingFang SC'], weights: W_PINGFANG },
+    sf:       { name: '苹方',          stack: 'PingFang SC · SF Pro',              cjk: ['PingFang SC'], weights: W_PINGFANG },
+    harmony:  { name: '鸿蒙黑体',       stack: 'HarmonyOS Sans SC',                 cjk: ['HarmonyOS Sans SC', 'HarmonyOS Sans'], weights: W_HARMONY },
+    misans:   { name: 'MiSans',        stack: 'MiSans',                            cjk: ['MiSans'], weights: W_MISANS },
+    alimama:  { name: '阿里妈妈方圆体',  stack: 'Alimama FangYuanTi',                cjk: ['Alimama FangYuanTi VF', 'Alimama FangYuanTi'], weights: W_ALIMAMA },
+    source:   { name: '思源黑体',       stack: 'Noto Sans SC · Source Han Sans SC', cjk: ['Noto Sans SC', 'Source Han Sans SC', 'Noto Sans CJK SC', 'Source Han Sans CN'], weights: W_SOURCE },
+    system:   { name: '系统默认',       stack: 'system-ui',                         cjk: ['PingFang SC'], weights: W_PINGFANG }
+  };
+  var fontConf = FONT_MAP[fontKey] || FONT_MAP.pingfang;
+
+  var loadedStyles = {};
+  async function tryLoadFont(family, style) {
+    try { await figma.loadFontAsync({ family: family, style: style }); loadedStyles[family + '||' + style] = true; return true; }
+    catch (e) { return false; }
   }
-  var FONT_FAMILY = fontLoaded ? 'PingFang SC' : 'Inter';
-  var FONT_BOLD = fontLoaded ? 'Semibold' : 'Semi Bold';
+  // Resolve CJK family: first candidate whose Regular loads, then fall back to PingFang SC / Inter
+  var cjkCandidates = fontConf.cjk.concat(['PingFang SC', 'Inter']);
+  var CJK_FAMILY = 'Inter';
+  for (var _cf = 0; _cf < cjkCandidates.length; _cf++) {
+    if (await tryLoadFont(cjkCandidates[_cf], 'Regular')) { CJK_FAMILY = cjkCandidates[_cf]; break; }
+  }
+  var LAT_FAMILY = 'Inter';
+  await tryLoadFont('Inter', 'Regular');
+  // Load multiple weights for the chosen families (best effort)
+  var _cjkStyleList = ['ExtraLight', 'Light', 'Normal', 'Regular', 'Medium', 'SemiBold', 'Semibold', 'Semi Bold', 'DemiBold', 'Bold', 'Heavy'];
+  for (var _csi = 0; _csi < _cjkStyleList.length; _csi++) { await tryLoadFont(CJK_FAMILY, _cjkStyleList[_csi]); }
+  var _latStyleList = ['Regular', 'Medium', 'Semi Bold', 'Bold'];
+  for (var _lsi = 0; _lsi < _latStyleList.length; _lsi++) { await tryLoadFont(LAT_FAMILY, _latStyleList[_lsi]); }
+  var FONT_FAMILY = CJK_FAMILY;
+  var FONT_BOLD = loadedStyles[CJK_FAMILY + '||Semibold'] ? 'Semibold'
+                : loadedStyles[CJK_FAMILY + '||Semi Bold'] ? 'Semi Bold'
+                : loadedStyles[CJK_FAMILY + '||Bold'] ? 'Bold'
+                : loadedStyles[CJK_FAMILY + '||Medium'] ? 'Medium'
+                : 'Regular';
+  function weightCandidates(w) {
+    var k = String(w).toLowerCase().replace(/[\s_-]/g, ''); // "Semi Bold" -> "semibold"
+    if (k === 'light' || k === 'extralight' || k === 'thin') return ['Light', 'ExtraLight', 'Thin', 'Normal', 'Regular'];
+    if (k === 'medium') return ['Medium', 'Normal', 'Regular'];
+    if (k === 'semibold' || k === 'demibold') return ['SemiBold', 'Semibold', 'Semi Bold', 'DemiBold', 'Bold', 'Medium', 'Regular'];
+    if (k === 'bold') return ['Bold', 'SemiBold', 'Semibold', 'Heavy', 'Medium', 'Regular'];
+    if (k === 'heavy' || k === 'black') return ['Heavy', 'Black', 'Bold', 'SemiBold', 'Medium', 'Regular'];
+    return ['Regular', 'Normal'];
+  }
+  function resolveWeightStyle(family, weightLabel) {
+    var candidates = weightCandidates(weightLabel);
+    for (var i = 0; i < candidates.length; i++) {
+      if (loadedStyles[family + '||' + candidates[i]]) return candidates[i];
+    }
+    return 'Regular';
+  }
+  // Add text rendered in a specific (already-loaded) weight, with fallback
+  function addWeightText(parent, x, y, text, size, family, weightLabel, color) {
+    var style = resolveWeightStyle(family, weightLabel);
+    var t = figma.createText();
+    parent.appendChild(t); t.x = x; t.y = y;
+    try { t.fontName = { family: family, style: style }; }
+    catch (e) { try { t.fontName = { family: FONT_FAMILY, style: 'Regular' }; } catch (e2) {} }
+    t.fontSize = size;
+    t.characters = String(text);
+    t.fills = [{ type: 'SOLID', color: color }];
+    var varName = colorVarMap.get(color);
+    if (varName && allVars[varName]) { t.fills = [figma.variables.setBoundVariableForPaint(t.fills[0], 'color', allVars[varName])]; }
+    return t;
+  }
 
   const W = { r: 1, g: 1, b: 1 };
 
@@ -879,20 +939,21 @@ async function generatePreview(data) {
   frame.appendChild(cjkCard);
   cjkCard.name = 'Font Card / CJK';
   cjkCard.x = 64; cjkCard.y = Y;
-  cjkCard.resize(510, 240); cjkCard.cornerRadius = 12;
+  cjkCard.resize(510, 256); cjkCard.cornerRadius = 12;
   cjkCard.fills = [{ type: 'SOLID', color: CARD_BG }];
   cjkCard.strokes = [{ type: 'SOLID', color: CARD_BORDER }]; cjkCard.strokeWeight = 1;
   bindFill(cjkCard, CARD_BG); bindStroke(cjkCard, CARD_BORDER);
   addText(cjkCard, 25, 24, 'CJK · 中文', 12, 'Regular', TEXT_MUTED);
-  addText(cjkCard, 25, 50, '苹方', 56, 'Regular', TEXT_BRIGHT);
-  addText(cjkCard, 25, 116, 'PingFang SC, system-ui', 12, 'Regular', TEXT_MUTED);
-  // Weight specimens
-  var cjkWeights = [['字', 'Light', '300', 0], ['字', 'Regular', '400', 72], ['字', 'Medium', '500', 144], ['字', 'Semibold', '600', 216], ['字', 'Bold', '700', 288]];
+  addText(cjkCard, 25, 50, fontConf.name, 56, 'Regular', TEXT_BRIGHT);
+  addText(cjkCard, 25, 132, fontConf.stack, 12, 'Regular', TEXT_MUTED);
+  // Weight specimens — each font shows its own weight ladder (fontConf.weights)
+  var cjkWeights = fontConf.weights || W_PINGFANG;
   for (var cwi = 0; cwi < cjkWeights.length; cwi++) {
-    var cw = cjkWeights[cwi];
-    addText(cjkCard, 25 + cw[3], 148, cw[0], 32, 'Regular', TEXT_BRIGHT);
-    addText(cjkCard, 25 + cw[3], 186, cw[1], 11, 'Regular', TEXT_DIM);
-    addText(cjkCard, 25 + cw[3], 202, cw[2], 11, 'Regular', TEXT_MUTED);
+    var cw = cjkWeights[cwi];          // [label, numeric]
+    var cwx = 25 + cwi * 72;
+    addWeightText(cjkCard, cwx, 164, '字', 32, CJK_FAMILY, cw[0], TEXT_BRIGHT);
+    addText(cjkCard, cwx, 202, cw[0], 11, 'Regular', TEXT_DIM);
+    addText(cjkCard, cwx, 218, cw[1], 11, 'Regular', TEXT_MUTED);
   }
 
   // Latin font card: right half
@@ -900,22 +961,22 @@ async function generatePreview(data) {
   frame.appendChild(latCard);
   latCard.name = 'Font Card / Latin';
   latCard.x = 590; latCard.y = Y;
-  latCard.resize(526, 240); latCard.cornerRadius = 12;
+  latCard.resize(526, 256); latCard.cornerRadius = 12;
   latCard.fills = [{ type: 'SOLID', color: CARD_BG }];
   latCard.strokes = [{ type: 'SOLID', color: CARD_BORDER }]; latCard.strokeWeight = 1;
   bindFill(latCard, CARD_BG); bindStroke(latCard, CARD_BORDER);
   addText(latCard, 25, 24, 'Latin · 西文', 12, 'Regular', TEXT_MUTED);
-  addText(latCard, 25, 50, 'Inter', 56, 'Regular', TEXT_BRIGHT);
-  addText(latCard, 25, 116, 'Inter, system-ui', 12, 'Regular', TEXT_MUTED);
-  var latWeights = [['Aa', 'Regular', '400', 0], ['Aa', 'Medium', '500', 72], ['Aa', 'Semibold', '600', 144], ['Aa', 'Bold', '700', 216]];
+  addWeightText(latCard, 25, 50, 'Inter', 56, LAT_FAMILY, 'Regular', TEXT_BRIGHT);
+  addText(latCard, 25, 132, 'Inter, system-ui', 12, 'Regular', TEXT_MUTED);
+  var latWeights = [['Aa', 'Regular', '400', 0], ['Aa', 'Medium', '500', 72], ['Aa', 'Semi Bold', '600', 144], ['Aa', 'Bold', '700', 216]];
   for (var lwi = 0; lwi < latWeights.length; lwi++) {
     var lw = latWeights[lwi];
-    addText(latCard, 25 + lw[3], 148, lw[0], 32, 'Regular', TEXT_BRIGHT);
-    addText(latCard, 25 + lw[3], 186, lw[1], 11, 'Regular', TEXT_DIM);
-    addText(latCard, 25 + lw[3], 202, lw[2], 11, 'Regular', TEXT_MUTED);
+    addWeightText(latCard, 25 + lw[3], 164, lw[0], 32, LAT_FAMILY, lw[1], TEXT_BRIGHT);
+    addText(latCard, 25 + lw[3], 202, lw[1], 11, 'Regular', TEXT_DIM);
+    addText(latCard, 25 + lw[3], 218, lw[2], 11, 'Regular', TEXT_MUTED);
   }
 
-  Y += 276; // 240 + 36 gap
+  Y += 292; // 256 + 36 gap
 
   // ===== SECTION 04: TYPE SCALE =====
   Y = addSection(frame, Y, '04', '字号规范',
@@ -970,8 +1031,14 @@ async function generatePreview(data) {
 
   var totalScaleRows = typeScaleRows.length;
 
-  var tsRowH = 64;
-  var tsCardH = 64 + totalScaleRows * tsRowH + 10;
+  // Per-row height adapts to the sample font size so large rows (40/32px) don't overlap
+  var tsRowHeights = [];
+  for (var rh = 0; rh < typeScaleRows.length; rh++) {
+    tsRowHeights.push(Math.max(64, Math.round(typeScaleRows[rh][1] * 1.5) + 26));
+  }
+  var tsRowsTotal = 0;
+  for (var rt = 0; rt < tsRowHeights.length; rt++) tsRowsTotal += tsRowHeights[rt];
+  var tsCardH = 64 + tsRowsTotal + 10;
 
   var tsCard = figma.createFrame();
   frame.appendChild(tsCard);
@@ -990,18 +1057,23 @@ async function generatePreview(data) {
   tsDivTop.resize(INNER_W, 1); tsDivTop.fills = [{ type: 'SOLID', color: CARD_BORDER }];
   bindFill(tsDivTop, CARD_BORDER);
 
+  var tsRowY = 64;
   for (var tsi = 0; tsi < typeScaleRows.length; tsi++) {
     var tsRow = typeScaleRows[tsi];
     var tsName = tsRow[0], tsSize = tsRow[1], tsWeight = tsRow[2], tsUsage = tsRow[3];
-    var tsY = 64 + tsi * tsRowH;
+    var rowH = tsRowHeights[tsi];
     var tsLh = Math.round(tsSize * 1.5);
-    addText(tsCard, CARD_PAD, tsY + 18, tsName, 13, 'Semi Bold', TEXT_BRIGHT);
-    addText(tsCard, CARD_PAD, tsY + 38, tsSize + ' / ' + tsLh + ' · w' + tsWeight, 11, 'Regular', TEXT_MUTED);
-    addText(tsCard, 230, tsY + 22, tsUsage, tsSize, 'Regular', TEXT_BRIGHT);
-    addText(tsCard, 950, tsY + 22, tsSize + 'px', 11, 'Semi Bold', TEXT_DIM);
+    // Left label block — vertically centered in the row
+    var labelTop = tsRowY + Math.round((rowH - 34) / 2);
+    addText(tsCard, CARD_PAD, labelTop, tsName, 13, 'Semi Bold', TEXT_BRIGHT);
+    addText(tsCard, CARD_PAD, labelTop + 20, tsSize + ' / ' + tsLh + ' · w' + tsWeight, 11, 'Regular', TEXT_MUTED);
+    // Sample text + px value — vertically centered
+    addText(tsCard, 230, tsRowY + Math.round((rowH - tsSize) / 2), tsUsage, tsSize, 'Regular', TEXT_BRIGHT);
+    addText(tsCard, 950, tsRowY + Math.round((rowH - 14) / 2), tsSize + 'px', 11, 'Semi Bold', TEXT_DIM);
+    tsRowY += rowH;
     if (tsi < typeScaleRows.length - 1) {
       var tsDiv = figma.createRectangle();
-      tsCard.appendChild(tsDiv); tsDiv.x = CARD_PAD; tsDiv.y = tsY + tsRowH;
+      tsCard.appendChild(tsDiv); tsDiv.x = CARD_PAD; tsDiv.y = tsRowY;
       tsDiv.resize(INNER_W, 1); tsDiv.fills = [{ type: 'SOLID', color: CARD_BORDER }];
       bindFill(tsDiv, CARD_BORDER);
     }

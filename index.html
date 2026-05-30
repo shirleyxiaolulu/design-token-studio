@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>设计规范生成器</title>
   <link href="https://cdn.jsdelivr.net/npm/remixicon@4.6.0/fonts/remixicon.css" rel="stylesheet">
+  <!-- 思源黑体（Noto Sans SC）网络字体，确保未安装该字体的设备也能预览效果 -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
@@ -95,7 +99,7 @@
             <select id="localFont">
               <option value="pingfang">苹方 PingFang SC</option><option value="sf">SF Pro / 苹方</option>
               <option value="harmony">HarmonyOS Sans</option><option value="misans">MiSans</option>
-              <option value="alimama">阿里妈妈方圆体</option><option value="system">系统默认</option>
+              <option value="alimama">阿里妈妈方圆体</option><option value="source">思源黑体 Source Han Sans</option><option value="system">系统默认</option>
             </select>
           </label>
         </section>
@@ -313,7 +317,7 @@
               <div class="font-family-card">
                 <span class="font-card-label">CJK · 中文</span>
                 <strong class="font-card-display" id="fontCjkName">苹方</strong>
-                <code class="font-card-stack">PingFang SC, system-ui</code>
+                <code class="font-card-stack" id="fontCjkStack">PingFang SC, system-ui</code>
                 <div class="font-card-weights" id="fontCjkWeights">
                   <div class="weight-specimen"><b style="font-weight:300">字</b><span>Light</span><em>300</em></div>
                   <div class="weight-specimen"><b style="font-weight:400">字</b><span>Regular</span><em>400</em></div>
@@ -325,7 +329,7 @@
               <div class="font-family-card">
                 <span class="font-card-label">Latin · 西文</span>
                 <strong class="font-card-display font-card-latin" id="fontLatinName">Inter</strong>
-                <code class="font-card-stack">Inter, system-ui</code>
+                <code class="font-card-stack" id="fontLatinStack">Inter, system-ui</code>
                 <div class="font-card-weights" id="fontLatinWeights">
                   <div class="weight-specimen"><b style="font-weight:400">Aa</b><span>Regular</span><em>400</em></div>
                   <div class="weight-specimen"><b style="font-weight:500">Aa</b><span>Medium</span><em>500</em></div>
@@ -469,5 +473,6 @@
   <script src="./exports.js"></script>
   <script src="./storage.js"></script>
   <script src="./app.js"></script>
+  <script src="./custom-select.js"></script>
 </body>
 </html>

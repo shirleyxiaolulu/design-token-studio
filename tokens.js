@@ -35,39 +35,75 @@
     harmony: "'HarmonyOS Sans SC', 'HarmonyOS Sans', 'PingFang SC', sans-serif",
     misans: "'MiSans', 'PingFang SC', sans-serif",
     alimama: "'Alimama FangYuanTi VF', 'PingFang SC', sans-serif",
+    source: "'Source Han Sans SC', 'Noto Sans SC', 'Noto Sans CJK SC', 'PingFang SC', sans-serif",
     system: "system-ui, -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif",
   };
+
+  // Per-font weight ladders ([label, numeric font-weight]) — each font shows the
+  // weights it actually ships. PingFang/HarmonyOS have no independent Semibold/Bold
+  // beyond what's listed, so those rungs are omitted rather than synthesized.
+  const WL_PINGFANG = [["Light", 300], ["Regular", 400], ["Medium", 500], ["Semibold", 600]];
+  const WL_HARMONY = [["Light", 300], ["Regular", 400], ["Medium", 500], ["Bold", 700]];
+  const WL_MISANS = [["Light", 300], ["Regular", 400], ["Medium", 500], ["Semibold", 600], ["Bold", 700]];
+  const WL_SOURCE = [["Light", 300], ["Regular", 400], ["Medium", 500], ["SemiBold", 600], ["Bold", 700]];
+  const WL_ALIMAMA = [["Light", 300], ["Regular", 400], ["Medium", 500], ["Bold", 700]];
 
   const fontLabels = {
     pingfang: {
       cjk: "苹方",
       latin: "PingFang SC",
       intro: "系统默认采用苹方 PingFang SC，保持中文界面在 macOS / iOS 设计稿中的清晰度与系统一致性。",
+      cjkStack: "PingFang SC, system-ui",
+      latinStack: "PingFang SC, system-ui",
+      weights: WL_PINGFANG,
     },
     sf: {
       cjk: "苹方",
       latin: "SF Pro",
       intro: "系统采用 Apple 原生字体：中文使用 PingFang SC，拉丁字符使用 SF Pro，通过系统字体栈自动调用。",
+      cjkStack: "PingFang SC, system-ui",
+      latinStack: "SF Pro Text, system-ui",
+      weights: WL_PINGFANG,
     },
     harmony: {
       cjk: "鸿蒙黑体",
       latin: "HarmonyOS Sans",
       intro: "适合偏 Android / HarmonyOS 的跨端界面，中文与拉丁字符都保持中性、清晰的几何结构。",
+      cjkStack: "HarmonyOS Sans SC",
+      latinStack: "HarmonyOS Sans",
+      weights: WL_HARMONY,
     },
     misans: {
       cjk: "MiSans",
       latin: "MiSans",
       intro: "适合年轻、轻量的移动产品界面，字形紧凑，适合高信息密度页面。",
+      cjkStack: "MiSans",
+      latinStack: "MiSans",
+      weights: WL_MISANS,
     },
     alimama: {
       cjk: "阿里妈妈方圆体",
       latin: "Alimama",
       intro: "更有品牌感和圆润特征，适合希望在标题和运营页面里增加识别度的设计系统。",
+      cjkStack: "Alimama FangYuanTi VF",
+      latinStack: "Alimama FangYuanTi",
+      weights: WL_ALIMAMA,
+    },
+    source: {
+      cjk: "思源黑体",
+      latin: "Source Han Sans",
+      intro: "开源的泛 CJK 黑体（Source Han Sans / Noto Sans CJK），跨平台一致、字重齐全，适合面向多端用户的 Web 设计系统。",
+      cjkStack: "Noto Sans SC, Source Han Sans SC",
+      latinStack: "Source Han Sans SC",
+      weights: WL_SOURCE,
     },
     system: {
       cjk: "系统默认",
       latin: "System UI",
       intro: "跟随设备系统字体，适合希望减少字体依赖并保持平台原生体验的界面。",
+      cjkStack: "system-ui",
+      latinStack: "system-ui",
+      weights: WL_PINGFANG,
     },
   };
 
@@ -295,7 +331,7 @@
     const neutralHue = getNeutralHue(seed.neutralStrategy, primaryHsl.h);
     const palette = {
       primary: buildScale(primaryHsl.h, primaryHsl.s, "color", primaryHsl.l, primaryHsl.s),
-      gray: buildScale(neutralHue, seed.neutralStrategy === "warm" ? 9 : 12, "gray"),
+      gray: buildScale(neutralHue, seed.neutralStrategy === "warm" ? 9 : (seed.neutralStrategy === "neutral" ? 3 : 13), "gray"),
     };
 
     Object.entries(hueAnchors).forEach(([name, hue]) => {

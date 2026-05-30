@@ -448,6 +448,20 @@ function renderTypeShowcase(seed, tokens) {
   els.fontLatinName.textContent = label.latin;
   els.typeScaleMeta.textContent = `BASE · 14px`;
 
+  // Each font shows its own weight ladder (label.weights) + its own stack text
+  const fontWeights = label.weights || [["Light", 300], ["Regular", 400], ["Medium", 500], ["Semibold", 600], ["Bold", 700]];
+  const weightSpecimens = (glyph) => fontWeights.map(([lbl, num]) =>
+    `<div class="weight-specimen"><b style="font-weight:${num}">${glyph}</b><span>${lbl}</span><em>${num}</em></div>`
+  ).join("");
+  const cjkW = document.getElementById("fontCjkWeights");
+  const latW = document.getElementById("fontLatinWeights");
+  const cjkS = document.getElementById("fontCjkStack");
+  const latS = document.getElementById("fontLatinStack");
+  if (cjkW) cjkW.innerHTML = weightSpecimens("字");
+  if (latW) latW.innerHTML = weightSpecimens("Aa");
+  if (cjkS && label.cjkStack) cjkS.textContent = label.cjkStack;
+  if (latS && label.latinStack) latS.textContent = label.latinStack;
+
   if (seed.platform === "app-web") {
     els.typeScalePreview.innerHTML = renderScaleRows(appWebRows);
   } else if (seed.platform === "ios-app") {
@@ -579,6 +593,16 @@ function renderVersions() {
   els.versionList.innerHTML = draftEntry + versionEntries;
 }
 
+// Run one render step in isolation: if it throws, log and continue so a single
+// broken section/element can never blank out the whole document.
+function safeRun(label, fn) {
+  try {
+    fn();
+  } catch (e) {
+    console.error(`[render] "${label}" failed:`, e);
+  }
+}
+
 function render() {
   const seed = currentSeed();
   const { palette, tokens } = DesignTokens.generateTokens(seed);
@@ -611,8 +635,8 @@ function render() {
   if (els.platformMeta) els.platformMeta.textContent = platformName;
   if (els.primaryMeta) els.primaryMeta.textContent = seed.primaryColor;
   if (els.defaultModeMeta) els.defaultModeMeta.textContent = modeName;
-  els.fontSizeValue.textContent = seed.baseFontSize;
-  els.tokenCount.textContent = `${Object.keys(tokens).length} tokens`;
+  if (els.fontSizeValue) els.fontSizeValue.textContent = seed.baseFontSize;
+  if (els.tokenCount) els.tokenCount.textContent = `${Object.keys(tokens).length} tokens`;
   if (els.topTokenCount) els.topTokenCount.textContent = `${Object.keys(tokens).length}`;
   if (els.exportFormatMeta) els.exportFormatMeta.textContent = "4";
   if (els.autosaveStatus) {
@@ -621,28 +645,29 @@ function render() {
   document.querySelectorAll("[data-mode-switch]").forEach((button) => {
     button.classList.toggle("active", button.dataset.modeSwitch === seed.defaultMode);
   });
-  renderPalette(palette);
-  renderModePreview(tokens, "light", els.lightPreview);
-  renderModePreview(tokens, "dark", els.darkPreview);
-  renderComponentPreview(tokens, seed.defaultMode);
-  els.brandTable.innerHTML = table(tokens, brandColorNames, { defaultMode: seed.defaultMode });
-  els.auxiliaryTable.innerHTML = table(tokens, auxiliaryColorNames, { defaultMode: seed.defaultMode });
-  els.functionTable.innerHTML = table(tokens, colorTokenNames, { defaultMode: seed.defaultMode });
-  els.textColorTable.innerHTML = table(tokens, textColorNames, { defaultMode: seed.defaultMode });
-  els.backgroundTable.innerHTML = table(tokens, backgroundColorNames, { defaultMode: seed.defaultMode });
-  els.borderTable.innerHTML = table(tokens, borderColorNames, { defaultMode: seed.defaultMode });
-  els.constantColorTable.innerHTML = table(tokens, constantColorNames, { defaultMode: seed.defaultMode });
+  safeRun("palette", () => renderPalette(palette));
+  safeRun("modePreviewLight", () => renderModePreview(tokens, "light", els.lightPreview));
+  safeRun("modePreviewDark", () => renderModePreview(tokens, "dark", els.darkPreview));
+  safeRun("componentPreview", () => renderComponentPreview(tokens, seed.defaultMode));
+  safeRun("brandTable", () => { if (els.brandTable) els.brandTable.innerHTML = table(tokens, brandColorNames, { defaultMode: seed.defaultMode }); });
+  safeRun("auxiliaryTable", () => { if (els.auxiliaryTable) els.auxiliaryTable.innerHTML = table(tokens, auxiliaryColorNames, { defaultMode: seed.defaultMode }); });
+  safeRun("functionTable", () => { if (els.functionTable) els.functionTable.innerHTML = table(tokens, colorTokenNames, { defaultMode: seed.defaultMode }); });
+  safeRun("textColorTable", () => { if (els.textColorTable) els.textColorTable.innerHTML = table(tokens, textColorNames, { defaultMode: seed.defaultMode }); });
+  safeRun("backgroundTable", () => { if (els.backgroundTable) els.backgroundTable.innerHTML = table(tokens, backgroundColorNames, { defaultMode: seed.defaultMode }); });
+  safeRun("borderTable", () => { if (els.borderTable) els.borderTable.innerHTML = table(tokens, borderColorNames, { defaultMode: seed.defaultMode }); });
+  safeRun("constantColorTable", () => { if (els.constantColorTable) els.constantColorTable.innerHTML = table(tokens, constantColorNames, { defaultMode: seed.defaultMode }); });
   // typeTable removed — type scale preview already shows all font tokens
-  renderShapes(tokens, seed.defaultMode);
-  renderMotion(tokens);
-  renderTypeShowcase(seed, tokens);
-  renderContrast(tokens);
-  renderOpacity(tokens);
-  renderExport(seed, tokens);
+  safeRun("shapes", () => renderShapes(tokens, seed.defaultMode));
+  safeRun("motion", () => renderMotion(tokens));
+  safeRun("typeShowcase", () => renderTypeShowcase(seed, tokens));
+  safeRun("contrast", () => renderContrast(tokens));
+  safeRun("opacity", () => renderOpacity(tokens));
+  safeRun("export", () => renderExport(seed, tokens));
 
-  syncDraftToProject();
-  renderProjects();
-  renderVersions();
+  safeRun("syncDraftToProject", () => syncDraftToProject());
+  safeRun("projects", () => renderProjects());
+  safeRun("versions", () => renderVersions());
+  safeRun("customSelects", () => { if (window.CustomSelect) window.CustomSelect.refresh(); });
   try { renderAuxSuggestions(); } catch (e) { console.warn("renderAuxSuggestions error:", e); }
   try { updateA11yBadge(tokens); } catch (e) { console.warn("updateA11yBadge error:", e); }
   try { renderVersionDiff(); } catch (e) { console.warn("renderVersionDiff error:", e); }
