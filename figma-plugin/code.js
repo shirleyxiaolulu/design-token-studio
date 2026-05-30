@@ -891,7 +891,7 @@ async function generatePreview(data) {
     { prefix: 'color.brand', title: '品牌颜色 — brand', subtitle: '品牌主色及其 8 级交互梯度，从最浅底色到最深强调。覆盖按钮、标签、卡片等全部品牌表达场景。' },
     { prefix: 'color.auxiliary', title: '辅助色 — auxiliary', subtitle: '辅助色用于分类标签、数据可视化、运营活动和品牌延展，不承担系统反馈含义。' },
     { prefix: 'color.function', title: '功能色 — function', subtitle: '用于成功、警告、危险和信息反馈的状态色，包含正色和浅底色两组。' },
-    { prefix: 'color.text', title: '文本颜色 — text', subtitle: '从主文本到水印的 8 级灰度梯度，确保界面中每层信息都有清晰的视觉优先级。' },
+    { prefix: 'color.text', title: '文本 / 图标颜色 — text', subtitle: '从主文本到水印的 8 级灰度梯度，确保每层信息有清晰的视觉优先级。图标颜色直接复用本组文本色（主图标=主文本、次要图标=次文本、禁用=禁用文本，反色场景用反色文本/常量白）。' },
     { prefix: 'color.bg', title: '背景颜色 — background', subtitle: '页面、容器、浮层和遮罩四个层级的界面背景，构建完整的空间层次。' },
     { prefix: 'color.border', title: '边框颜色 — border', subtitle: '分割线、输入框描边和卡片边界的三级边框色，从弱到强逐步增加存在感。' },
     { prefix: 'color.constant', title: '常量色 — constant', subtitle: '不跟随主题和深浅模式切换的固定颜色，适用于品牌资产和特殊图形。' },

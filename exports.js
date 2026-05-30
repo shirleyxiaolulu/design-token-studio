@@ -240,6 +240,8 @@
         background: "color/bg/surface",
         activeText: "color/brand/primary",
         inactiveText: "color/text/tertiary",
+        activeIcon: "color/brand/primary",
+        inactiveIcon: "color/text/tertiary",
         border: "color/border/subtle",
         fontSize: "font/size/caption",
       },
@@ -254,6 +256,8 @@
         background: "color/bg/surface",
         title: "color/text/primary",
         subtitle: "color/text/secondary",
+        icon: "color/text/secondary",
+        accessoryIcon: "color/text/tertiary",
         border: "color/border/subtle",
         paddingX: "space/4",
         paddingY: "space/3",
@@ -287,6 +291,7 @@
 ## 如何使用设计规范
 
 1. 颜色只从 JSON 的 colors 对象取值，禁止自创颜色。语义色按名称含义使用（brand 用于品牌表达，function 用于状态反馈，text 用于文字层级，bg 用于背景层级）。
+   - 图标颜色没有独立 token，直接复用 text 文本色：主图标 = text.primary，次要图标 = text.secondary，弱化图标 = text.tertiary，禁用图标 = text.disabled，品牌强调图标 = brand.primary，深色 / 品牌底上的图标 = constant.white；状态类图标（成功 / 警告 / 危险）= function.success / warning / danger。
 2. 品牌色（brand.primary / hover / active）和辅助色在深浅模式下保持不变，不要调亮或调暗。
 3. 字号只从 JSON 的 typography.sizes 取值。标题用 Semibold 或 Bold，正文用 Regular。标题与正文之间间距用 space.2，段落间用 space.3。
 4. 间距基于 4px 倍数，只从 JSON 的 dimensions 中 space/* 取值。组件内 padding 用 space.2~space.4，模块间距用 space.6~space.8，页面边距用 space.4。
