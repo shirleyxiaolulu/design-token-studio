@@ -1241,6 +1241,25 @@ function bindEvents() {
     setTimeout(() => { btn.textContent = "复制 AI Prompt"; }, 1500);
   });
 
+  document.getElementById("copyAiJsonButton").addEventListener("click", async () => {
+    const seed = currentSeed();
+    const { tokens } = DesignTokens.generateTokens(seed);
+    const aiJson = DesignExports.exportAiJson(seed, tokens, state.published ? state.version : "draft");
+    try {
+      await navigator.clipboard.writeText(aiJson);
+    } catch (e) {
+      const ta = document.createElement("textarea");
+      ta.value = aiJson;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      ta.remove();
+    }
+    const btn = document.getElementById("copyAiJsonButton");
+    btn.textContent = "已复制 ✓";
+    setTimeout(() => { btn.textContent = "复制 AI JSON"; }, 1500);
+  });
+
   els.publishButton.addEventListener("click", () => {
     els.publishVersion.value = state.version;
     els.publishDialog.showModal();

@@ -281,8 +281,19 @@ async function syncTextStyles(data) {
     styleMap[existingStyles[i].name] = existingStyles[i];
   }
 
+  // Build a name -> variable map so each text style's fontSize can be bound
+  // to the matching font/size/* variable (instead of a hard-coded number).
+  var varByName = {};
+  try {
+    var allVars = await figma.variables.getLocalVariablesAsync('FLOAT');
+    for (var vi = 0; vi < allVars.length; vi++) {
+      varByName[allVars[vi].name] = allVars[vi];
+    }
+  } catch (e) { /* binding is best-effort; fall back to raw fontSize */ }
+
   var created = 0;
   var updated = 0;
+  var bound = 0;
 
   for (var si = 0; si < styleSpecs.length; si++) {
     var spec = styleSpecs[si];
@@ -315,9 +326,27 @@ async function syncTextStyles(data) {
     style.fontSize = fontSize;
     style.lineHeight = { value: lineHeight, unit: 'PIXELS' };
     style.description = desc;
+
+    // Bind the style's font size to its font/size/* variable so the text style
+    // tracks the token instead of carrying a frozen number. dimToken.figmaName
+    // is the variable name created by syncVariables (e.g. "font/size/body").
+    var sizeVar = dimToken.figmaName ? varByName[dimToken.figmaName] : null;
+    if (sizeVar) {
+      try {
+        // Modern API: pass the Variable object.
+        style.setBoundVariable('fontSize', sizeVar);
+        bound++;
+      } catch (e1) {
+        try {
+          // Deprecated fallback: older runtimes expect a variable id string.
+          style.setBoundVariable('fontSize', sizeVar.id);
+          bound++;
+        } catch (e2) { /* leave the raw fontSize if binding is rejected */ }
+      }
+    }
   }
 
-  return { created: created, updated: updated };
+  return { created: created, updated: updated, bound: bound };
 }
 
 // =============================================

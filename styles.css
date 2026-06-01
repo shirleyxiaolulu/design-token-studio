@@ -2119,6 +2119,28 @@ body[data-default-mode="light"] .ai-prompt-button {
   color: #fff;
 }
 
+.ai-prompt-button.secondary {
+  margin-top: 8px;
+  background: transparent;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+.ai-prompt-button.secondary:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+body[data-default-mode="light"] .ai-prompt-button.secondary {
+  background: transparent;
+  color: #000;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+}
+
+body[data-default-mode="light"] .ai-prompt-button.secondary:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
 /* ===== v2: Export tabs overflow ===== */
 .export-actions {
   flex-wrap: wrap;
