@@ -94,6 +94,9 @@
         primaryColor: seed.primaryColor,
         generatedAt: new Date().toISOString(),
       },
+      // Usage rules embedded so this file is self-contained: drop it in a folder
+      // and the AI gets both the rules and the data in one read.
+      _instructions: exportAiPrompt(seed, tokens),
       colors: { light: {}, dark: {} },
       dimensions: {},
       typography: {},

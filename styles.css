@@ -2141,6 +2141,17 @@ body[data-default-mode="light"] .ai-prompt-button.secondary:hover {
   background: rgba(0, 0, 0, 0.05);
 }
 
+.ai-json-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.ai-json-actions .ai-prompt-button.secondary {
+  margin-top: 0;
+  flex: 1;
+}
+
 /* ===== v2: Export tabs overflow ===== */
 .export-actions {
   flex-wrap: wrap;

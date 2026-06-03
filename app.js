@@ -1260,6 +1260,23 @@ function bindEvents() {
     setTimeout(() => { btn.textContent = "复制 AI JSON"; }, 1500);
   });
 
+  document.getElementById("downloadAiJsonButton").addEventListener("click", () => {
+    const seed = currentSeed();
+    const { tokens } = DesignTokens.generateTokens(seed);
+    const version = state.published ? state.version : "draft";
+    const aiJson = DesignExports.exportAiJson(seed, tokens, version);
+    const blob = new Blob([aiJson], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${fileSafeName(seed.specName)}-ai-v${version}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    showToast(`已下载 ${link.download}`);
+  });
+
   els.publishButton.addEventListener("click", () => {
     els.publishVersion.value = state.version;
     els.publishDialog.showModal();
