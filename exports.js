@@ -286,14 +286,19 @@
   function exportAiPrompt(seed, tokens) {
     const platNames = { "ios-app": "iOS App (375×812)", "web-admin": "Web 后台 (1440)", "app-web": "App+Web 同步" };
     const platLabel = platNames[seed.platform] || seed.platform;
+    const modeCN = seed.defaultMode === "dark" ? "深色" : "浅色";
+    const altCN = seed.defaultMode === "dark" ? "浅色" : "深色";
+    const altMode = seed.defaultMode === "dark" ? "light" : "dark";
 
-    return `你是一位严格遵循设计规范的 UI 设计师。当前项目为「${seed.specName}」，平台 ${platLabel}，品牌色 ${seed.primaryColor}，${seed.defaultMode === "dark" ? "深色" : "浅色"}模式优先。
+    return `你是一位严格遵循设计规范的 UI 设计师。当前项目为「${seed.specName}」，平台 ${platLabel}，品牌色 ${seed.primaryColor}。
+
+⚠️ 默认外观模式：${modeCN}（_meta.defaultMode = "${seed.defaultMode}"）。生成的所有页面必须采用${modeCN}模式——背景、文字、组件一律从 colors.${seed.defaultMode} 取色。原型 / 线框图本身是${altCN}还是${modeCN}与此无关：即使参考原型是${altCN}的，只要规范默认为${modeCN}，就必须生成${modeCN}页面。明暗以 _meta.defaultMode 为唯一依据，严禁被原型外观带偏。
 
 所有色值、字号、间距、组件映射的具体数据在 AI JSON 中，此处只说明使用规则。
 
 ## 如何使用设计规范
 
-1. 颜色只从 JSON 的 colors 对象取值，禁止自创颜色。语义色按名称含义使用（brand 用于品牌表达，function 用于状态反馈，text 用于文字层级，bg 用于背景层级）。
+1. 颜色只从 JSON 的 colors.${seed.defaultMode} 取值（与默认模式一致），不要用另一套 colors.${altMode}，更不要自创颜色。语义色按名称含义使用（brand 用于品牌表达，function 用于状态反馈，text 用于文字层级，bg 用于背景层级）。
    - 图标颜色没有独立 token，直接复用 text 文本色：主图标 = text.primary，次要图标 = text.secondary，弱化图标 = text.tertiary，禁用图标 = text.disabled，品牌强调图标 = brand.primary，深色 / 品牌底上的图标 = constant.white；状态类图标（成功 / 警告 / 危险）= function.success / warning / danger。
 2. 品牌色（brand.primary / hover / active）和辅助色在深浅模式下保持不变，不要调亮或调暗。
 3. 字号只从 JSON 的 typography.sizes 取值。标题用 Semibold 或 Bold，正文用 Regular。标题与正文之间间距用 space.2，段落间用 space.3。
@@ -302,7 +307,7 @@
 6. 阴影：卡片用 shadow.sm，弹窗用 shadow.lg，浮层用 shadow.overlay。
 7. 组件结构参考 JSON 的 components 映射，每个组件的背景、文字、描边、圆角、间距都已定义。
 8. 动效参考 JSON 的 motion 对象。微交互用 fast，常规过渡用 normal，展开收起用 slow，页面切换用 slower。
-9. 原型图只提取功能结构和信息层级，不复制其布局、颜色和字号，设计稿的视觉表现必须来自设计规范。
+9. 原型图只提取功能结构和信息层级，不复制其布局、颜色、字号和明暗模式——设计稿的视觉表现（含明暗）必须来自设计规范；原型是${altCN}的也不影响最终采用${modeCN}。
 10. 文本至少区分 primary / secondary / tertiary 三个层级，确保信息有清晰的视觉优先级。${seed.platform === "ios-app" ? "\n11. iOS 安全区：顶部 44px，底部 34px。导航栏高度 44px，Tab 栏高度 49px。" : ""}`;
   }
 
