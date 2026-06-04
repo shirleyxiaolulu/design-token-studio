@@ -214,18 +214,40 @@ async function syncVariables(data) {
 // Sync: Text Styles from font tokens
 // =============================================
 async function syncTextStyles(data) {
-  // Load fonts
-  var fontLoaded = false;
-  try {
-    await figma.loadFontAsync({ family: 'PingFang SC', style: 'Regular' });
-    await figma.loadFontAsync({ family: 'PingFang SC', style: 'Semibold' });
-    fontLoaded = true;
-  } catch (e) {
-    await figma.loadFontAsync({ family: 'Inter', style: 'Regular' });
-    await figma.loadFontAsync({ family: 'Inter', style: 'Semi Bold' });
+  // Resolve the CJK family from the font selected in the web app (default 思源黑体 → Noto
+  // Sans SC), instead of hard-coding PingFang SC. Falls back through candidates → Inter.
+  var TS_FONT_CANDIDATES = {
+    pingfang: ['PingFang SC'],
+    sf: ['PingFang SC'],
+    harmony: ['HarmonyOS Sans SC', 'HarmonyOS Sans'],
+    misans: ['MiSans'],
+    alimama: ['Alimama FangYuanTi VF', 'Alimama FangYuanTi'],
+    source: ['Noto Sans SC', 'Source Han Sans SC', 'Noto Sans CJK SC', 'Source Han Sans CN'],
+    system: ['PingFang SC'],
+  };
+  var tsFontKey = (data.seed && data.seed.localFont) ? data.seed.localFont : 'source';
+  var tsCandidates = (TS_FONT_CANDIDATES[tsFontKey] || TS_FONT_CANDIDATES.source).concat(['PingFang SC', 'Inter']);
+
+  var FONT_FAMILY = 'Inter';
+  for (var _tci = 0; _tci < tsCandidates.length; _tci++) {
+    try {
+      await figma.loadFontAsync({ family: tsCandidates[_tci], style: 'Regular' });
+      FONT_FAMILY = tsCandidates[_tci];
+      break;
+    } catch (e) { /* try next candidate */ }
   }
-  var FONT_FAMILY = fontLoaded ? 'PingFang SC' : 'Inter';
-  var FONT_BOLD = fontLoaded ? 'Semibold' : 'Semi Bold';
+  // Heading weight: prefer a real Semibold; otherwise fall to Medium (NOT Bold) so the
+  // text styles match the AI JSON's fontWeightMapping (Semibold → Medium for fonts like
+  // Noto Sans SC that ship no standalone Semibold).
+  var FONT_BOLD = 'Regular';
+  var tsBoldCandidates = ['Semibold', 'SemiBold', 'Semi Bold', 'DemiBold', 'Medium'];
+  for (var _tbi = 0; _tbi < tsBoldCandidates.length; _tbi++) {
+    try {
+      await figma.loadFontAsync({ family: FONT_FAMILY, style: tsBoldCandidates[_tbi] });
+      FONT_BOLD = tsBoldCandidates[_tbi];
+      break;
+    } catch (e) { /* try next weight */ }
+  }
 
   // Define text style specs: [tokenKey, styleName, weight, description]
   // weight: 'bold' = Semibold/Semi Bold, 'regular' = Regular

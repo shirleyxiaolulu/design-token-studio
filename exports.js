@@ -93,6 +93,7 @@
         version: version,
         primaryColor: seed.primaryColor,
         generatedAt: new Date().toISOString(),
+        componentsUsageVersion: "2026-06-04",
       },
       // Usage rules embedded so this file is self-contained: drop it in a folder
       // and the AI gets both the rules and the data in one read.
@@ -140,9 +141,117 @@
         fontSizes[key] = typeof t.value === "string" ? parseInt(t.value, 10) : t.value;
       }
     });
+    // fontFamilyFigma is pinned to a Figma-available font on purpose: the AI cannot
+    // load system fonts like PingFang SC in Figma, so component text uses Noto Sans SC.
+    // The spec's intended font stays in typography.fontFamily; to actually use it,
+    // upload that font to Figma as a shared/team font. fontWeightMapping reflects that
+    // Noto Sans SC has no standalone Semibold (it falls back to Medium).
+    flat.typography.fontFamilyFigma = "Noto Sans SC";
+    flat.typography.fontWeightMapping = { Regular: "Regular", Medium: "Medium", Semibold: "Medium" };
     flat.typography.sizes = fontSizes;
 
-    // Component token mapping — common components
+    // Component-usage catalog — the project's real Figma library (synced from
+    // tested AI JSON 2026-06-04). Each entry documents what the
+    // component is for so the AI picks the right one. Update componentsUsageVersion when changed.
+    var COMPONENT_USAGE_CATALOG = {
+      "Business/VideoCard": { usage: "视频卡片：封面+时长角标+标题+播放数据。Layout=tag-vertical(竖图)/tag-horizontal(横排)/cover-horizontal/cover-vertical × Platform × Size" },
+      "Business/VideoPlayer": { usage: "视频播放器：画面+中央播放键+底部进度控制栏。State=paused/playing/ad × Platform" },
+      "Business/VideoGrid": { usage: "视频网格/列表：Layout=grid(双列宫格)/vertical-grid(竖版三列)/list-tag(带标签列表行)/list-icon(带图标列表行)，含封面+标题+数据" },
+      "Business/CommentList": { usage: "评论列表项：头像/昵称/正文/时间/点赞，Type=comment(单条)/reply(含子回复)" },
+      "Business/CommentInput": { usage: "评论输入栏（贴底通栏）：State=default/replying(引用回复)" },
+      "Business/PostCard": { usage: "社区帖子卡片：作者行+正文+互动栏。Layout=text/image(单图)/gallery(多图宫格)" },
+      "Business/UserProfile": { usage: "用户信息行：头像+昵称+签名(+关注按钮)。Size=compact(列表用)/full(卡片用)" },
+      "Business/ProfileHeader": { usage: "个人主页头部：头像/昵称/ID/签名/三项统计/关注按钮/内部tab行。Variant=self/other。Boolean属性：showBio/showStats/showStat4/showTabs 可裁剪模块" },
+      "Business/ProfileFeatureGrid": { usage: "个人页功能宫格入口（钱包/历史/设置等图标矩阵）" },
+      "Business/TopicTag": { usage: "话题标签胶囊：Variant=default/hot/new × Size=sm/md" },
+      "Business/NewsCard": { usage: "新闻/资讯卡片：标题+来源+时间+阅读数。Layout=large(大图)/three-image(三图)/text(纯文右缩略图)。自带16px内边距，直接FILL" },
+      "Business/Banner": { usage: "运营横幅轮播图（含指示点）。无内边距，需16px Wrapper 包裹" },
+      "Business/ArticleHeader": { usage: "文章详情页头部：标题+作者行+时间" },
+      "Business/NotificationItem": { usage: "通知列表项：Type=system/reply/like，图标+标题+摘要+时间" },
+      "Business/EpisodeList": { usage: "剧集选集：Layout=grid(数字宫格)/scroll(横滑卡片)" },
+      "Business/DanmakuOverlay": { usage: "弹幕浮层：Density=normal/dense，叠加在播放器上" },
+      "Business/LiveBadge": { usage: "直播状态徽标：State=live/replay/upcoming × Size=sm/md" },
+      "Business/ShortVideoOverlay": { usage: "竖版短视频叠加层：右侧点赞/评论/分享操作列+底部作者信息" },
+      "Business/ChatList": { usage: "聊天会话列表(整列表组件)：顶部快捷入口行(关注/系统消息/群消息/私信)+会话行(头像44/昵称/消息预览/右侧时间+未读角标，已右对齐)。多余行可用 visible=false 隐藏" },
+      "Business/ChatBubble": { usage: "聊天气泡：Side=received/sent/center × Type=text/image/voice/system/recalled" },
+      "Business/VIPCard": { usage: "会员开通入口横幅：Variant=inactive/active，渐变底+按钮" },
+      "Business/MessageGroupItem": { usage: "消息分组入口行：Type=follow/like/collect/system，左圆形图标+标题/摘要+右侧时间和红点(右对齐)。子层命名 icon/content/spacer/meta" },
+      "Business/VideoPublishForm": { usage: "视频发布表单：标题输入+封面/视频上传位+发布按钮。State=default/editing" },
+      "Business/ChatInput": { usage: "聊天输入栏（贴底）：输入框+表情+发送" },
+      "Business/FollowButton": { usage: "关注按钮：State=default(+关注)/following(已关注)/mutual(互相关注) × sm/md" },
+      "Business/LikeButton": { usage: "点赞按钮：State=default/liked × sm/md" },
+      "Business/BookmarkButton": { usage: "收藏按钮：State=default/saved × sm/md" },
+      "Business/FAB": { usage: "浮动操作按钮：Variant=plus(圆形+)/publish(胶囊发布) × md/lg" },
+      "Business/ImagePicker": { usage: "图片选择器：相册横滑缩略图行+拍照入口" },
+      "Business/iPhone-status-bar(upper)": { usage: "iOS 顶部状态栏 375 通栏：Dark-mode=false/true" },
+      "Business/iPhone-status-bar(lower)": { usage: "iOS 底部 Home Indicator：Dark-mode=false/true" },
+      "51 Drama/AdBanner": { usage: "广告横幅（图片占位整卡）：Size=md/lg" },
+      "51 Drama/AdGrid": { usage: "广告宫格：Columns=6/4，375通栏自带16px内边距" },
+      "51 Drama/CategoryFilterRow": { usage: "分类筛选行：Rows=single/multi，375通栏" },
+      "51 Drama/ActorCard": { usage: "演员卡片：头像+姓名+角色，Layout=detail 为列表行无底色" },
+      "51 Drama/RankingItem": { usage: "榜单行：排名号+封面+标题+热度，Rank=top3(彩色名次)/normal" },
+      "51 Drama/DramaDetailCard": { usage: "短剧详情卡：封面+标题+标签+简介，列表行无底色" },
+      "51 Drama/ReservationCard": { usage: "预约卡片(白底圆角悬浮卡343)：封面+标题+预约按钮，State=pending/available" },
+      "51 Drama/AdPopup": { usage: "全屏广告弹窗：图片位+关闭按钮" },
+      "51 Drama/CoinBalance": { usage: "金币余额条 375 通栏：金币图标+余额+充值按钮。State=default/low(红字余额不足)" },
+      "51 Drama/RechargeCard": { usage: "充值套餐卡 109 宽(343内容区三列)：金币数+赠送+价格。State=default/selected(品牌描边)/hot(首充角标)" },
+      "51 Drama/LockedEpisodeOverlay": { usage: "剧集付费蒙层(深色85%遮罩)：锁图标+说明+解锁按钮。Type=coin(金币+看广告双按钮)/ad(仅广告)" },
+      "51 Drama/UnlockSheet": { usage: "解锁底部弹层：单集/全剧选项+余额行+CTA。State=default/insufficient(余额不足变去充值)" },
+      "51 Drama/PaymentSheet": { usage: "支付方式弹层：金额+微信/支付宝单选+支付按钮。Selected=wechat/alipay" },
+      "Navigation/MobileNavBar": { usage: "移动端导航栏48h：Layout=back+title/back+title+actions/logo+actions/logo+search(展开搜索框) × Variant=default/elevated。title 为 TEXT 属性可 setProperties 覆盖" },
+      "Navigation/TabBar": { usage: "底部标签栏56h：ItemCount=3/4/5 × hasLabel，图标+文字" },
+      "Navigation/CategoryNav": { usage: "顶部分类tab行40h：Variant=scrollable/fixed，首个为选中态(品牌色+下划线)" },
+      "Navigation/SearchBar": { usage: "搜索框：State=default/focus(含联想面板)/filled(已输入)" },
+      "Navigation/SearchHistory": { usage: "搜索历史+热搜区块，375通栏自带内边距" },
+      "Navigation/FilterBar": { usage: "筛选条：Variant=tabs/dropdown，375通栏" },
+      "Navigation/SegmentedControl": { usage: "分段控制器(iOS风格圆角切换)" },
+      "Navigation/Breadcrumb": { usage: "面包屑(Web)" },
+      "Pagination / Mobile": { usage: "移动端分页：Variant=Load More(按钮)/Infinite Status(加载状态行)" },
+      "Navigation/BackTop": { usage: "回到顶部悬浮按钮" },
+      "Navigation/AndroidStatusBar": { usage: "Android 状态栏" },
+      "Data Display/ListItem": { usage: "通用列表行：Layout=text-only/icon+text/avatar+text-meta/avatar+text-action × sm/md/lg。聊天会话请优先用 Business/ChatList" },
+      "Data Display/Card": { usage: "通用卡片容器：Variant=elevated/outlined × Layout=media-only/header+body/header+body+footer/media+body+footer × md/lg" },
+      "Data Display/Tag": { usage: "标签：Color=neutral/primary/success/warning/danger/info × sm/md/lg × hasClose" },
+      "Data Display/Badge": { usage: "徽标红点/数字角标" },
+      "Data Display/Avatar": { usage: "头像(多尺寸/形状)，占位用灰色填充勿用图片" },
+      "Data Display/Divider": { usage: "分割线：水平/垂直 × solid/dashed × 粗细。无内边距，列表内缩分割线需 Wrapper(paddingLeft 72)" },
+      "Data Display/Statistic": { usage: "数据统计(数值+标签)" },
+      "Data Display/Progress": { usage: "进度条" },
+      "Data Display/Steps": { usage: "步骤条" },
+      "Data Display/Skeleton": { usage: "骨架屏占位" },
+      "Data Display/Timeline": { usage: "时间轴列表 375 通栏" },
+      "Data Display/Collapse": { usage: "折叠面板" },
+      "Data Display/RatingStars": { usage: "星级评分" },
+      "Data Display/ImagePreview": { usage: "图片预览浮层" },
+      "Data Display/Countdown": { usage: "倒计时" },
+      "Data Display/RankList": { usage: "排行榜列表 375 通栏" },
+      "Data Display/DescriptionList": { usage: "描述列表(键值对)" },
+      "Data Display/Carousel": { usage: "轮播容器" },
+      "Data Display/PriceTag": { usage: "价格标签(金额突出显示)" },
+      "Data Display/Table": { usage: "表格(Web)" },
+      "Feedback/Modal": { usage: "居中弹窗343：Size=md/lg × Layout=simple/with-icon/form/destructive" },
+      "Feedback/Drawer": { usage: "侧滑抽屉" },
+      "Feedback/Toast": { usage: "轻提示" },
+      "Feedback/Alert": { usage: "页内警告条" },
+      "Feedback/BottomSheet": { usage: "底部弹层容器(自定义内容用；支付/解锁有专用组件)" },
+      "Feedback/ActionSheet": { usage: "操作菜单底部弹层" },
+      "Feedback/ActionBar": { usage: "底部操作栏 375 通栏：Size=md/lg" },
+      "Feedback/Empty": { usage: "空状态(插图+文案+按钮)" },
+      "Feedback/Result": { usage: "结果页(成功/失败/无网络)" },
+      "Feedback/Loading": { usage: "加载中" },
+      "Feedback/SwipeAction": { usage: "列表左滑操作行：State=idle/swiped" },
+      "Feedback/PullToRefresh": { usage: "下拉刷新头部" },
+      "Feedback/InfiniteScrollLoader": { usage: "触底加载行" },
+      "Feedback/Tooltip": { usage: "气泡提示(Web)" },
+      "Feedback/Popover": { usage: "气泡卡片(Web)" },
+      "Foundation/Button": { usage: "按钮：Platform × Type=Primary/Secondary/Tertiary/Text × sm/md/lg × State × Pill" },
+      "Foundation/Input": { usage: "输入框：Platform × sm/md/lg × State=Default/Focus/Filled/Error/Disabled × 左右图标开关" },
+      "Foundation/FormItem": { usage: "表单项(标签+控件+错误提示)" },
+      "Foundation/PasswordInput": { usage: "密码输入框(343控件宽，12px为控件内边距非屏幕边距)" },
+      "Foundation/PhoneInput": { usage: "手机号输入框(343控件宽)" },
+      "Icons": { usage: "Icon/<name> 共53个，Style=line/fill 双变体，24×24，填充绑定 color/text/primary 可改色。命名见 Icons 页；组件内图标一律用 Icon/* 实例 + INSTANCE_SWAP，禁止临时画 SVG" },
+    };
+    // Component token mapping — built-in 15 (structured) + project catalog (usage)
     flat.components = {
       "Button/Primary": {
         background: "color/brand/primary",
@@ -269,6 +378,8 @@
       },
     };
 
+    Object.assign(flat.components, COMPONENT_USAGE_CATALOG);
+
     // Design guidelines for AI
     flat.guidelines = {
       spacing: "使用 4px 基准间距。组件内 padding 用 space/2~space/4，模块间距用 space/6~space/8，页面边距用 space/4。",
@@ -302,6 +413,7 @@
    - 图标颜色没有独立 token，直接复用 text 文本色：主图标 = text.primary，次要图标 = text.secondary，弱化图标 = text.tertiary，禁用图标 = text.disabled，品牌强调图标 = brand.primary，深色 / 品牌底上的图标 = constant.white；状态类图标（成功 / 警告 / 危险）= function.success / warning / danger。
 2. 品牌色（brand.primary / hover / active）和辅助色在深浅模式下保持不变，不要调亮或调暗。
 3. 字号只从 JSON 的 typography.sizes 取值。标题用 Semibold 或 Bold，正文用 Regular。标题与正文之间间距用 space.2，段落间用 space.3。
+   - 字体：组件与页面文字统一使用 typography.fontFamilyFigma（当前 Noto Sans SC）。不要使用 PingFang SC 等系统字体——Figma 中 AI 无法调用，会导致文字改不了。字重只用 typography.fontWeightMapping 列出的（Semibold 实际回落 Medium，因此标题用 Medium 或 Bold）。若要使用规范的自选字体（typography.fontFamily），需先在 Figma 团队中将该字体上传为共享字体。
 4. 间距基于 4px 倍数，只从 JSON 的 dimensions 中 space/* 取值。组件内 padding 用 space.2~space.4，模块间距用 space.6~space.8，页面边距用 space.4。
 5. 圆角：按钮和输入框用 radius.md，卡片用 radius.lg，标签和头像用 radius.full，弹窗用 radius.xl。
 6. 阴影：卡片用 shadow.sm，弹窗用 shadow.lg，浮层用 shadow.overlay。

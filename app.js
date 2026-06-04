@@ -145,7 +145,7 @@ function applySeed(seed) {
   renderAuxiliaryControls(seed.auxiliaryColors || DesignTokens.defaultAuxiliaryColors);
   els.neutralStrategy.value = seed.neutralStrategy || "cool";
   els.baseFontSize.value = seed.baseFontSize || 17;
-  els.localFont.value = seed.localFont || "pingfang";
+  els.localFont.value = seed.localFont || "source";
   els.radiusScale.value = seed.radiusScale || "soft";
   els.shadowStrength.value = seed.shadowStrength || "medium";
 }
