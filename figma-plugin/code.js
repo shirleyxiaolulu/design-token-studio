@@ -588,6 +588,27 @@ async function generatePreview(data) {
   frame.fills = [{ type: 'SOLID', color: CANVAS_BG }];
   frame.clipsContent = true;
 
+  // Pin the preview frame to the spec's default mode. All swatches/text/bg below
+  // are bound to variables; without an explicit mode the frame resolves them in
+  // the collection's first mode (Light), so a dark-mode spec would render light.
+  var targetModeName = IS_LIGHT ? 'Light' : 'Dark';
+  for (var _ci = 0; _ci < collections.length; _ci++) {
+    var _col = collections[_ci];
+    var _modes = _col.modes || [];
+    var _mode = _modes.find(function (m) { return m.name === targetModeName; });
+    if (!_mode && _modes.length) {
+      // Fallback by position: Light = first mode, Dark = second (or first) mode.
+      _mode = IS_LIGHT ? _modes[0] : (_modes[1] || _modes[0]);
+    }
+    if (_mode) {
+      try {
+        frame.setExplicitVariableModeForCollection(_col, _mode.modeId);
+      } catch (e1) {
+        try { frame.setExplicitVariableModeForCollection(_col.id, _mode.modeId); } catch (e2) {}
+      }
+    }
+  }
+
   // ===== Variable Binding Helpers =====
   // Map color object references → semantic variable names for auto-binding
   var colorVarMap = new Map();
