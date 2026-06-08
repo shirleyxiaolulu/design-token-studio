@@ -258,8 +258,11 @@ async function syncTextStyles(data) {
     styleSpecs = [
       ['font.size.largeTitle', 'Large Title', 'bold', '大标题、首屏展示'],
       ['font.size.title1', 'Title 1', 'bold', '一级标题、模块头'],
+      ['font.size.19', 'Subtitle', 'regular', '副标题、次级标题'],
       ['font.size.title2', 'Title 2', 'bold', '二级标题、卡片头'],
+      ['font.size.17', 'Headline', 'regular', '醒目标题、重点信息'],
       ['font.size.title3', 'Title 3', 'bold', '三级标题、列表组头'],
+      ['font.size.15', 'Callout', 'regular', '标注文本、行内强调'],
       ['font.size.body', 'Body', 'regular', '正文常用尺寸'],
       ['font.size.subhead', 'Subhead', 'regular', '副标题、列表描述'],
       ['font.size.footnote', 'Footnote', 'regular', '脚注、次要信息'],
@@ -286,8 +289,11 @@ async function syncTextStyles(data) {
       ['font.size.4xl', 'Heading 1', 'bold', '页面大标题'],
       ['font.size.3xl', 'Heading 2', 'bold', '页面标题'],
       ['font.size.2xl', 'Heading 3', 'bold', '模块标题'],
+      ['font.size.19', 'Subtitle', 'regular', '副标题、次级标题'],
       ['font.size.xl', 'Heading 4', 'bold', '卡片标题'],
+      ['font.size.17', 'Headline', 'regular', '醒目标题、重点信息'],
       ['font.size.lg', 'Body Large', 'regular', '大正文'],
+      ['font.size.15', 'Callout', 'regular', '标注文本、行内强调'],
       ['font.size.body', 'Body', 'regular', '正文（通用）'],
       ['font.size.sm', 'Body Small', 'regular', '副标题'],
       ['font.size.footnote', 'Footnote', 'regular', '脚注、辅助'],
@@ -316,11 +322,12 @@ async function syncTextStyles(data) {
   var created = 0;
   var updated = 0;
   var bound = 0;
+  var managed = []; // {style, size} per spec — used to re-sort the panel by font size
 
   for (var si = 0; si < styleSpecs.length; si++) {
     var spec = styleSpecs[si];
     var tokenKey = spec[0];
-    var styleName = spec[1];
+    var styleName = spec[1]; // semantic role name, e.g. "Large Title" / "Callout"
     var weight = spec[2];
     var desc = spec[3];
 
@@ -334,15 +341,17 @@ async function syncTextStyles(data) {
     var lineHeight = Math.round(fontSize * 1.5);
     var fontStyle = weight === 'bold' ? FONT_BOLD : 'Regular';
 
-    // Find or create style
-    var style = styleMap[styleName];
+    // Find or create style. Match by the semantic name first; fall back to a
+    // size-named style (left by an earlier numeric naming) so it gets renamed in
+    // place (migrated) to the semantic name instead of leaving a duplicate behind.
+    var style = styleMap[styleName] || styleMap[String(fontSize)];
     if (!style) {
       style = figma.createTextStyle();
-      style.name = styleName;
       created++;
     } else {
       updated++;
     }
+    style.name = styleName;
 
     style.fontName = { family: FONT_FAMILY, style: fontStyle };
     style.fontSize = fontSize;
@@ -366,7 +375,23 @@ async function syncTextStyles(data) {
         } catch (e2) { /* leave the raw fontSize if binding is rejected */ }
       }
     }
+
+    managed.push({ style: style, size: fontSize });
   }
+
+  // Re-sort the panel so text styles read small → large, top → bottom.
+  // Figma lists styles in their stored order and appends newly created ones to
+  // the end, so freshly added sizes (15/17/19) otherwise pile up at the bottom.
+  // moveLocalTextStyleAfter(target, null) moves to first; passing the previous
+  // style chains them into ascending order on every run.
+  try {
+    var ordered = managed.slice().sort(function (a, b) { return a.size - b.size; });
+    var prev = null;
+    for (var oi = 0; oi < ordered.length; oi++) {
+      figma.moveLocalTextStyleAfter(ordered[oi].style, prev);
+      prev = ordered[oi].style;
+    }
+  } catch (eOrder) { /* reordering is best-effort; older API versions may lack moveLocalTextStyleAfter */ }
 
   return { created: created, updated: updated, bound: bound };
 }
@@ -1057,8 +1082,11 @@ async function generatePreview(data) {
   var iosScaleRows = [
     ['text.largeTitle', 28, '700', '大标题、首屏展示'],
     ['text.title1', 22, '700', '一级标题、模块头'],
+    ['text.19', 19, '400', '强调正文、小标题'],
     ['text.title2', 18, '600', '二级标题、卡片头'],
+    ['text.17', 17, '400', '舒适正文、重点信息'],
     ['text.title3', 16, '600', '三级标题、列表组头'],
+    ['text.15', 15, '400', '紧凑正文、次要信息'],
     ['text.body', 14, '400', '正文常用尺寸'],
     ['text.subhead', 13, '400', '副标题、列表描述'],
     ['text.footnote', 12, '400', '脚注、次要信息'],
@@ -1083,8 +1111,11 @@ async function generatePreview(data) {
     ['text.4xl', 32, '700', '页面大标题（Web）'],
     ['text.3xl', 24, '700', '页面标题 / largeTitle'],
     ['text.2xl', 20, '600', '模块标题 / title1'],
+    ['text.19', 19, '400', '强调正文、小标题'],
     ['text.xl', 18, '600', '卡片标题 / title2'],
+    ['text.17', 17, '400', '舒适正文、重点信息'],
     ['text.lg', 16, '400', '大正文 / title3'],
+    ['text.15', 15, '400', '紧凑正文、次要信息'],
     ['text.body', 14, '400', '正文（通用）'],
     ['text.sm', 13, '400', '副标题 / subhead'],
     ['text.footnote', 12, '400', '脚注 / 辅助'],
