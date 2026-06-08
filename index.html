@@ -170,14 +170,29 @@
 
     /* features */
     .feat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+    /* static = text card (v1 look); on hover the text fades out and a demo video
+       plays in its place, filling the whole card */
     .feat {
-      padding: 26px; border-radius: var(--radius); border: 1px solid var(--border);
+      position: relative; overflow: hidden; padding: 26px;
+      border-radius: var(--radius); border: 1px solid var(--border);
       background: var(--surface); transition: transform 0.25s, border-color 0.25s, background 0.25s;
     }
     .feat:hover { transform: translateY(-5px); border-color: var(--border-glow); background: var(--surface-strong); }
-    .feat .ic { width: 46px; height: 46px; border-radius: 13px; display: grid; place-items: center; font-size: 22px; color: #fff; background: var(--grad); box-shadow: 0 8px 24px rgba(83, 20, 255, 0.4); margin-bottom: 18px; }
-    .feat b { font-size: 17px; display: block; }
-    .feat p { color: var(--muted); font-size: 14px; margin-top: 8px; }
+    .feat .ic { width: 46px; height: 46px; border-radius: 13px; display: grid; place-items: center; font-size: 22px; color: #fff; background: var(--grad); background-origin: border-box; background-repeat: no-repeat; box-shadow: 0 8px 24px rgba(83, 20, 255, 0.4); margin-bottom: 18px; }
+    .feat-body { transition: opacity 0.25s; }
+    .feat-body b { font-size: 17px; display: block; }
+    .feat-body p { color: var(--muted); font-size: 14px; margin-top: 8px; }
+    .feat-stage {
+      position: absolute; inset: 0; z-index: 2; opacity: 0; transition: opacity 0.25s; overflow: hidden;
+      background: radial-gradient(130% 130% at 30% 25%, rgba(124, 92, 255, 0.2), rgba(13, 14, 22, 0.96));
+    }
+    .feat-stage::after { /* placeholder shown on hover until a demo video is added */
+      content: "▶  演示预览"; position: absolute; inset: 0; z-index: 0;
+      display: grid; place-items: center; font-size: 12px; letter-spacing: 1px; color: var(--faint);
+    }
+    .feat-video { position: relative; z-index: 1; width: 100%; height: 100%; object-fit: cover; display: block; }
+    .feat:hover .feat-stage { opacity: 1; }
+    .feat:hover .feat-body { opacity: 0; }
     @media (max-width: 880px) { .feat-grid { grid-template-columns: repeat(2, 1fr); } }
     @media (max-width: 560px) { .feat-grid { grid-template-columns: 1fr; } }
 
@@ -232,6 +247,32 @@
     .reveal { opacity: 0; transform: translateY(24px); transition: opacity 0.6s ease, transform 0.6s ease; }
     .reveal.in { opacity: 1; transform: none; }
     @media (prefers-reduced-motion: reduce) { .reveal { opacity: 1; transform: none; } .float { animation: none; } }
+
+    /* workflow title — single line, scales to fit */
+    #flow .sec-head { max-width: 960px; }
+    #flow .sec-head h2 { white-space: nowrap; max-width: none; font-size: clamp(15px, 4.4vw, 40px); }
+    /* single-line section titles (scale down on small screens to avoid overflow) */
+    .sec-head h2.nowrap-h2 { white-space: nowrap; max-width: none; font-size: clamp(16px, 4.6vw, 42px); }
+    .sec-head:has(.nowrap-h2) { max-width: 920px; }
+    /* CTA small print under the buttons */
+    .cta .cta-note { margin-top: 16px; font-size: 12px; color: var(--faint); line-height: 1.6; }
+    .cta-note i { color: var(--brand-3); }
+
+    /* ---------- Figma plugin modal ---------- */
+    .modal-backdrop { position: fixed; inset: 0; z-index: 100; background: rgba(5, 5, 9, 0.72); backdrop-filter: blur(6px); display: grid; place-items: center; padding: 24px; }
+    .modal-backdrop[hidden] { display: none; }
+    .modal { width: min(560px, 100%); max-height: 86vh; overflow: auto; position: relative; padding: 28px; border-radius: 20px; border: 1px solid var(--border-glow); background: linear-gradient(160deg, rgba(20, 21, 31, 0.98), rgba(12, 13, 21, 0.98)); box-shadow: 0 40px 100px rgba(0, 0, 0, 0.6); }
+    .modal-close { position: absolute; top: 12px; right: 16px; background: none; border: none; color: var(--muted); font-size: 26px; line-height: 1; cursor: pointer; }
+    .modal-close:hover { color: var(--text); }
+    .modal h3 { font-size: 20px; display: flex; align-items: center; gap: 10px; }
+    .modal h3 i { color: var(--brand-3); }
+    .modal-note { color: var(--muted); font-size: 14px; margin: 12px 0 18px; }
+    .modal-note strong { color: var(--text); }
+    .modal-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+    .modal-steps { color: var(--muted); font-size: 14px; line-height: 1.85; padding-left: 20px; display: grid; gap: 6px; }
+    .modal-steps strong { color: var(--text); }
+    .modal-steps code { font-family: "SF Mono", Menlo, monospace; font-size: 12.5px; background: rgba(124, 92, 255, 0.12); border: 1px solid rgba(124, 92, 255, 0.22); color: var(--brand-3); padding: 1px 6px; border-radius: 6px; }
+    .modal-foot { margin-top: 16px; font-size: 12px; color: var(--faint); }
   </style>
 </head>
 <body>
@@ -249,7 +290,8 @@
         <a href="#exports">导出 & Figma</a>
       </div>
       <div class="nav-right">
-        <span class="nav-author">Designed by Xiaolu · Gu Liang</span>
+        <span class="nav-author">Designed 小鹿·顾良</span>
+        <button class="btn btn-ghost" type="button" data-open="plugin"><i class="ri-puzzle-2-line"></i> Figma 插件</button>
         <a class="btn btn-primary" href="./app.html"><i class="ri-rocket-2-line"></i> 打开工具</a>
       </div>
     </div>
@@ -308,7 +350,7 @@
     <div class="wrap">
       <div class="sec-head reveal">
         <div class="sec-tag">为什么需要它</div>
-        <h2>手搓设计规范的真实困境</h2>
+        <h2><span class="grad-text">手搓</span>设计规范的真实困境</h2>
         <p>从零搭一套规范，动辄大半天；改一次主色，又得从头重来。这不只是效率，更是一致性。</p>
       </div>
       <div class="pain-grid">
@@ -329,12 +371,30 @@
         <p>把"手搓规范、反复对齐、改色重来"的活，压缩成几次点击。</p>
       </div>
       <div class="feat-grid">
-        <div class="feat reveal"><div class="ic"><i class="ri-magic-line"></i></div><b>手搓 2 小时 → 一键生成</b><p>输入主色，色板、字阶、间距、阴影、明暗一整套排版规范<b style="color:var(--text)">秒级</b>生成，告别从空白文档一点点搭。</p></div>
-        <div class="feat reveal"><div class="ic"><i class="ri-loop-left-line"></i></div><b>一键换肤</b><p>改个主色，整盘色板与语义色自动重算——过去要重铺一整天的活，现在几秒搞定。</p></div>
-        <div class="feat reveal"><div class="ic"><i class="ri-figma-line"></i></div><b>直接建好 Figma 变量库 + 样式库</b><p>插件一键生成变量集合（明暗双模式）、文本/效果样式与可视化规范页，不用再手动一个个建。</p></div>
-        <div class="feat reveal"><div class="ic"><i class="ri-robot-2-line"></i></div><b>AI JSON 即下即用</b><p>内置完整提示词 + 全套规范，下载直接发给 AI，它就能严格照你的规范产出 UI，不跑偏。</p></div>
-        <div class="feat reveal"><div class="ic"><i class="ri-contrast-2-line"></i></div><b>明暗自动适配 + WCAG</b><p>Light / Dark 两套主题一次出，文字/背景对比度实时校验，可访问性内建而非事后补。</p></div>
-        <div class="feat reveal"><div class="ic"><i class="ri-stack-line"></i></div><b>市面上最完整的规范</b><p>色彩 / 语义色 / 辅助色 / 字阶 / 间距 / 圆角 / 阴影 / 透明度 / 动效——九大类，一个都不落。</p></div>
+        <div class="feat reveal">
+          <div class="feat-stage"><video class="feat-video" muted loop playsinline preload="metadata"><source src="media/feat-generate.mp4" type="video/mp4" /></video></div>
+          <div class="feat-body"><div class="ic"><i class="ri-magic-line"></i></div><b>一键生成设计规范图</b><p>输入主色，色板、字阶、间距、阴影、明暗一整套排版规范<b style="color:var(--text)">秒级</b>生成，告别手搓 2 小时、从空白文档一点点搭。</p></div>
+        </div>
+        <div class="feat reveal">
+          <div class="feat-stage"><video class="feat-video" muted loop playsinline preload="metadata"><source src="media/feat-reskin.mp4" type="video/mp4" /></video></div>
+          <div class="feat-body"><div class="ic"><i class="ri-loop-left-line"></i></div><b>一键换肤</b><p>改个主色，整盘色板与语义色自动重算——过去要重铺一整天的活，现在几秒搞定。</p></div>
+        </div>
+        <div class="feat reveal">
+          <div class="feat-stage"><video class="feat-video" muted loop playsinline preload="metadata"><source src="media/feat-figma.mp4" type="video/mp4" /></video></div>
+          <div class="feat-body"><div class="ic"><i class="ri-figma-line"></i></div><b>直接建好 Figma 变量库 + 样式库</b><p>插件一键生成变量集合（明暗双模式）、文本/效果样式与可视化规范页，不用再手动一个个建。</p></div>
+        </div>
+        <div class="feat reveal">
+          <div class="feat-stage"><video class="feat-video" muted loop playsinline preload="metadata"><source src="media/feat-aijson.mp4" type="video/mp4" /></video></div>
+          <div class="feat-body"><div class="ic"><i class="ri-robot-2-line"></i></div><b>AI JSON 即下即用</b><p>内置完整提示词 + 全套规范，下载直接发给 AI，它就能严格照你的规范产出 UI，不跑偏。</p></div>
+        </div>
+        <div class="feat reveal">
+          <div class="feat-stage"><video class="feat-video" muted loop playsinline preload="metadata"><source src="media/feat-darkmode.mp4" type="video/mp4" /></video></div>
+          <div class="feat-body"><div class="ic"><i class="ri-contrast-2-line"></i></div><b>明暗自动适配 + WCAG</b><p>Light / Dark 两套主题一次出，文字/背景对比度实时校验，可访问性内建而非事后补。</p></div>
+        </div>
+        <div class="feat reveal">
+          <div class="feat-stage"><video class="feat-video" muted loop playsinline preload="metadata"><source src="media/feat-complete.mp4" type="video/mp4" /></video></div>
+          <div class="feat-body"><div class="ic"><i class="ri-stack-line"></i></div><b>市面上最完整的规范</b><p>色彩 / 语义色 / 辅助色 / 字阶 / 间距 / 圆角 / 阴影 / 透明度 / 动效——九大类，一个都不落。</p></div>
+        </div>
       </div>
     </div>
   </section>
@@ -344,7 +404,7 @@
     <div class="wrap">
       <div class="sec-head reveal">
         <div class="sec-tag">一处打通</div>
-        <h2>设计 · 代码 · Figma · AI，同一份真理</h2>
+        <h2 class="flow-title">设计 · 代码 · Figma · AI，<span class="grad-text">设计工作流</span></h2>
         <p>一份令牌，四个方向同时落地，彻底告别"对不齐"。</p>
       </div>
       <div class="flow">
@@ -361,7 +421,7 @@
     <div class="wrap">
       <div class="sec-head reveal">
         <div class="sec-tag">产出生态</div>
-        <h2>令牌不只活在这一个工具里</h2>
+        <h2>一次定义，代码、Figma、构建管线 <span class="grad-text">处处可用</span></h2>
         <p>面向真实工程管线与设计工具，标准化、可互操作。</p>
       </div>
       <div class="exports">
@@ -391,7 +451,7 @@
     <div class="wrap">
       <div class="sec-head reveal">
         <div class="sec-tag">凭什么不一样</div>
-        <h2>不止生成，更<span class="grad-text">经得起规模化</span></h2>
+        <h2 class="nowrap-h2">不只是生成器，更是<span class="grad-text">托得住的设计系统</span></h2>
       </div>
       <div class="why-grid">
         <div class="why reveal"><b><i class="ri-node-tree"></i> 单一事实源</b><p>令牌定义一次、多端派生，从根上杜绝不一致与重复维护。</p></div>
@@ -408,12 +468,13 @@
   <section>
     <div class="wrap">
       <div class="cta reveal">
-        <h2>现在，就把一个色变成一套规范</h2>
-        <p>浏览器打开即用，无需安装、无需注册。</p>
+        <h2>一套完整设计规范，<span class="grad-text">几秒就位</span></h2>
+        <p>色彩 · 字阶 · 间距 · 圆角 · 阴影 · 明暗 · 动效，九大类一次到位；浏览器打开即用，无需安装、无需注册。</p>
         <div class="hero-cta">
           <a class="btn btn-primary" href="./app.html"><i class="ri-rocket-2-line"></i> 立即开始</a>
-          <a class="btn btn-ghost" href="https://shirleyxiaolulu.github.io/design-token-studio/app.html" target="_blank" rel="noopener"><i class="ri-external-link-line"></i> 在线版</a>
+          <button class="btn btn-ghost" type="button" data-open="plugin"><i class="ri-download-2-line"></i> 下载 Figma 插件</button>
         </div>
+        <p class="cta-note"><i class="ri-information-line"></i> Figma 插件因含 Light / Dark 双模式变量，需 Figma 付费账号才能使用（教育会员即可）；网页工具本身完全免费。</p>
       </div>
     </div>
   </section>
@@ -424,6 +485,26 @@
       <a href="./app.html">打开工具 →</a>
     </div>
   </footer>
+
+  <!-- Figma plugin install modal -->
+  <div class="modal-backdrop" id="pluginModal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="pluginModalTitle">
+      <button class="modal-close" id="pluginClose" type="button" aria-label="关闭">&times;</button>
+      <h3 id="pluginModalTitle"><i class="ri-puzzle-2-line"></i> 安装 Figma 插件</h3>
+      <p class="modal-note">插件目前为<strong>本地安装</strong>（尚未发布到 Figma 社区）。下载后按下面步骤导入即可使用。</p>
+      <div class="modal-actions">
+        <a class="btn btn-primary" href="./figma-plugin.zip" download><i class="ri-download-2-line"></i> 下载插件 (.zip)</a>
+      </div>
+      <ol class="modal-steps">
+        <li>下载并<strong>解压</strong>压缩包，得到 <code>figma-plugin</code> 文件夹。</li>
+        <li>打开 <strong>Figma 桌面端</strong> → 菜单 <code>Plugins</code> → <code>Development</code> → <code>Import plugin from manifest…</code></li>
+        <li>选择解压出的 <code>figma-plugin/manifest.json</code>。</li>
+        <li>在任意文件中按 <code>Cmd + /</code> 搜索「Design System」运行插件。</li>
+        <li>在本工具导出 JSON，粘贴进插件 →「同步 Figma 变量」/「生成预览页」。</li>
+      </ol>
+      <p class="modal-foot">需要 Figma 桌面端；网页版不支持开发插件导入。</p>
+    </div>
+  </div>
 
   <script>
     // scroll reveal
@@ -455,6 +536,24 @@
       });
     }, { threshold: 0.6 });
     document.querySelectorAll("[data-count]").forEach(function (el) { sio.observe(el); });
+
+    // feature cards: play the demo video on hover, reset on leave
+    document.querySelectorAll(".feat-video").forEach(function (v) {
+      var card = v.closest(".feat");
+      if (!card) return;
+      card.addEventListener("mouseenter", function () { var p = v.play(); if (p && p.catch) p.catch(function () {}); });
+      card.addEventListener("mouseleave", function () { v.pause(); try { v.currentTime = 0; } catch (e) {} });
+    });
+
+    // Figma plugin modal — opened by any [data-open="plugin"] (nav + CTA buttons)
+    var pluginModal = document.getElementById("pluginModal");
+    var pluginClose = document.getElementById("pluginClose");
+    function openPlugin() { if (pluginModal) { pluginModal.hidden = false; document.body.style.overflow = "hidden"; } }
+    function closePlugin() { if (pluginModal) { pluginModal.hidden = true; document.body.style.overflow = ""; } }
+    document.querySelectorAll('[data-open="plugin"]').forEach(function (b) { b.addEventListener("click", openPlugin); });
+    if (pluginClose) pluginClose.addEventListener("click", closePlugin);
+    if (pluginModal) pluginModal.addEventListener("click", function (e) { if (e.target === pluginModal) closePlugin(); });
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape" && pluginModal && !pluginModal.hidden) closePlugin(); });
   </script>
 </body>
 </html>
