@@ -94,8 +94,7 @@
     .btn-ghost { background: var(--surface-strong); border-color: var(--border); color: var(--text); }
     .btn-ghost:hover { border-color: var(--border-glow); transform: translateY(-2px); }
     .nav-right { display: flex; align-items: center; gap: 16px; }
-    .nav-author { font-size: 12px; color: var(--faint); white-space: nowrap; }
-    @media (max-width: 760px) { .nav-links, .nav-author { display: none; } }
+    @media (max-width: 760px) { .nav-links { display: none; } }
 
     /* ---------- Hero ---------- */
     .hero { padding: 96px 0 72px; }
@@ -169,7 +168,7 @@
     @media (max-width: 760px) { .pain-grid { grid-template-columns: 1fr; } }
 
     /* features */
-    .feat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+    .feat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; grid-auto-rows: 1fr; }
     /* static = text card (v1 look); on hover the text fades out and a demo video
        plays in its place, filling the whole card */
     .feat {
@@ -290,7 +289,6 @@
         <a href="#exports">导出 & Figma</a>
       </div>
       <div class="nav-right">
-        <span class="nav-author">Designed 小鹿·顾良</span>
         <button class="btn btn-ghost" type="button" data-open="plugin"><i class="ri-puzzle-2-line"></i> Figma 插件</button>
         <a class="btn btn-primary" href="./app.html"><i class="ri-rocket-2-line"></i> 打开工具</a>
       </div>
