@@ -26,6 +26,46 @@ function figmaRgbToHex(c) {
 // =============================================
 // Sync: Update Figma Variables from JSON
 // =============================================
+// ---------------------------------------------------------------------------
+// Variable reconcile planners — pure (no Figma API) so they're unit-testable.
+// ---------------------------------------------------------------------------
+// Plan in-place renames for font/size variables: match a stale-named existing
+// font/size var to an expected name by EQUAL value. Returns [{from, to}].
+function planFontSizeRenames(existingFontSizeVars, expectedFontSize) {
+  var existingNames = {};
+  for (var i = 0; i < existingFontSizeVars.length; i++) existingNames[existingFontSizeVars[i].name] = true;
+  var used = {};
+  var plan = [];
+  for (var to in expectedFontSize) {
+    if (existingNames[to]) continue;                       // correct name already present
+    var size = expectedFontSize[to];
+    for (var k = 0; k < existingFontSizeVars.length; k++) {
+      var ev = existingFontSizeVars[k];
+      if (used[ev.name]) continue;
+      if (expectedFontSize[ev.name] !== undefined) continue; // its name is itself expected → keep
+      if (ev.value === size) { plan.push({ from: ev.name, to: to }); used[ev.name] = true; break; }
+    }
+  }
+  return plan;
+}
+// Plan orphan removals: existing names not in the expected set — but ONLY within
+// namespaces the plugin manages this run (first "/" segment of an expected name).
+// User-authored variables in other namespaces are never returned.
+function planVarOrphans(existingNames, expectedNames) {
+  var exp = {}, pref = {};
+  for (var i = 0; i < expectedNames.length; i++) {
+    exp[expectedNames[i]] = true;
+    pref[String(expectedNames[i]).split('/')[0]] = true;
+  }
+  var out = [];
+  for (var j = 0; j < existingNames.length; j++) {
+    var n = existingNames[j];
+    if (exp[n]) continue;
+    if (pref[String(n).split('/')[0]]) out.push(n);
+  }
+  return out;
+}
+
 async function syncVariables(data) {
   const collections = await figma.variables.getLocalVariableCollectionsAsync();
 
@@ -76,6 +116,35 @@ async function syncVariables(data) {
     }
   }
   // Also index newly created collections (if they were just created, they're empty)
+
+  // Reconcile (existing files): migrate renamed font/size variables IN PLACE so a
+  // re-run on an old file (e.g. font/size/15 → font/size/callout) preserves their
+  // bindings + panel position instead of leaving stale duplicates. Match by value.
+  var renamed = 0;
+  var expectedFontSize = {};
+  Object.values(data.dimTokens || {}).forEach(function (t) {
+    if (t && t.figmaName && t.figmaName.indexOf('font/size/') === 0) {
+      var fv = (typeof t.value === 'string') ? parseInt(t.value, 10) : t.value;
+      if (fv && !isNaN(fv)) expectedFontSize[t.figmaName] = fv;
+    }
+  });
+  var existingFs = [];
+  for (var fsName in varMap) {
+    if (fsName.indexOf('font/size/') !== 0) continue;
+    var fsVal = null;
+    try { fsVal = Object.values(varMap[fsName].valuesByMode)[0]; } catch (e) {}
+    existingFs.push({ name: fsName, value: fsVal });
+  }
+  var fsRenames = planFontSizeRenames(existingFs, expectedFontSize);
+  for (var rr = 0; rr < fsRenames.length; rr++) {
+    var fromN = fsRenames[rr].from, toN = fsRenames[rr].to;
+    try {
+      varMap[fromN].name = toN;        // rename in place — keeps bindings + position
+      varMap[toN] = varMap[fromN];
+      delete varMap[fromN];
+      renamed++;
+    } catch (e) { /* rename rejected — syncVar will just create the new name */ }
+  }
 
   var created = 0;
   var updated = 0;
@@ -189,6 +258,32 @@ async function syncVariables(data) {
     }
   }
 
+  // Reconcile (existing files): remove stale/duplicate plugin variables that are
+  // no longer in the token set — but ONLY within namespaces the plugin manages
+  // this run, so user-authored variables are never touched. font/size renames
+  // above already preserved those, so this mainly clears removed tokens.
+  var orphaned = 0;
+  try {
+    var expectedNames = [];
+    Object.values(data.colorTokens || {}).forEach(function (t) { if (t && t.figmaName) expectedNames.push(t.figmaName); });
+    Object.values(data.dimTokens || {}).forEach(function (t) { if (t && t.figmaName && t.type !== 'shadow') expectedNames.push(t.figmaName); });
+    var reCols = await figma.variables.getLocalVariableCollectionsAsync();
+    for (var rcI = 0; rcI < reCols.length; rcI++) {
+      var ownCol = reCols[rcI];
+      if (ownCol.id !== primCol.id && ownCol.id !== tokCol.id) continue; // only plugin-owned collections
+      var ownNames = [];
+      var ownById = {};
+      for (var oi = 0; oi < ownCol.variableIds.length; oi++) {
+        var ov = await figma.variables.getVariableByIdAsync(ownCol.variableIds[oi]);
+        if (ov) { ownNames.push(ov.name); ownById[ov.name] = ov; }
+      }
+      var orphans = planVarOrphans(ownNames, expectedNames);
+      for (var op = 0; op < orphans.length; op++) {
+        try { ownById[orphans[op]].remove(); orphaned++; } catch (e) {}
+      }
+    }
+  } catch (e) { /* reconcile is best-effort */ }
+
   // Verify: read back a sample variable to confirm values were written
   var verifyMsg = '';
   var sampleEntries = Object.entries(data.colorTokens || {}).slice(0, 1);
@@ -207,7 +302,58 @@ async function syncVariables(data) {
     }
   }
 
-  return { created: created, updated: updated, skipped: skipped, cleaned: cleaned, verify: verifyMsg };
+  return { created: created, updated: updated, skipped: skipped, cleaned: cleaned, renamed: renamed, orphaned: orphaned, verify: verifyMsg };
+}
+
+// ---------------------------------------------------------------------------
+// Type scale helpers — DERIVE everything from the exported font.size tokens so
+// the plugin never re-hardcodes the scale. tokens.js (web app) is the single
+// source of truth; each font.size token carries role / weight / lineHeight.
+// ---------------------------------------------------------------------------
+function tsFontSizeEntries(data) {
+  var dt = (data && data.dimTokens) || {};
+  var list = [];
+  for (var key in dt) {
+    if (key.indexOf('font.size.') !== 0) continue;
+    var t = dt[key];
+    var size = (typeof t.value === 'string') ? parseInt(t.value, 10) : t.value;
+    if (!size || isNaN(size)) continue;
+    list.push({
+      tokenKey: key,
+      roleKey: key.slice('font.size.'.length),
+      size: size,
+      role: t.role,
+      weight: (typeof t.weight === 'number') ? t.weight : null,
+      lineHeight: t.lineHeight,
+      usage: t.usage || '',
+    });
+  }
+  list.sort(function (a, b) { return a.size - b.size; }); // ascending
+  return list;
+}
+
+function tsFallbackRole(roleKey) {
+  // Legacy exports (pre single-source) lack role metadata — title-case the key.
+  return roleKey.charAt(0).toUpperCase() + roleKey.slice(1);
+}
+
+// [tokenKey, styleName, 'bold'|'regular', description] — consumed by syncTextStyles.
+function buildFontSizeSpecs(data) {
+  return tsFontSizeEntries(data).map(function (e) {
+    var styleName = e.role || tsFallbackRole(e.roleKey);
+    var weight = (e.weight != null && e.weight >= 600) ? 'bold' : 'regular';
+    return [e.tokenKey, styleName, weight, e.usage];
+  });
+}
+
+// [displayName, size, weightString, usage], descending — consumed by the spec page.
+function buildTypeScaleRows(data) {
+  return tsFontSizeEntries(data)
+    .slice()
+    .sort(function (a, b) { return b.size - a.size; }) // descending (large → small)
+    .map(function (e) {
+      return ['text.' + e.roleKey, e.size, String(e.weight != null ? e.weight : 400), e.usage];
+    });
 }
 
 // =============================================
@@ -249,58 +395,10 @@ async function syncTextStyles(data) {
     } catch (e) { /* try next weight */ }
   }
 
-  // Define text style specs: [tokenKey, styleName, weight, description]
-  // weight: 'bold' = Semibold/Semi Bold, 'regular' = Regular
-  var platform = data.platform || 'ios-app';
-  var styleSpecs;
-
-  if (platform === 'ios-app') {
-    styleSpecs = [
-      ['font.size.largeTitle', 'Large Title', 'bold', '大标题、首屏展示'],
-      ['font.size.title1', 'Title 1', 'bold', '一级标题、模块头'],
-      ['font.size.19', 'Subtitle', 'regular', '副标题、次级标题'],
-      ['font.size.title2', 'Title 2', 'bold', '二级标题、卡片头'],
-      ['font.size.17', 'Headline', 'regular', '醒目标题、重点信息'],
-      ['font.size.title3', 'Title 3', 'bold', '三级标题、列表组头'],
-      ['font.size.15', 'Callout', 'regular', '标注文本、行内强调'],
-      ['font.size.body', 'Body', 'regular', '正文常用尺寸'],
-      ['font.size.subhead', 'Subhead', 'regular', '副标题、列表描述'],
-      ['font.size.footnote', 'Footnote', 'regular', '脚注、次要信息'],
-      ['font.size.caption', 'Caption', 'regular', '时间戳、辅助标签'],
-      ['font.size.mini', 'Mini', 'regular', '角标、最小标注'],
-    ];
-  } else if (platform === 'web-admin') {
-    styleSpecs = [
-      ['font.size.5xl', 'Display', 'bold', '展示标题、Hero 区'],
-      ['font.size.4xl', 'Heading 1', 'bold', '页面大标题'],
-      ['font.size.3xl', 'Heading 2', 'bold', '页面标题'],
-      ['font.size.2xl', 'Heading 3', 'bold', '模块标题'],
-      ['font.size.xl', 'Heading 4', 'bold', '卡片标题'],
-      ['font.size.lg', 'Body Large', 'regular', '大正文、导语'],
-      ['font.size.md', 'Body', 'regular', '正文默认'],
-      ['font.size.sm', 'Body Small', 'regular', '辅助文本'],
-      ['font.size.caption', 'Caption', 'regular', '标签、图注'],
-      ['font.size.mini', 'Mini', 'regular', '角标、最小标注'],
-    ];
-  } else {
-    // app-web
-    styleSpecs = [
-      ['font.size.5xl', 'Display', 'bold', '展示标题、Hero 区'],
-      ['font.size.4xl', 'Heading 1', 'bold', '页面大标题'],
-      ['font.size.3xl', 'Heading 2', 'bold', '页面标题'],
-      ['font.size.2xl', 'Heading 3', 'bold', '模块标题'],
-      ['font.size.19', 'Subtitle', 'regular', '副标题、次级标题'],
-      ['font.size.xl', 'Heading 4', 'bold', '卡片标题'],
-      ['font.size.17', 'Headline', 'regular', '醒目标题、重点信息'],
-      ['font.size.lg', 'Body Large', 'regular', '大正文'],
-      ['font.size.15', 'Callout', 'regular', '标注文本、行内强调'],
-      ['font.size.body', 'Body', 'regular', '正文（通用）'],
-      ['font.size.sm', 'Body Small', 'regular', '副标题'],
-      ['font.size.footnote', 'Footnote', 'regular', '脚注、辅助'],
-      ['font.size.caption', 'Caption', 'regular', '标签'],
-      ['font.size.mini', 'Mini', 'regular', '角标'],
-    ];
-  }
+  // Text style specs are DERIVED from the exported font.size tokens (single
+  // source of truth in tokens.js). Each spec: [tokenKey, styleName, weight, desc].
+  // weight: 'bold' (→ Semibold/Medium fallback) when token weight >= 600, else 'regular'.
+  var styleSpecs = buildFontSizeSpecs(data);
 
   // Get existing text styles
   var existingStyles = await figma.getLocalTextStylesAsync();
@@ -338,7 +436,8 @@ async function syncTextStyles(data) {
     var fontSize = typeof dimToken.value === 'string' ? parseInt(dimToken.value) : dimToken.value;
     if (!fontSize || isNaN(fontSize)) continue;
 
-    var lineHeight = Math.round(fontSize * 1.5);
+    // Line height from the tokenized value (single source); fall back for legacy exports.
+    var lineHeight = (typeof dimToken.lineHeight === 'number') ? dimToken.lineHeight : Math.round(fontSize * 1.5);
     var fontStyle = weight === 'bold' ? FONT_BOLD : 'Regular';
 
     // Find or create style. Match by the semantic name first; fall back to a
@@ -1079,58 +1178,9 @@ async function generatePreview(data) {
   Y = addSection(frame, Y, '04', '字号规范',
     '字体、字号和行高共同决定信息层级。每个 token 定义从展示标题到辅助说明的完整排印体系。');
 
-  var iosScaleRows = [
-    ['text.largeTitle', 28, '700', '大标题、首屏展示'],
-    ['text.title1', 22, '700', '一级标题、模块头'],
-    ['text.19', 19, '400', '强调正文、小标题'],
-    ['text.title2', 18, '600', '二级标题、卡片头'],
-    ['text.17', 17, '400', '舒适正文、重点信息'],
-    ['text.title3', 16, '600', '三级标题、列表组头'],
-    ['text.15', 15, '400', '紧凑正文、次要信息'],
-    ['text.body', 14, '400', '正文常用尺寸'],
-    ['text.subhead', 13, '400', '副标题、列表描述'],
-    ['text.footnote', 12, '400', '脚注、次要信息'],
-    ['text.caption', 11, '400', '时间戳、辅助标签'],
-    ['text.mini', 10, '400', '角标、最小标注']
-  ];
-  var webScaleRows = [
-    ['text.5xl', 40, '800', '展示标题、Hero 区'],
-    ['text.4xl', 32, '700', '页面大标题'],
-    ['text.3xl', 24, '700', '页面标题'],
-    ['text.2xl', 20, '600', '模块标题'],
-    ['text.xl', 18, '600', '卡片标题'],
-    ['text.lg', 16, '400', '大正文、导语'],
-    ['text.md', 14, '400', '正文默认'],
-    ['text.sm', 13, '400', '辅助文本'],
-    ['text.caption', 12, '400', '标签、图注'],
-    ['text.mini', 10, '400', '角标、最小标注']
-  ];
-
-  var appWebScaleRows = [
-    ['text.5xl', 40, '800', '展示标题、Hero 区（Web）'],
-    ['text.4xl', 32, '700', '页面大标题（Web）'],
-    ['text.3xl', 24, '700', '页面标题 / largeTitle'],
-    ['text.2xl', 20, '600', '模块标题 / title1'],
-    ['text.19', 19, '400', '强调正文、小标题'],
-    ['text.xl', 18, '600', '卡片标题 / title2'],
-    ['text.17', 17, '400', '舒适正文、重点信息'],
-    ['text.lg', 16, '400', '大正文 / title3'],
-    ['text.15', 15, '400', '紧凑正文、次要信息'],
-    ['text.body', 14, '400', '正文（通用）'],
-    ['text.sm', 13, '400', '副标题 / subhead'],
-    ['text.footnote', 12, '400', '脚注 / 辅助'],
-    ['text.caption', 11, '400', '标签 / caption'],
-    ['text.mini', 10, '400', '角标（通用最小）']
-  ];
-
-  var typeScaleRows;
-  if (data.platform === 'app-web') {
-    typeScaleRows = appWebScaleRows;
-  } else if (data.platform === 'ios-app') {
-    typeScaleRows = iosScaleRows;
-  } else {
-    typeScaleRows = webScaleRows;
-  }
+  // Type scale rows are DERIVED from the exported font.size tokens (single
+  // source of truth in tokens.js), descending (large → small) for display.
+  var typeScaleRows = buildTypeScaleRows(data);
 
   var totalScaleRows = typeScaleRows.length;
 
@@ -1397,7 +1447,8 @@ figma.ui.onmessage = async (msg) => {
       figma.ui.postMessage({
         type: 'result',
         message: '同步完成！变量: 新建 ' + result.created + ' · 更新 ' + result.updated + ' · 跳过 ' + result.skipped
-          + (result.cleaned ? ' · 清理 ' + result.cleaned : '')
+          + (result.renamed ? ' · 改名 ' + result.renamed : '')
+          + ((result.cleaned + result.orphaned) ? ' · 清理 ' + (result.cleaned + result.orphaned) : '')
           + ' | 文字样式: ' + textResult.created + ' 新建 · ' + textResult.updated + ' 更新'
           + ' | 效果样式: ' + effectResult.created + ' 新建 · ' + effectResult.updated + ' 更新',
       });
@@ -1415,6 +1466,8 @@ figma.ui.onmessage = async (msg) => {
       figma.ui.postMessage({
         type: 'result',
         message: '预览页已生成！变量: 新建 ' + syncResult.created + ' · 更新 ' + syncResult.updated
+          + (syncResult.renamed ? ' · 改名 ' + syncResult.renamed : '')
+          + ((syncResult.cleaned + syncResult.orphaned) ? ' · 清理 ' + (syncResult.cleaned + syncResult.orphaned) : '')
           + ' | 文字样式 ' + (textResult2.created + textResult2.updated)
           + ' · 效果样式 ' + (effectResult2.created + effectResult2.updated),
       });

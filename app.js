@@ -19,6 +19,7 @@ const els = {
   auxiliaryList: document.querySelector("#auxiliaryList"),
   addAuxiliaryButton: document.querySelector("#addAuxiliaryButton"),
   neutralStrategy: document.querySelector("#neutralStrategy"),
+  paletteEngine: document.querySelector("#paletteEngine"),
   baseFontSize: document.querySelector("#baseFontSize"),
   fontSizeValue: document.querySelector("#fontSizeValue"),
   localFont: document.querySelector("#localFont"),
@@ -99,6 +100,7 @@ function currentSeed() {
     primaryColor: color,
     auxiliaryColors: currentAuxiliaryColors(),
     neutralStrategy: els.neutralStrategy.value,
+    paletteEngine: els.paletteEngine ? els.paletteEngine.value : "classic",
     baseFontSize: Number(els.baseFontSize.value),
     localFont: els.localFont.value,
     fontStack: DesignTokens.fontStacks[els.localFont.value],
@@ -144,6 +146,7 @@ function applySeed(seed) {
   els.primaryColorText.value = DesignTokens.normalizeHex(seed.primaryColor || "#5314FF");
   renderAuxiliaryControls(seed.auxiliaryColors || DesignTokens.defaultAuxiliaryColors);
   els.neutralStrategy.value = seed.neutralStrategy || "cool";
+  if (els.paletteEngine) els.paletteEngine.value = seed.paletteEngine || "classic";
   els.baseFontSize.value = seed.baseFontSize || 17;
   els.localFont.value = seed.localFont || "source";
   els.radiusScale.value = seed.radiusScale || "soft";
@@ -382,58 +385,21 @@ function renderShapes(tokens, defaultMode) {
 
 function renderTypeShowcase(seed, tokens) {
   const label = DesignTokens.fontLabels[seed.localFont];
-  const bodyLineHeight = tokens["font.lineHeight.body"].value;
-  const iosRows = [
-    ["largeTitle", "font.size.largeTitle", 700, "大标题、首屏展示"],
-    ["title1", "font.size.title1", 700, "一级标题、模块头"],
-    ["19", "font.size.19", 400, "强调正文、小标题"],
-    ["title2", "font.size.title2", 600, "二级标题、卡片头"],
-    ["17", "font.size.17", 400, "舒适正文、重点信息"],
-    ["title3", "font.size.title3", 600, "三级标题、列表组头"],
-    ["15", "font.size.15", 400, "紧凑正文、次要信息"],
-    ["body", "font.size.body", 400, "正文、段落"],
-    ["subhead", "font.size.subhead", 400, "副标题、列表描述"],
-    ["footnote", "font.size.footnote", 400, "脚注、次要信息"],
-    ["caption", "font.size.caption", 400, "时间戳、辅助标签"],
-    ["mini", "font.size.mini", 400, "角标、最小标注"],
-  ];
-  const webRows = [
-    ["5xl", "font.size.5xl", 800, "展示标题、Hero 区"],
-    ["4xl", "font.size.4xl", 700, "页面大标题"],
-    ["3xl", "font.size.3xl", 700, "页面标题"],
-    ["2xl", "font.size.2xl", 600, "模块标题"],
-    ["xl", "font.size.xl", 600, "卡片标题"],
-    ["lg", "font.size.lg", 400, "大正文、导语"],
-    ["md", "font.size.md", 400, "正文默认"],
-    ["sm", "font.size.sm", 400, "辅助文本"],
-    ["caption", "font.size.caption", 400, "标签、图注"],
-    ["mini", "font.size.mini", 400, "角标、最小标注"],
-  ];
-
-  // App+Web: unified scale, single set
-  const appWebRows = [
-    ["5xl", "font.size.5xl", 800, "展示标题、Hero 区（Web）"],
-    ["4xl", "font.size.4xl", 700, "页面大标题（Web）"],
-    ["3xl", "font.size.3xl", 700, "页面标题（Web）/ largeTitle（iOS）"],
-    ["2xl", "font.size.2xl", 600, "模块标题（Web）/ title1（iOS）"],
-    ["19", "font.size.19", 400, "强调正文、小标题"],
-    ["xl", "font.size.xl", 600, "卡片标题（Web）/ title2（iOS）"],
-    ["17", "font.size.17", 400, "舒适正文、重点信息"],
-    ["lg", "font.size.lg", 400, "大正文（Web）/ title3（iOS）"],
-    ["15", "font.size.15", 400, "紧凑正文、次要信息"],
-    ["body", "font.size.body", 400, "正文（通用）"],
-    ["sm", "font.size.sm", 400, "副标题（iOS subhead）"],
-    ["footnote", "font.size.footnote", 400, "脚注（iOS footnote）/ 辅助"],
-    ["caption", "font.size.caption", 400, "标签（iOS caption）"],
-    ["mini", "font.size.mini", 400, "角标（通用最小）"],
-  ];
+  // Type scale rows come from the single source of truth (tokens.js → getTypeScale).
+  // Displayed large → small (reverse of the ascending source order).
+  const scaleRows = DesignTokens.getTypeScale(seed.platform)
+    .slice()
+    .reverse()
+    .map((s) => [s.key, s.tokenName, s.weight, s.usage]);
 
   function renderScaleRows(rows, tokenPrefix) {
     return rows.map(([level, tokenName, weight, usage]) => {
       const token = tokens[tokenName];
       if (!token) return "";
       const size = token.value;
-      const lh = Math.round(size * 1.42);
+      // Line height from the tokenized value (single source) — keeps the web
+      // preview and the Figma text styles / spec page in lock-step.
+      const lh = token.lineHeight || Math.round(size * 1.5);
       const isLarge = size >= 22;
       const displayName = tokenName.replace("font.size.", "text.");
       return `
@@ -468,13 +434,7 @@ function renderTypeShowcase(seed, tokens) {
   if (cjkS && label.cjkStack) cjkS.textContent = label.cjkStack;
   if (latS && label.latinStack) latS.textContent = label.latinStack;
 
-  if (seed.platform === "app-web") {
-    els.typeScalePreview.innerHTML = renderScaleRows(appWebRows);
-  } else if (seed.platform === "ios-app") {
-    els.typeScalePreview.innerHTML = renderScaleRows(iosRows);
-  } else {
-    els.typeScalePreview.innerHTML = renderScaleRows(webRows);
-  }
+  els.typeScalePreview.innerHTML = renderScaleRows(scaleRows);
 }
 
 function escapeHtml(value) {
@@ -504,7 +464,7 @@ function highlightCssLike(source) {
 }
 
 function highlightExportCode(source, type) {
-  if (type === "json" || type === "ai") return highlightJson(source);
+  if (type === "json" || type === "ai" || type === "dtcg") return highlightJson(source);
   return highlightCssLike(source);
 }
 
@@ -514,6 +474,7 @@ function renderExport(seed, tokens) {
     css: () => DesignExports.exportCss(tokens, seed.defaultMode),
     ts: () => DesignExports.exportTs(seed, tokens, state.published ? state.version : "draft"),
     tailwind: () => DesignExports.exportTailwind(tokens),
+    dtcg: () => DesignExports.exportDtcg(seed, tokens, state.published ? state.version : "draft"),
   };
   state.currentExport = exporters[state.exportType]();
   els.exportOutput.value = state.currentExport;
@@ -527,6 +488,7 @@ function renderExport(seed, tokens) {
       css: "CSS Variables",
       ts: "TypeScript",
       tailwind: "Tailwind Config",
+      dtcg: "DTCG (W3C Tokens)",
     };
     const lineCount = state.currentExport ? state.currentExport.split("\n").length : 0;
     els.exportMeta.textContent = `${formatLabels[state.exportType] || state.exportType} · ${lineCount} 行`;
@@ -644,7 +606,7 @@ function render() {
   if (els.fontSizeValue) els.fontSizeValue.textContent = seed.baseFontSize;
   if (els.tokenCount) els.tokenCount.textContent = `${Object.keys(tokens).length} tokens`;
   if (els.topTokenCount) els.topTokenCount.textContent = `${Object.keys(tokens).length}`;
-  if (els.exportFormatMeta) els.exportFormatMeta.textContent = "4";
+  if (els.exportFormatMeta) els.exportFormatMeta.textContent = "5";
   if (els.autosaveStatus) {
     els.autosaveStatus.textContent = state.published ? `已查看 v${state.version}` : "当前草稿已自动保存";
   }
@@ -820,12 +782,14 @@ function downloadExport() {
     css: "css",
     ts: "ts",
     tailwind: "js",
+    dtcg: "tokens.json",
   };
   const mimeMap = {
     json: "application/json;charset=utf-8",
     css: "text/css;charset=utf-8",
     ts: "text/typescript;charset=utf-8",
     tailwind: "text/javascript;charset=utf-8",
+    dtcg: "application/json;charset=utf-8",
   };
   const seed = state.currentSeed || currentSeed();
   const ext = extMap[state.exportType];
@@ -1076,6 +1040,7 @@ function bindEvents() {
     els.platform,
     els.defaultMode,
     els.neutralStrategy,
+    els.paletteEngine,
     els.baseFontSize,
     els.localFont,
     els.radiusScale,

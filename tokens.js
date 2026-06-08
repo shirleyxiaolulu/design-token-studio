@@ -292,6 +292,99 @@
     });
   }
 
+  // ===========================================================================
+  // OKLCH color engine (opt-in) — perceptually-uniform palette scales.
+  // OKLab/OKLCH math per Björn Ottosson (https://bottosson.github.io/posts/oklab/).
+  // Active only when seed.paletteEngine === "oklch"; the default stays HSL.
+  // ===========================================================================
+  function srgbToLinear(c) { return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
+  function linearToSrgb(c) { return c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055; }
+
+  function rgbToOklch({ r, g, b }) {
+    const lr = srgbToLinear(r / 255), lg = srgbToLinear(g / 255), lb = srgbToLinear(b / 255);
+    const l = 0.4122214708 * lr + 0.5363325363 * lg + 0.0514459929 * lb;
+    const m = 0.2119034982 * lr + 0.6806995451 * lg + 0.1073969566 * lb;
+    const s = 0.0883024619 * lr + 0.2817188376 * lg + 0.6299787005 * lb;
+    const l_ = Math.cbrt(l), m_ = Math.cbrt(m), s_ = Math.cbrt(s);
+    const L = 0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_;
+    const a = 1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_;
+    const bb = 0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086757660 * s_;
+    const C = Math.sqrt(a * a + bb * bb);
+    let H = Math.atan2(bb, a) * 180 / Math.PI;
+    if (H < 0) H += 360;
+    return { L, C, H };
+  }
+
+  function oklchToLinearRgb(L, C, H) {
+    const hr = H * Math.PI / 180;
+    const a = C * Math.cos(hr), b = C * Math.sin(hr);
+    const l_ = L + 0.3963377774 * a + 0.2158037573 * b;
+    const m_ = L - 0.1055613458 * a - 0.0638541728 * b;
+    const s_ = L - 0.0894841775 * a - 1.2914855480 * b;
+    const l = l_ * l_ * l_, m = m_ * m_ * m_, s = s_ * s_ * s_;
+    return {
+      r: 4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+      g: -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+      b: -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s,
+    };
+  }
+
+  function oklchToHex(L, C, H) {
+    const inGamut = (v) => v.r >= -1e-4 && v.r <= 1.0001 && v.g >= -1e-4 && v.g <= 1.0001 && v.b >= -1e-4 && v.b <= 1.0001;
+    let lin = oklchToLinearRgb(L, C, H);
+    if (!inGamut(lin)) {
+      // Reduce chroma (keep L + H) until the colour fits the sRGB gamut.
+      let lo = 0, hi = C;
+      for (let i = 0; i < 22; i++) {
+        const mid = (lo + hi) / 2;
+        if (inGamut(oklchToLinearRgb(L, mid, H))) lo = mid; else hi = mid;
+      }
+      lin = oklchToLinearRgb(L, lo, H);
+    }
+    return rgbToHex({
+      r: Math.round(clamp(linearToSrgb(clamp(lin.r, 0, 1)), 0, 1) * 255),
+      g: Math.round(clamp(linearToSrgb(clamp(lin.g, 0, 1)), 0, 1) * 255),
+      b: Math.round(clamp(linearToSrgb(clamp(lin.b, 0, 1)), 0, 1) * 255),
+    });
+  }
+
+  // Perceptual lightness ladder (light → dark, index 0..9) + chroma curve (peaks mid).
+  const OKLCH_L = [0.971, 0.936, 0.882, 0.808, 0.730, 0.648, 0.567, 0.482, 0.397, 0.318];
+  const OKLCH_C = [0.18, 0.34, 0.55, 0.75, 0.92, 1.00, 0.96, 0.86, 0.73, 0.60];
+
+  function buildScaleOklch(opts) {
+    let H, Cbase, Loff = 0;
+    if (opts.anchorHex) {
+      const o = rgbToOklch(hexToRgb(opts.anchorHex));
+      H = o.H;
+      Cbase = o.C / OKLCH_C[5]; // so step 5 chroma === input chroma
+      Loff = o.L - OKLCH_L[5];  // so step 5 lightness === input lightness (step 5 ≈ input)
+    } else {
+      H = opts.hue;
+      Cbase = opts.chroma;
+    }
+    return OKLCH_L.map((L0, i) => {
+      const blend = Math.max(0, 1 - Math.abs(i - 5) * 0.16); // fade the anchor offset toward the ends
+      const L = clamp(L0 + Loff * blend, 0.05, 0.99);
+      return oklchToHex(L, Cbase * OKLCH_C[i], H);
+    });
+  }
+
+  const oklchHueOf = (hex) => rgbToOklch(hexToRgb(hex)).H;
+
+  function makePaletteOklch(seed) {
+    const primaryHsl = rgbToHsl(hexToRgb(seed.primaryColor));
+    const neutralHslHue = getNeutralHue(seed.neutralStrategy, primaryHsl.h);
+    const palette = {
+      primary: buildScaleOklch({ anchorHex: seed.primaryColor }),
+      gray: buildScaleOklch({ hue: oklchHueOf(hslToHex(neutralHslHue, 30, 55)), chroma: 0.012 }),
+    };
+    Object.entries(hueAnchors).forEach(([name, hslHue]) => {
+      palette[name] = buildScaleOklch({ hue: oklchHueOf(hslToHex(hslHue, 80, 55)), chroma: 0.16 });
+    });
+    return palette;
+  }
+
   function buildScale(hue, saturation, mode = "color", anchorLight, anchorSat) {
     const lights = [97, 92, 84, 74, 64, 54, 44, 34, 24, 15];
     const sats = [45, 52, 60, 68, 76, 84, 82, 78, 70, 62];
@@ -327,6 +420,7 @@
   }
 
   function makePalette(seed) {
+    if (seed.paletteEngine === "oklch") return makePaletteOklch(seed);
     const primaryHsl = rgbToHsl(hexToRgb(seed.primaryColor));
     const neutralHue = getNeutralHue(seed.neutralStrategy, primaryHsl.h);
     const palette = {
@@ -402,62 +496,104 @@
     };
   }
 
+  // ===========================================================================
+  // Type scale — SINGLE SOURCE OF TRUTH
+  // Declarative scale per platform. Consumed by: token generation (below),
+  // the web preview (app.js via DesignTokens.getTypeScale), and the Figma
+  // plugin (text styles + spec page, via the role/weight/lineHeight metadata
+  // carried on each font.size token in the export). To add/rename/reorder a
+  // size, edit ONLY here — every consumer derives from this.
+  //   - weight: numeric CSS weight; the Figma plugin maps weight >= 600 → bold.
+  //   - order:  ascending (small → large) so Figma variables list small → large.
+  // ===========================================================================
+  const LINE_HEIGHT_RATIO = 1.5;
+  function scaleLineHeight(size) {
+    return Math.round(size * LINE_HEIGHT_RATIO);
+  }
+
+  const TYPE_SCALES = {
+    "ios-app": [
+      { key: "mini",       size: 10, weight: 400, role: "Mini",        usage: "角标、最小标注" },
+      { key: "caption",    size: 11, weight: 400, role: "Caption",     usage: "时间戳、辅助标签" },
+      { key: "footnote",   size: 12, weight: 400, role: "Footnote",    usage: "脚注、次要信息" },
+      { key: "subhead",    size: 13, weight: 400, role: "Subhead",     usage: "副标题、列表描述" },
+      { key: "body",       size: 14, weight: 400, role: "Body",        usage: "正文、段落" },
+      { key: "callout",    size: 15, weight: 400, role: "Callout",     usage: "紧凑正文、次要信息" },
+      { key: "title3",     size: 16, weight: 600, role: "Title 3",     usage: "三级标题、列表组头" },
+      { key: "headline",   size: 17, weight: 400, role: "Headline",    usage: "舒适正文、重点信息" },
+      { key: "title2",     size: 18, weight: 600, role: "Title 2",     usage: "二级标题、卡片头" },
+      { key: "subtitle",   size: 19, weight: 400, role: "Subtitle",    usage: "强调正文、小标题" },
+      { key: "title1",     size: 22, weight: 700, role: "Title 1",     usage: "一级标题、模块头" },
+      { key: "largeTitle", size: 28, weight: 700, role: "Large Title", usage: "大标题、首屏展示" },
+    ],
+    "web-admin": [
+      { key: "mini",    size: 10, weight: 400, role: "Mini",       usage: "角标、最小标注" },
+      { key: "caption", size: 12, weight: 400, role: "Caption",    usage: "标签、图注" },
+      { key: "sm",      size: 13, weight: 400, role: "Body Small", usage: "辅助文本" },
+      { key: "md",      size: 14, weight: 400, role: "Body",       usage: "正文默认" },
+      { key: "lg",      size: 16, weight: 400, role: "Body Large", usage: "大正文、导语" },
+      { key: "xl",      size: 18, weight: 600, role: "Heading 4",  usage: "卡片标题" },
+      { key: "2xl",     size: 20, weight: 600, role: "Heading 3",  usage: "模块标题" },
+      { key: "3xl",     size: 24, weight: 700, role: "Heading 2",  usage: "页面标题" },
+      { key: "4xl",     size: 32, weight: 700, role: "Heading 1",  usage: "页面大标题" },
+      { key: "5xl",     size: 40, weight: 800, role: "Display",    usage: "展示标题、Hero 区" },
+    ],
+    "app-web": [
+      { key: "mini",     size: 10, weight: 400, role: "Mini",       usage: "角标（通用最小）" },
+      { key: "caption",  size: 11, weight: 400, role: "Caption",    usage: "标签（iOS caption）" },
+      { key: "footnote", size: 12, weight: 400, role: "Footnote",   usage: "脚注（iOS footnote）/ 辅助" },
+      { key: "sm",       size: 13, weight: 400, role: "Body Small", usage: "副标题（iOS subhead）" },
+      { key: "body",     size: 14, weight: 400, role: "Body",       usage: "正文（通用）" },
+      { key: "callout",  size: 15, weight: 400, role: "Callout",    usage: "紧凑正文、次要信息" },
+      { key: "lg",       size: 16, weight: 400, role: "Body Large", usage: "大正文（Web）/ title3（iOS）" },
+      { key: "headline", size: 17, weight: 400, role: "Headline",   usage: "舒适正文、重点信息" },
+      { key: "xl",       size: 18, weight: 600, role: "Heading 4",  usage: "卡片标题（Web）/ title2（iOS）" },
+      { key: "subtitle", size: 19, weight: 400, role: "Subtitle",   usage: "强调正文、小标题" },
+      { key: "2xl",      size: 20, weight: 600, role: "Heading 3",  usage: "模块标题（Web）/ title1（iOS）" },
+      { key: "3xl",      size: 24, weight: 700, role: "Heading 2",  usage: "页面标题（Web）/ largeTitle（iOS）" },
+      { key: "4xl",      size: 32, weight: 700, role: "Heading 1",  usage: "页面大标题（Web）" },
+      { key: "5xl",      size: 40, weight: 800, role: "Display",    usage: "展示标题、Hero 区（Web）" },
+    ],
+  };
+
+  const FONT_FAMILY_USAGE = {
+    "ios-app": "iOS 界面默认字体栈",
+    "web-admin": "Web 后台默认字体栈",
+    "app-web": "App+Web 统一字体栈",
+  };
+
+  // Web preview / any web-side consumer reads the scale through this.
+  function getTypeScale(platform) {
+    const scale = TYPE_SCALES[platform] || TYPE_SCALES["app-web"];
+    return scale.map((s) => ({
+      key: s.key,
+      tokenName: "font.size." + s.key,
+      size: s.size,
+      weight: s.weight,
+      role: s.role,
+      usage: s.usage,
+      lineHeight: scaleLineHeight(s.size),
+    }));
+  }
+
   function typography(platform, base, fontStack) {
-    if (platform === "ios-app") {
-      return {
-        "font.family.base": { value: fontStack, usage: "iOS 界面默认字体栈" },
-        "font.size.mini": { value: 10 },
-        "font.size.caption": { value: 11 },
-        "font.size.footnote": { value: 12 },
-        "font.size.subhead": { value: 13 },
-        "font.size.body": { value: 14 },
-        "font.size.15": { value: 15, usage: "紧凑正文、次要信息" },
-        "font.size.title3": { value: 16 },
-        "font.size.17": { value: 17, usage: "舒适正文、重点信息" },
-        "font.size.title2": { value: 18 },
-        "font.size.19": { value: 19, usage: "强调正文、小标题" },
-        "font.size.title1": { value: 22 },
-        "font.size.largeTitle": { value: 28 },
-        "font.lineHeight.body": { value: 22 },
-      };
-    }
-
-    if (platform === "web-admin") {
-      return {
-        "font.family.base": { value: fontStack, usage: "Web 后台默认字体栈" },
-        "font.size.mini": { value: 10 },
-        "font.size.caption": { value: 12 },
-        "font.size.sm": { value: 13 },
-        "font.size.md": { value: 14 },
-        "font.size.lg": { value: 16 },
-        "font.size.xl": { value: 18 },
-        "font.size.2xl": { value: 20 },
-        "font.size.3xl": { value: 24 },
-        "font.size.4xl": { value: 32 },
-        "font.size.5xl": { value: 40 },
-        "font.lineHeight.body": { value: 22 },
-      };
-    }
-
-    // App+Web 同步：统一一套字阶，覆盖两端全部场景
-    return {
-      "font.family.base": { value: fontStack, usage: "App+Web 统一字体栈" },
-      "font.size.mini": { value: 10 },
-      "font.size.caption": { value: 11 },
-      "font.size.footnote": { value: 12 },
-      "font.size.sm": { value: 13 },
-      "font.size.body": { value: 14 },
-      "font.size.15": { value: 15, usage: "紧凑正文、次要信息" },
-      "font.size.lg": { value: 16 },
-      "font.size.17": { value: 17, usage: "舒适正文、重点信息" },
-      "font.size.xl": { value: 18 },
-      "font.size.19": { value: 19, usage: "强调正文、小标题" },
-      "font.size.2xl": { value: 20 },
-      "font.size.3xl": { value: 24 },
-      "font.size.4xl": { value: 32 },
-      "font.size.5xl": { value: 40 },
-      "font.lineHeight.body": { value: 22 },
+    const scale = TYPE_SCALES[platform] || TYPE_SCALES["app-web"];
+    const out = {};
+    out["font.family.base"] = {
+      value: fontStack,
+      usage: FONT_FAMILY_USAGE[platform] || FONT_FAMILY_USAGE["app-web"],
     };
+    scale.forEach((s) => {
+      out["font.size." + s.key] = {
+        value: s.size,
+        usage: s.usage,
+        role: s.role,
+        weight: s.weight,
+        lineHeight: scaleLineHeight(s.size),
+      };
+    });
+    out["font.lineHeight.body"] = { value: 22 };
+    return out;
   }
 
   // v2: naming strategy - "prefixed" (primitive/semantic/) or "flat" (直接 color/brand/primary)
@@ -623,7 +759,14 @@
     });
 
     Object.entries(typography(seed.platform, seed.baseFontSize, seed.fontStack)).forEach(([name, item]) => {
-      tokens[name] = makeToken(name, name.includes("family") ? "fontFamily" : "dimension", item.value, item.usage || "字体变量", { tier: "semantic" });
+      const extra = { tier: "semantic" };
+      // Carry typography metadata (role / weight / lineHeight) onto font.size
+      // tokens so the Figma plugin can derive text styles + the spec page from
+      // the export — single source of truth, no re-hardcoding in the plugin.
+      if (item.role !== undefined) extra.role = item.role;
+      if (item.weight !== undefined) extra.weight = item.weight;
+      if (item.lineHeight !== undefined) extra.lineHeight = item.lineHeight;
+      tokens[name] = makeToken(name, name.includes("family") ? "fontFamily" : "dimension", item.value, item.usage || "字体变量", extra);
     });
 
     const radiusNames = ["none", "xs", "sm", "md", "lg", "xl", "full"];
@@ -834,6 +977,9 @@
       resolveAllTokenValues,
       generateFigmaPluginCode,
       buildAuxiliaryScale,
+      getTypeScale,
+      rgbToOklch,
+      oklchToHex,
     },
   });
 })();

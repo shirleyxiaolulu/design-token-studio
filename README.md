@@ -4,9 +4,11 @@
 
 ## 在线使用
 
-**直接打开：https://shirleyxiaolulu.github.io/design-token-studio/**
+**打开主页：https://shirleyxiaolulu.github.io/design-token-studio/** —— 介绍页，点「打开工具」进入生成器（也可直达 https://shirleyxiaolulu.github.io/design-token-studio/app.html ）。
 
-内设多模式litht/dark，需要figma付费账号才能使用（教育版都可以）
+> 站点结构：`index.html` = 介绍落地页，`app.html` = 生成器工具本体。
+
+内设多模式 light/dark，需要 figma 付费账号才能使用（教育版都可以）
 
 无需安装，浏览器打开即可。数据保存在你的浏览器本地，不会上传到任何服务器。
 
@@ -51,3 +53,13 @@
 2. 打开 Figma 桌面端 → 菜单 → Plugins → Development → Import plugin from manifest
 3. 选择 `figma-plugin/manifest.json`
 4. 之后在任意文件中按 `Cmd + /` 搜索「Design System」即可运行
+
+## 开发 / 测试
+
+字号阶梯是单一数据源：只在 `tokens.js` 的 `TYPE_SCALES` 定义一次，web 预览（`app.js`）、Figma 文本样式与规范页（`figma-plugin/code.js`）、各端导出都从它派生。增删 / 改名 / 调序字号只改这一处。
+
+零依赖回归测试（覆盖单一源一致性、行高、15/17/19 命名、颜色别名解析、深色对比度、DTCG 导出合法性）：
+
+```bash
+npm test        # 等价于 node tests/run-tests.js
+```

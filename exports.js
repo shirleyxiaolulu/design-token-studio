@@ -423,6 +423,119 @@
 10. 文本至少区分 primary / secondary / tertiary 三个层级，确保信息有清晰的视觉优先级。${seed.platform === "ios-app" ? "\n11. iOS 安全区：顶部 44px，底部 34px。导航栏高度 44px，Tab 栏高度 49px。" : ""}`;
   }
 
+  // v4: W3C Design Tokens (DTCG) — interoperable with Tokens Studio / Style
+  // Dictionary / Figma variable importers. Colors resolve to the default mode's
+  // concrete value (no aliases); both modes are kept under $extensions so
+  // multi-mode tools can still read them. Dimensions use the "Npx" string form
+  // for broad tool compatibility. font.size carries role/weight/lineHeight.
+  function exportDtcg(seed, tokens, version) {
+    const defaultMode = seed.defaultMode === "dark" ? "dark" : "light";
+    const MODE_EXT = "com.designtokenstudio.modes";
+    const TYPO_EXT = "com.designtokenstudio.typography";
+
+    const root = {
+      $description:
+        `${seed.specName} · ${seed.platform} · v${version} — W3C Design Tokens (DTCG). ` +
+        `颜色 / 阴影 $value 取默认模式（${defaultMode}）；两套模式见 $extensions["${MODE_EXT}"]。`,
+    };
+
+    function setDeep(path, leaf) {
+      const parts = path.split(".");
+      let obj = root;
+      for (let i = 0; i < parts.length - 1; i++) {
+        const k = parts[i];
+        if (!obj[k] || typeof obj[k] !== "object" || "$value" in obj[k]) obj[k] = {};
+        obj = obj[k];
+      }
+      obj[parts[parts.length - 1]] = leaf;
+    }
+
+    function dimStr(v) {
+      if (typeof v === "number") return `${v}px`;
+      if (typeof v === "string") {
+        if (/(px|rem|em|%)$/.test(v)) return v;
+        const n = parseFloat(v);
+        return isNaN(n) ? v : `${n}px`;
+      }
+      return String(v);
+    }
+
+    function shadowArr(layers) {
+      if (!Array.isArray(layers)) return null;
+      return layers.map((l) => ({
+        color: `rgba(${l.color},${l.alpha})`,
+        offsetX: `${l.x}px`,
+        offsetY: `${l.y}px`,
+        blur: `${l.blur}px`,
+        spread: `${l.spread}px`,
+      }));
+    }
+
+    function cubicBezier(v) {
+      const m = /cubic-bezier\(([^)]+)\)/.exec(String(v));
+      if (!m) return null;
+      const nums = m[1].split(",").map((x) => parseFloat(x.trim()));
+      return nums.length === 4 && nums.every((n) => !isNaN(n)) ? nums : null;
+    }
+
+    Object.values(tokens).forEach((token) => {
+      const name = token.name;
+      const desc = token.usage || "";
+
+      if (token.type === "color") {
+        const light = DesignTokens.tokenValue(token, "light", tokens);
+        const dark = DesignTokens.tokenValue(token, "dark", tokens);
+        const def = defaultMode === "dark" ? dark : light;
+        if (!def || (typeof def === "string" && def.startsWith("{"))) return; // unresolved alias
+        const leaf = { $type: "color", $value: def };
+        if (desc) leaf.$description = desc;
+        leaf.$extensions = {};
+        leaf.$extensions[MODE_EXT] = { light, dark };
+        setDeep(name, leaf);
+      } else if (token.type === "dimension") {
+        const leaf = { $type: "dimension", $value: dimStr(token.value) };
+        if (desc) leaf.$description = desc;
+        if (name.indexOf("font.size.") === 0 && (token.role || token.weight || token.lineHeight)) {
+          leaf.$extensions = {};
+          leaf.$extensions[TYPO_EXT] = { role: token.role, weight: token.weight, lineHeight: token.lineHeight };
+        }
+        setDeep(name, leaf);
+      } else if (token.type === "number") {
+        const leaf = { $type: "number", $value: token.value };
+        if (desc) leaf.$description = desc;
+        setDeep(name, leaf);
+      } else if (token.type === "fontFamily") {
+        const leaf = { $type: "fontFamily", $value: token.value };
+        if (desc) leaf.$description = desc;
+        setDeep(name, leaf);
+      } else if (token.type === "string") {
+        if (name.indexOf("motion.easing.") === 0) {
+          const pts = cubicBezier(token.value);
+          const leaf = { $type: "cubicBezier", $value: pts || token.value };
+          if (desc) leaf.$description = desc;
+          setDeep(name, leaf);
+        } else if (name.indexOf("motion.duration.") === 0 || /(ms|s)$/.test(String(token.value))) {
+          const leaf = { $type: "duration", $value: token.value };
+          if (desc) leaf.$description = desc;
+          setDeep(name, leaf);
+        }
+        // other plain strings have no DTCG core type → skip
+      } else if (token.type === "shadow") {
+        const lightArr = shadowArr(token.value && token.value.light);
+        const darkArr = shadowArr(token.value && token.value.dark);
+        const defArr = defaultMode === "dark" ? darkArr : lightArr;
+        if (!defArr || !defArr.length) return; // skip "none"
+        const leaf = { $type: "shadow", $value: defArr.length === 1 ? defArr[0] : defArr };
+        if (desc) leaf.$description = desc;
+        leaf.$extensions = {};
+        leaf.$extensions[MODE_EXT] = { light: lightArr, dark: darkArr };
+        setDeep(name, leaf);
+      }
+    });
+
+    return JSON.stringify(root, null, 2);
+  }
+
   function createExports(seed, tokens, version) {
     return {
       json: exportJson(seed, tokens, version),
@@ -441,6 +554,7 @@
       exportFigmaPlugin,
       exportAiJson,
       exportAiPrompt,
+      exportDtcg,
       createExports,
     },
   });

@@ -183,7 +183,9 @@
             }
           } else if (['dimension', 'number', 'fontFamily'].includes(token.type)) {
             const value = typeof token.value === 'object' ? token.value : token.value;
-            dimTokens[key] = { figmaName, tier, value, type: token.type, usage: token.usage || '' };
+            // Carry typography metadata (role/weight/lineHeight) through so the
+            // plugin derives text styles + the spec page from the export.
+            dimTokens[key] = { figmaName, tier, value, type: token.type, usage: token.usage || '', role: token.role, weight: token.weight, lineHeight: token.lineHeight };
           } else if (token.type === 'shadow') {
             // Shadow tokens are complex objects — store for preview but skip variable sync
             dimTokens[key] = { figmaName, tier, value: token.value, type: 'shadow', usage: token.usage || '' };

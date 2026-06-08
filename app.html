@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>设计规范生成器</title>
+  <link href="https://cdn.jsdelivr.net/npm/remixicon@4.6.0/fonts/remixicon.css" rel="stylesheet">
+  <!-- 思源黑体（Noto Sans SC）网络字体，确保未安装该字体的设备也能预览效果 -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="topbar-brand">
+        <img class="topbar-logo" src="./logo.png" alt="Logo">
+        <div>
+          <strong>设计规范生成器</strong>
+          <span class="topbar-byline">Designed by 小鹿 · 顾良</span>
+        </div>
+      </div>
+      <div class="topbar-project">
+        <span class="top-project-name" id="topProjectName">Acme iOS 设计规范</span>
+        <span class="save-dot"></span>
+        <span id="autosaveStatus">当前草稿已自动保存</span>
+        <span id="platformMeta">iOS App</span>
+        <span id="primaryMeta">#5314FF</span>
+        <span id="defaultModeMeta">Light 默认</span>
+      </div>
+      <div class="topbar-right">
+        <div class="mode-switch" aria-label="默认界面模式">
+          <button class="mode-switch-button active" type="button" data-mode-switch="light">Light</button>
+          <button class="mode-switch-button" type="button" data-mode-switch="dark">Dark</button>
+        </div>
+        <label class="global-search">
+          <span>搜索变量</span>
+          <input id="tokenSearch" type="search" placeholder="搜索 token / 色值">
+        </label>
+        <button id="quickCopyJsonButton" class="ghost-button quick-export-btn" type="button">复制 JSON</button>
+        <button id="shareUrlButton" class="ghost-button quick-export-btn" type="button">分享链接</button>
+        <button id="publishButton" class="primary-button" type="button">保存版本</button>
+      </div>
+    </header>
+
+    <aside class="sidebar">
+      <section class="panel">
+        <div class="panel-title"><span>项目</span></div>
+        <div class="project-selector">
+          <select id="projectSelect" class="project-select"></select>
+          <button id="newProjectButton" class="icon-button" type="button" title="新建项目">+</button>
+        </div>
+        <label class="import-link">导入本地规范<input id="importTokenInput" type="file" accept=".json,application/json"></label>
+      </section>
+
+      <!-- Tab 切换：配置 / 目录 -->
+      <div class="sidebar-tabs">
+        <button class="sidebar-tab active" data-tab="config">配置</button>
+        <button class="sidebar-tab" data-tab="toc">目录</button>
+      </div>
+
+      <!-- Tab: 配置 -->
+      <div class="sidebar-tab-content active" id="tabConfig">
+        <section class="panel">
+          <div class="panel-title">
+            <span>基础参数</span>
+            <strong id="tokenCount">0 tokens</strong>
+          </div>
+          <label class="field"><span>规范名称</span><input id="specName" type="text" value="Acme iOS 设计规范"></label>
+          <label class="field"><span>设计场景</span>
+            <select id="platform"><option value="ios-app">iOS App</option><option value="web-admin">Web 后台</option><option value="app-web">App+Web 同步</option></select>
+          </label>
+          <label class="field"><span>默认界面模式</span>
+            <select id="defaultMode"><option value="light">Light 默认</option><option value="dark">Dark 默认</option></select>
+          </label>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title"><span>颜色</span></div>
+          <label class="field color-field"><span>品牌主色</span>
+            <div class="color-input"><input id="primaryColor" type="color" value="#5314ff"><input id="primaryColorText" type="text" value="#5314FF"></div>
+          </label>
+          <div class="field auxiliary-field">
+            <div class="field-heading"><span>辅助色</span><button id="addAuxiliaryButton" class="text-button" type="button">添加</button></div>
+            <div id="auxiliaryList" class="auxiliary-list"></div>
+            <div id="auxSuggestions" class="aux-suggestions"></div>
+            <em>用于分类、标签、图表、运营和品牌延展。</em>
+          </div>
+          <label class="field"><span>中性色倾向</span>
+            <select id="neutralStrategy"><option value="cool">冷灰</option><option value="neutral">正灰</option><option value="warm">暖灰</option></select>
+          </label>
+          <label class="field"><span>色阶引擎</span>
+            <select id="paletteEngine"><option value="classic">经典 HSL</option><option value="oklch">感知均匀 OKLCH</option></select>
+          </label>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title"><span>排版</span></div>
+          <label class="field"><span>基础字号</span><input id="baseFontSize" type="range" min="12" max="18" value="17"><em><span id="fontSizeValue">17</span> px</em></label>
+          <label class="field"><span>本地字体</span>
+            <select id="localFont">
+              <option value="pingfang">苹方 PingFang SC</option><option value="sf">SF Pro / 苹方</option>
+              <option value="harmony">HarmonyOS Sans</option><option value="misans">MiSans</option>
+              <option value="alimama">阿里妈妈方圆体</option><option value="source" selected>思源黑体 Source Han Sans</option><option value="system">系统默认</option>
+            </select>
+          </label>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title"><span>圆角与阴影</span></div>
+          <label class="field"><span>圆角策略</span>
+            <select id="radiusScale"><option value="soft">柔和</option><option value="balanced">均衡</option><option value="sharp">克制</option></select>
+          </label>
+          <label class="field"><span>阴影强度</span>
+            <select id="shadowStrength"><option value="medium">中等</option><option value="subtle">轻量</option><option value="strong">强调</option></select>
+          </label>
+        </section>
+
+      </div>
+
+      <!-- Tab: 章节目录 -->
+      <div class="sidebar-tab-content" id="tabToc">
+        <div class="toc-tools">
+          <label class="toc-search">
+            <span>目录搜索</span>
+            <input id="tocSearch" type="text" placeholder="搜索章节名称">
+          </label>
+          <div class="toc-helper"><span id="tocCount">18</span> 个章节 · 点击定位</div>
+        </div>
+        <nav class="toc-nav" id="tocNav">
+          <a href="#sec-palette" class="toc-link" data-section="sec-palette">基础色板</a>
+          <a href="#sec-components" class="toc-link" data-section="sec-components">组件示例</a>
+          <a href="#sec-preview" class="toc-link" data-section="sec-preview">主题预览</a>
+          <a href="#sec-contrast" class="toc-link" data-section="sec-contrast">对比度 · WCAG</a>
+          <a href="#sec-brand" class="toc-link" data-section="sec-brand">品牌颜色</a>
+          <a href="#sec-auxiliary" class="toc-link" data-section="sec-auxiliary">辅助色</a>
+          <a href="#sec-function" class="toc-link" data-section="sec-function">功能色</a>
+          <a href="#sec-text" class="toc-link" data-section="sec-text">文本 / 图标颜色</a>
+          <a href="#sec-bg" class="toc-link" data-section="sec-bg">背景颜色</a>
+          <a href="#sec-border" class="toc-link" data-section="sec-border">边框颜色</a>
+          <a href="#sec-constant" class="toc-link" data-section="sec-constant">常量色</a>
+          <a href="#sec-font-family" class="toc-link" data-section="sec-font-family">字体家族</a>
+          <a href="#sec-type-scale" class="toc-link" data-section="sec-type-scale">字号规范</a>
+          <a href="#sec-radius" class="toc-link" data-section="sec-radius">圆角</a>
+          <a href="#sec-shadow" class="toc-link" data-section="sec-shadow">阴影</a>
+          <a href="#sec-opacity" class="toc-link" data-section="sec-opacity">透明度</a>
+          <a href="#sec-motion" class="toc-link" data-section="sec-motion">动效</a>
+          <a href="#sec-spacing" class="toc-link" data-section="sec-spacing">间距</a>
+        </nav>
+      </div>
+    </aside>
+
+    <main class="workspace">
+      <section class="preview-layout">
+        <div class="workspace-main">
+          <section class="status-strip">
+            <div class="status-card status-token"><span class="status-icon"><i class="ri-stack-line"></i></span><span>变量</span><strong id="topTokenCount">0</strong><em>变量总数</em></div>
+            <div class="status-card status-a11y"><span class="status-icon"><i class="ri-shield-check-line"></i></span><span>AA 通过</span><strong id="a11yMeta" class="a11y-badge">检测中</strong><em>可访问性</em></div>
+            <div class="status-card status-version"><span class="status-icon"><i class="ri-price-tag-3-line"></i></span><span>版本</span><strong id="versionStat">0</strong><em>个版本</em></div>
+            <div class="status-card status-export"><span class="status-icon"><i class="ri-box-3-line"></i></span><span>格式</span><strong id="exportFormatMeta">6</strong><em>导出格式</em></div>
+          </section>
+
+          <article class="preview-document">
+
+          <!-- 01 基础色板 -->
+          <section class="doc-section" id="sec-palette">
+            <div class="section-header">
+              <div>
+                <div class="section-kicker"><span class="kicker-dot"></span>palette · 01</div>
+                <h4>基础色板</h4>
+                <p class="section-desc">由品牌主色推导出完整 10 阶色板，作为语义色、组件状态和插画用色的基础。每组色阶从浅底色到深强调渐变。</p>
+              </div>
+            </div>
+            <div class="section-body">
+              <div id="paletteSummary" class="palette-summary"></div>
+              <div id="paletteGrid" class="palette-grid"></div>
+            </div>
+          </section>
+
+          <!-- 02 组件示例 -->
+          <section class="doc-section component-section" id="sec-components">
+            <div class="section-header">
+              <div>
+                <div class="section-kicker"><span class="kicker-dot"></span>preview · components</div>
+                <h4>组件示例</h4>
+                <p class="section-desc">用当前语义色、字号、圆角和阴影生成常用组件片段，帮助检查 token 在真实界面中的组合效果。</p>
+              </div>
+            </div>
+            <div class="section-body"><div id="componentPreview" class="component-preview"></div></div>
+          </section>
+
+          <!-- 02 主题预览 -->
+          <section class="doc-section two-columns" id="sec-preview">
+            <div class="section-header section-header-full">
+              <div>
+                <div class="section-kicker"><span class="kicker-dot"></span>theme · 02</div>
+                <h4>主题预览</h4>
+                <p class="section-desc">同一组语义色在 Light 和 Dark 模式下的实际表现，确保两套主题都有足够的视觉层次。</p>
+              </div>
+            </div>
+            <div class="section-body">
+              <div class="two-columns-grid">
+                <div><h5>Light</h5><div id="lightPreview" class="mode-preview light-mode"></div></div>
+                <div><h5>Dark</h5><div id="darkPreview" class="mode-preview dark-mode"></div></div>
+              </div>
+            </div>
+          </section>
+
+          <!-- 03 对比度 -->
+          <section class="doc-section" id="sec-contrast">
+            <div class="section-header">
+              <div>
+                <div class="section-kicker"><span class="kicker-dot"></span>a11y · WCAG 2.1</div>
+                <h4>对比度参考</h4>
+                <p class="section-desc">自动校验所有前景/背景组合的对比比率，标注 AA / AAA 通过情况。</p>
+              </div>
+              <span class="section-badge contrast-pass-badge" id="contrastMeta">检测中...</span>
+            </div>
+            <div class="section-body">
+              <div id="contrastGrid" class="contrast-grid"></div>
+            </div>
+          </section>
+
+          <!-- 04 品牌颜色 -->
+          <section class="doc-section" id="sec-brand">
+            <div class="section-header">
+              <div>
+                <div class="section-kicker"><span class="kicker-dot"></span>semantic · 04</div>
+                <h4>品牌颜色</h4>
+                <p class="section-desc">品牌主色及其 8 级交互梯度，从最浅底色到最深强调。覆盖按钮、标签、卡片等全部品牌表达场景，核心三色（primary / hover / active）不跟随深浅模式变化。</p>
+              </div>
+            </div>
+            <div class="section-body"><div id="brandTable" class="token-table"></div></div>
+          </section>
+
+          <!-- 05 辅助色 -->
+          <section class="doc-section" id="sec-auxiliary">
+            <div class="section-header">
+              <div>
+                <div class="section-kicker"><span class="kicker-dot"></span>semantic · 05</div>
+                <h4>辅助色</h4>
+                <p class="section-desc">辅助色用于分类标签、数据可视化、运营活动和品牌延展，不承担成功、警告、危险等系统反馈含义。</p>
+              </div>
+            </div>
+            <div class="section-body"><div id="auxiliaryTable" class="token-table"></div></div>
+          </section>
+
+          <!-- 06 功能色 -->
+          <section class="doc-section" id="sec-function">
+            <div class="section-header">
+              <div>
+                <div class="section-kicker"><span class="kicker-dot"></span>semantic · 06</div>
+                <h4>功能色</h4>
+                <p class="section-desc">用于成功、警告、危险和信息反馈的状态色，包含正色和浅底色两组，深浅模式自动适配。</p>
+              </div>
+            </div>
+            <div class="section-body"><div id="functionTable" class="token-table"></div></div>
+          </section>
+
+          <!-- 07 文本颜色 -->
+          <section class="doc-section" id="sec-text">
+            <div class="section-header">
+              <div>
+                <div class="section-kicker"><span class="kicker-dot"></span>semantic · 07</div>
+                <h4>文本 / 图标颜色</h4>
+                <p class="section-desc">从主文本到水印的 8 级灰度梯度，确保界面中每层信息都有清晰的视觉优先级。包含链接色和反色文本。图标颜色直接复用本组文本色——主图标用主文本色、次要图标用次文本色、禁用图标用禁用文本色，深色 / 品牌底上用反色文本或常量白。</p>
+              </div>
+            </div>
+            <div class="section-body"><div id="textColorTable" class="token-table"></div></div>
+          </section>
+
+          <!-- 08 背景颜色 -->
+          <section class="doc-section" id="sec-bg">
+            <div class="section-header">
+              <div>
+                <div class="section-kicker"><span class="kicker-dot"></span>semantic · 08</div>
+                <h4>背景颜色</h4>
+                <p class="section-desc">页面、容器、浮层和遮罩四个层级的界面背景，加上品牌底色和禁用底色，构建完整的空间层次。</p>
+              </div>
+            </div>
+            <div class="section-body"><div id="backgroundTable" class="token-table"></div></div>
+          </section>
+
+          <!-- 09 边框颜色 -->
+          <section class="doc-section" id="sec-border">
+            <div class="section-header">
+              <div>
+                <div class="section-kicker"><span class="kicker-dot"></span>semantic · 09</div>
+                <h4>边框颜色</h4>
+                <p class="section-desc">分割线、输入框描边和卡片边界的三级边框色，从弱到强逐步增加存在感。</p>
+              </div>
+            </div>
+            <div class="section-body"><div id="borderTable" class="token-table"></div></div>
+          </section>
+
+          <!-- 10 常量色 -->
+          <section class="doc-section" id="sec-constant">
+            <div class="section-header">
+              <div>
+                <div class="section-kicker"><span class="kicker-dot"></span>semantic · 10</div>
+                <h4>常量色</h4>
+                <p class="section-desc">不跟随主题和深浅模式切换的固定颜色，适用于品牌资产、遮罩反色和特殊图形。</p>
+              </div>
+            </div>
+            <div class="section-body"><div id="constantColorTable" class="token-table"></div></div>
+          </section>
+
+          <!-- 11 字体家族 -->
+          <section class="doc-section" id="sec-font-family">
+            <div class="section-header">
+              <div>
+                <div class="section-kicker"><span class="kicker-dot"></span>type · families</div>
+                <h4>字体家族</h4>
+                <p class="section-desc" id="typeIntro">系统默认采用苹方 PingFang SC，保持中文界面在设计稿中的清晰度与一致性。拉丁字符跟随中文主字体。</p>
+              </div>
+            </div>
+            <div class="section-body">
+            <div class="font-family-cards">
+              <div class="font-family-card">
+                <span class="font-card-label">CJK · 中文</span>
+                <strong class="font-card-display" id="fontCjkName">苹方</strong>
+                <code class="font-card-stack" id="fontCjkStack">PingFang SC, system-ui</code>
+                <div class="font-card-weights" id="fontCjkWeights">
+                  <div class="weight-specimen"><b style="font-weight:300">字</b><span>Light</span><em>300</em></div>
+                  <div class="weight-specimen"><b style="font-weight:400">字</b><span>Regular</span><em>400</em></div>
+                  <div class="weight-specimen"><b style="font-weight:500">字</b><span>Medium</span><em>500</em></div>
+                  <div class="weight-specimen"><b style="font-weight:600">字</b><span>Semibold</span><em>600</em></div>
+                  <div class="weight-specimen"><b style="font-weight:700">字</b><span>Bold</span><em>700</em></div>
+                </div>
+              </div>
+              <div class="font-family-card">
+                <span class="font-card-label">Latin · 西文</span>
+                <strong class="font-card-display font-card-latin" id="fontLatinName">Inter</strong>
+                <code class="font-card-stack" id="fontLatinStack">Inter, system-ui</code>
+                <div class="font-card-weights" id="fontLatinWeights">
+                  <div class="weight-specimen"><b style="font-weight:400">Aa</b><span>Regular</span><em>400</em></div>
+                  <div class="weight-specimen"><b style="font-weight:500">Aa</b><span>Medium</span><em>500</em></div>
+                  <div class="weight-specimen"><b style="font-weight:600">Aa</b><span>Semibold</span><em>600</em></div>
+                  <div class="weight-specimen"><b style="font-weight:700">Aa</b><span>Bold</span><em>700</em></div>
+                </div>
+              </div>
+            </div>
+            </div>
+          </section>
+
+          <!-- 12 字号规范 -->
+          <section class="doc-section" id="sec-type-scale">
+            <div class="section-header">
+              <div>
+                <div class="section-kicker"><span class="kicker-dot"></span>type · scale</div>
+                <h4>字号规范</h4>
+                <p class="section-desc">字体、字号和行高共同决定信息层级。每个 token 定义了从展示标题到辅助说明的完整排印体系。</p>
+              </div>
+              <span class="section-badge" id="typeScaleMeta">BASE · 17px</span>
+            </div>
+            <div class="section-body"><div id="typeScalePreview" class="type-scale-table"></div></div>
+          </section>
+
+          <!-- 13 圆角 -->
+          <section class="doc-section" id="sec-radius">
+            <div class="section-header">
+              <div>
+                <div class="section-kicker"><span class="kicker-dot"></span>tokens · radius</div>
+                <h4>圆角</h4>
+                <p class="section-desc">7 个圆角变量定义界面的视觉气质。柔和策略适合移动端，克制策略适合工具型产品。</p>
+              </div>
+            </div>
+            <div class="section-body"><div id="radiusTable" class="radius-grid"></div></div>
+          </section>
+
+          <!-- 14 阴影 -->
+          <section class="doc-section" id="sec-shadow">
+            <div class="section-header">
+              <div>
+                <div class="section-kicker"><span class="kicker-dot"></span>tokens · shadow</div>
+                <h4>阴影</h4>
+                <p class="section-desc">多层阴影系统区分界面层级，深色模式使用高光和描边组合增强空间感。</p>
+              </div>
+            </div>
+            <div class="section-body"><div id="shadowTable" class="shadow-grid"></div></div>
+          </section>
+
+          <!-- 15 透明度 -->
+          <section class="doc-section" id="sec-opacity">
+            <div class="section-header">
+              <div>
+                <div class="section-kicker"><span class="kicker-dot"></span>tokens · opacity</div>
+                <h4>透明度</h4>
+                <p class="section-desc">用于交互状态叠加（悬停、按下）、禁用态和遮罩层的统一透明度变量，确保全局一致的交互反馈。</p>
+              </div>
+            </div>
+            <div class="section-body"><div id="opacityTable" class="opacity-list"></div></div>
+          </section>
+
+          <!-- 16 动效 -->
+          <section class="doc-section" id="sec-motion">
+            <div class="section-header">
+              <div>
+                <div class="section-kicker"><span class="kicker-dot"></span>tokens · motion</div>
+                <h4>动效</h4>
+                <p class="section-desc">标准化过渡时长和缓动曲线，确保全局一致的交互节奏和动画感受。</p>
+              </div>
+            </div>
+            <div class="section-body"><div id="motionTable" class="motion-grid"></div></div>
+          </section>
+
+          <!-- 17 间距 -->
+          <section class="doc-section" id="sec-spacing">
+            <div class="section-header">
+              <div>
+                <div class="section-kicker"><span class="kicker-dot"></span>tokens · spacing</div>
+                <h4>间距</h4>
+                <p class="section-desc">基于 4px 基准的间距体系，覆盖组件内边距到区块间距的全部场景，保证界面在不同页面中保持一致密度。</p>
+              </div>
+              <span class="section-badge">4px grid</span>
+            </div>
+            <div class="section-body"><div id="spacingTable" class="spacing-bar-list"></div></div>
+          </section>
+
+          </article>
+        </div>
+
+        <aside class="history-panel">
+          <section class="right-tool-panel">
+            <div class="history-panel-header"><span>项目状态</span></div>
+            <div id="projectTimeline" class="project-timeline"></div>
+          </section>
+          <section class="right-tool-panel">
+            <div class="history-panel-header"><span>版本记录</span><strong id="versionCount">0</strong></div>
+            <div id="versionList" class="version-list"></div>
+          </section>
+          <section class="right-tool-panel export-panel">
+            <div class="history-panel-header"><span>导出</span></div>
+            <div class="export-actions">
+              <button class="action-button active" type="button" data-export="json">JSON</button>
+              <button class="action-button" type="button" data-export="css">CSS</button>
+              <button class="action-button" type="button" data-export="ts">TS</button>
+              <button class="action-button" type="button" data-export="tailwind">Tailwind</button>
+              <button class="action-button" type="button" data-export="dtcg">DTCG</button>
+            </div>
+            <div class="export-file-actions">
+              <button id="downloadButton" class="download-button" type="button">下载</button>
+              <button id="copyExportButton" class="download-button secondary" type="button">复制</button>
+            </div>
+            <div class="export-meta" id="exportMeta">JSON · 0 行</div>
+            <textarea id="exportOutput" class="export-source-textarea" spellcheck="false" tabindex="-1" aria-hidden="true"></textarea>
+            <div class="export-code-window" aria-label="导出代码预览">
+              <button id="exportCodeCopyButton" class="export-code-copy" type="button" aria-label="复制导出代码">
+                <i class="ri-file-copy-line" aria-hidden="true"></i>
+              </button>
+              <pre><code id="exportCodePreview"></code></pre>
+            </div>
+            <button id="copyAiPromptButton" class="ai-prompt-button" type="button">复制 AI Prompt</button>
+            <div class="ai-json-actions">
+              <button id="copyAiJsonButton" class="ai-prompt-button secondary" type="button">复制 AI JSON</button>
+              <button id="downloadAiJsonButton" class="ai-prompt-button secondary" type="button">下载 AI JSON</button>
+            </div>
+          </section>
+        </aside>
+      </section>
+    </main>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <dialog id="publishDialog" class="modal">
+    <form method="dialog">
+      <h3>保存版本</h3>
+      <p>记录这次规范变化，后续可以从版本历史恢复。</p>
+      <label class="field"><span>版本号</span><input id="publishVersion" type="text" value="1.0.0"></label>
+      <label class="field"><span>变更说明</span><textarea id="publishChangelog" placeholder="例如：调整主色、补充深色模式阴影、更新字体层级。"></textarea></label>
+      <div class="modal-actions">
+        <button class="ghost-button" value="cancel" type="submit">取消</button>
+        <button id="confirmPublishButton" class="primary-button" value="default" type="button">确认保存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="./tokens.js"></script>
+  <script src="./exports.js"></script>
+  <script src="./storage.js"></script>
+  <script src="./app.js"></script>
+  <script src="./custom-select.js"></script>
+</body>
+</html>
