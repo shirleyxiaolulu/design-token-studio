@@ -672,17 +672,23 @@
       });
     });
 
+    // 深色中性（背景/边框）按「中性色倾向」轻微染色：保留各自明度（深浅层次/对比不变），
+    // 只把色相改成中性色相、并加很低的饱和，让暖灰/冷灰在深色模式也生效。遮罩纯黑不染。
+    const neutralTintHue = getNeutralHue(seed.neutralStrategy, rgbToHsl(hexToRgb(seed.primaryColor)).h);
+    const neutralTintSat = seed.neutralStrategy === "warm" ? 10 : seed.neutralStrategy === "neutral" ? 4 : 14;
+    const tintDark = (hex) => hslToHex(neutralTintHue, neutralTintSat, rgbToHsl(hexToRgb(hex)).l);
+
     const commonColors = {
       "color.common.white": ["#FFFFFF", "#FFFFFF", "基础白色"],
       "color.common.black": ["#000000", "#000000", "基础黑色"],
-      "color.common.dark.page": ["#101216", "#101216", "深色页面背景原始值"],
-      "color.common.dark.surface": ["#181B20", "#181B20", "深色容器背景原始值"],
-      "color.common.dark.elevated": ["#20242B", "#20242B", "深色浮层背景原始值"],
+      "color.common.dark.page": [tintDark("#101216"), tintDark("#101216"), "深色页面背景原始值"],
+      "color.common.dark.surface": [tintDark("#181B20"), tintDark("#181B20"), "深色容器背景原始值"],
+      "color.common.dark.elevated": [tintDark("#20242B"), tintDark("#20242B"), "深色浮层背景原始值"],
       "color.common.dark.overlay": ["#000000", "#000000", "深色遮罩原始值 (72%透明度)"],
       "color.common.overlay": ["#0F172A", "#0F172A", "浅色遮罩原始值 (48%透明度)"],
-      "color.common.dark.border.default": ["#303640", "#303640", "深色默认描边原始值"],
-      "color.common.dark.border.subtle": ["#252A32", "#252A32", "深色弱描边原始值"],
-      "color.common.dark.border.strong": ["#4A5361", "#4A5361", "深色强描边原始值"],
+      "color.common.dark.border.default": [tintDark("#303640"), tintDark("#303640"), "深色默认描边原始值"],
+      "color.common.dark.border.subtle": [tintDark("#252A32"), tintDark("#252A32"), "深色弱描边原始值"],
+      "color.common.dark.border.strong": [tintDark("#4A5361"), tintDark("#4A5361"), "深色强描边原始值"],
     };
 
     Object.entries(commonColors).forEach(([name, [light, dark, usage]]) => {
