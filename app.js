@@ -20,8 +20,6 @@ const els = {
   addAuxiliaryButton: document.querySelector("#addAuxiliaryButton"),
   neutralStrategy: document.querySelector("#neutralStrategy"),
   paletteEngine: document.querySelector("#paletteEngine"),
-  baseFontSize: document.querySelector("#baseFontSize"),
-  fontSizeValue: document.querySelector("#fontSizeValue"),
   localFont: document.querySelector("#localFont"),
   typeIntro: document.querySelector("#typeIntro"),
   fontCjkName: document.querySelector("#fontCjkName"),
@@ -101,7 +99,6 @@ function currentSeed() {
     auxiliaryColors: currentAuxiliaryColors(),
     neutralStrategy: els.neutralStrategy.value,
     paletteEngine: els.paletteEngine ? els.paletteEngine.value : "classic",
-    baseFontSize: Number(els.baseFontSize.value),
     localFont: els.localFont.value,
     fontStack: DesignTokens.fontStacks[els.localFont.value],
     radiusScale: els.radiusScale.value,
@@ -147,7 +144,6 @@ function applySeed(seed) {
   renderAuxiliaryControls(seed.auxiliaryColors || DesignTokens.defaultAuxiliaryColors);
   els.neutralStrategy.value = seed.neutralStrategy || "cool";
   if (els.paletteEngine) els.paletteEngine.value = seed.paletteEngine || "classic";
-  els.baseFontSize.value = seed.baseFontSize || 17;
   els.localFont.value = seed.localFont || "source";
   els.radiusScale.value = seed.radiusScale || "soft";
   els.shadowStrength.value = seed.shadowStrength || "medium";
@@ -603,7 +599,6 @@ function render() {
   if (els.platformMeta) els.platformMeta.textContent = platformName;
   if (els.primaryMeta) els.primaryMeta.textContent = seed.primaryColor;
   if (els.defaultModeMeta) els.defaultModeMeta.textContent = modeName;
-  if (els.fontSizeValue) els.fontSizeValue.textContent = seed.baseFontSize;
   if (els.tokenCount) els.tokenCount.textContent = `${Object.keys(tokens).length} tokens`;
   if (els.topTokenCount) els.topTokenCount.textContent = `${Object.keys(tokens).length}`;
   if (els.exportFormatMeta) els.exportFormatMeta.textContent = "5";
@@ -1041,7 +1036,6 @@ function bindEvents() {
     els.defaultMode,
     els.neutralStrategy,
     els.paletteEngine,
-    els.baseFontSize,
     els.localFont,
     els.radiusScale,
     els.shadowStrength,
@@ -1404,7 +1398,6 @@ function renderVersionDiff() {
   if (draft.neutralStrategy !== vSeed.neutralStrategy) diffs.push("中性色");
   if (draft.radiusScale !== vSeed.radiusScale) diffs.push("圆角");
   if (draft.shadowStrength !== vSeed.shadowStrength) diffs.push("阴影");
-  if (draft.baseFontSize !== vSeed.baseFontSize) diffs.push("字号");
   if (draft.localFont !== vSeed.localFont) diffs.push("字体");
   const dAux = JSON.stringify((draft.auxiliaryColors || []).map((c) => c.color).sort());
   const vAux = JSON.stringify((vSeed.auxiliaryColors || []).map((c) => c.color).sort());
