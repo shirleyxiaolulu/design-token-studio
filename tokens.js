@@ -272,7 +272,9 @@
   // ===== v2: Auxiliary Color Full Scale =====
   function buildAuxiliaryScale(hex) {
     const hsl = rgbToHsl(hexToRgb(hex));
-    return buildScale(hsl.h, hsl.s);
+    // Anchor like the primary: the input color lands precisely on step 5 and the
+    // whole ramp is derived from it (using its lightness AND saturation, not just hue).
+    return buildScale(hsl.h, hsl.s, "color", hsl.l, hsl.s);
   }
 
   function normalizeAuxiliaryColors(items) {

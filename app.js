@@ -114,7 +114,7 @@ function currentAuxiliaryColors() {
     const textInput = row.querySelector("[data-aux-text]");
     return {
       id: row.dataset.auxId || `auxiliary-${index + 1}`,
-      name: nameInput.value.trim() || `辅助色 ${index + 1}`,
+      name: nameInput.value.trim() || `Auxiliary ${index + 1}`,
       color: DesignTokens.normalizeHex(textInput.value || colorInput.value),
     };
   });
@@ -152,6 +152,10 @@ function applySeed(seed) {
 function syncDraftToProject() {
   const project = activeProject();
   if (!project || !state.currentSeed) return;
+  // Only autosave the draft when actually viewing the draft. While viewing a
+  // published version (activeVersionId set), state.currentSeed is that version's
+  // seed — writing it back here would overwrite (destroy) the user's unsaved draft.
+  if (state.activeVersionId) return;
   project.name = state.currentSeed.specName;
   project.draft = state.currentSeed;
   project.updatedAt = new Date().toISOString();
@@ -1095,7 +1099,7 @@ function bindEvents() {
     const colors = currentAuxiliaryColors();
     colors.push({
       id: `auxiliary-${colors.length + 1}`,
-      name: `辅助色 ${colors.length + 1}`,
+      name: `Auxiliary ${colors.length + 1}`,
       color: "#8B5CF6",
     });
     renderAuxiliaryControls(colors);
