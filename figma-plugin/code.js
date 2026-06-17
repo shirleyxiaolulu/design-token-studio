@@ -1937,6 +1937,34 @@ function rebuildToPreviewData(plan) {
     colorTokens: colorTokens, dimTokens: dimTokens,
   };
 }
+// 「保真」变量数据：用于创建变量库 + 绑定。颜色用检测到的精确簇代表（≤ΔE2.5，肉眼无差），
+// 字号/圆角/间距用 harvest 的精确去重值（不收敛）→ 绑回设计零变化。
+function rebuildUniqNums(arr) {
+  var seen = {}, out = [];
+  (arr || []).forEach(function (v) { if (typeof v === 'number' && !seen[v]) { seen[v] = 1; out.push(v); } });
+  return out.sort(function (a, b) { return a - b; });
+}
+function rebuildToFaithfulData(plan, obs) {
+  obs = obs || {};
+  var colorTokens = {}, dimTokens = {};
+  function fn(k) { return k.replace(/\./g, '/'); }
+  function addC(key, hex, tier, usage) { if (!hex) return; colorTokens[key] = { figmaName: fn(key), tier: tier || 'primitive', light: hex, dark: hex, usage: usage || '' }; }
+  function addD(key, value, extra) { var o = { figmaName: fn(key), tier: 'primitive', value: value, type: 'dimension', usage: '' }; if (extra) for (var k in extra) o[k] = extra[k]; dimTokens[key] = o; }
+  var C = plan.colors;
+  C.neutral.forEach(function (t) { addC(t.name, t.hex, 'primitive', '中性色（原值）'); });
+  C.primary.forEach(function (t) { addC(t.name, t.hex, 'primitive', '主色族（原值）'); });
+  if (C.primary.length) {
+    var pr = C.primary.slice().sort(function (a, b) { return (b.count * auditChroma(b.hex)) - (a.count * auditChroma(a.hex)); })[0];
+    addC('color.brand.primary', pr.hex, 'semantic', '主色（原值）');
+  }
+  Object.keys(C.semantic).forEach(function (k) { addC(C.semantic[k].name, C.semantic[k].hex, 'semantic', '语义色（原值）'); });
+  C.accents.forEach(function (t) { addC(t.name, t.hex, 'semantic', '辅助色（原值）'); });
+  rebuildUniqNums((obs.texts || []).map(function (t) { return t.size; })).forEach(function (s) { addD('font.size.s' + s, s, { role: 's' + s, weight: 400, lineHeight: Math.round(s * 1.5) }); });
+  rebuildUniqNums(obs.radii).forEach(function (r) { addD('radius.r' + r, r); });
+  rebuildUniqNums(obs.spacings).forEach(function (s) { addD('space.s' + s, s); });
+  var theme = plan.theme || 'light';
+  return { name: '反推规范（保真）', version: 'reverse', platform: 'app-web', seed: { localFont: 'pingfang', defaultMode: theme }, defaultMode: theme, colorTokens: colorTokens, dimTokens: dimTokens };
+}
 // === REBUILD-CORE-END ===
 
 // 采集（需 Figma API）：递归遍历选中节点，抽取硬编码样式 → plain data
@@ -2021,8 +2049,10 @@ var lastRebuildPlan = null;
 // 阶段③后半：把选中图层「复制到新页面」后绑定到反推变量（原设计零风险）。
 // 每个属性绑到「最接近的 token 变量」；每次绑定都 try/catch，单点失败不影响整体。
 async function bindReverseVariables(plan) {
-  var data = rebuildToPreviewData(plan);
-  await syncVariables(data);                       // 确保变量已创建（幂等）
+  var sel = figma.currentPage.selection;
+  var obs = harvestSelection(sel, 20000);          // 采集精确原值
+  var data = rebuildToFaithfulData(plan, obs);      // 保真：精确原色 / 原字号 / 原圆角 / 原间距
+  await syncVariables(data);                        // 创建保真变量（幂等）
   var cols = await figma.variables.getLocalVariableCollectionsAsync();
   var byName = {};
   for (var ci = 0; ci < cols.length; ci++) {
@@ -2047,8 +2077,7 @@ async function bindReverseVariables(plan) {
   function nearestColor(hex) { var best = null, bd = Infinity; for (var i = 0; i < colorVars.length; i++) { var d = auditDeltaE(hex, colorVars[i].hex); if (d < bd) { bd = d; best = colorVars[i].v; } } return best; }
   function nearestNum(arr, val) { var best = null, bd = Infinity; for (var i = 0; i < arr.length; i++) { var d = Math.abs(arr[i].val - val); if (d < bd) { bd = d; best = arr[i].v; } } return best; }
 
-  // 复制选中画板到新页面，只在副本上绑定
-  var sel = figma.currentPage.selection;
+  // 复制选中画板到新页面，只在副本上绑定（sel 已在顶部取得）
   var page = figma.createPage();
   page.name = '反推规范 · 绑定副本';
   var clones = [];
@@ -2193,22 +2222,20 @@ figma.ui.onmessage = async (msg) => {
       figma.ui.postMessage({ type: 'result', message: '规范预览页已生成（与网页端同款，未改动原设计）' });
     }
     else if (msg.type === 'reverse-sync') {
-      // 2.0 反推 · 阶段③前半：用反推结果创建/同步 Figma 变量库（只新增变量集合，不动图层）
-      var rvPlan = lastRebuildPlan;
-      if (!rvPlan) {
-        var rvSel = figma.currentPage.selection;
-        if (!rvSel || rvSel.length === 0) {
-          figma.ui.postMessage({ type: 'error', message: '请先选中画板并「重建为干净 token」，再创建变量库' });
-          return;
-        }
-        rvPlan = buildRebuildPlan(harvestSelection(rvSel, 20000), { tightness: (msg.tightness || 'medium') });
+      // 2.0 反推 · 阶段③前半：创建「保真」变量库（精确原色/原值，绑定后设计零变化；只新增变量，不动图层）
+      var rvSel = figma.currentPage.selection;
+      if (!rvSel || rvSel.length === 0) {
+        figma.ui.postMessage({ type: 'error', message: '请先选中画板再创建变量库' });
+        return;
       }
-      figma.ui.postMessage({ type: 'progress', message: '正在用反推结果创建变量库...' });
-      // 复用现有 syncVariables（与 web 端 JSON 同一条创建路径，只新增变量集合，不绑定图层）
-      var rvResult = await syncVariables(rebuildToPreviewData(rvPlan));
+      figma.ui.postMessage({ type: 'progress', message: '正在用反推结果创建保真变量库...' });
+      var rvObs = harvestSelection(rvSel, 20000);
+      var rvPlan = lastRebuildPlan || buildRebuildPlan(rvObs, { tightness: (msg.tightness || 'medium') });
+      // 复用现有 syncVariables 创建路径；值为你的精确原值（与 web 端 JSON 同一条创建逻辑）
+      var rvResult = await syncVariables(rebuildToFaithfulData(rvPlan, rvObs));
       figma.ui.postMessage({
         type: 'result',
-        message: '反推变量库已创建：新建 ' + rvResult.created + ' · 更新 ' + rvResult.updated + ' · 跳过 ' + rvResult.skipped + '（仅新增变量集合，未改动图层）',
+        message: '保真变量库已创建：新建 ' + rvResult.created + ' · 更新 ' + rvResult.updated + '（颜色/字号均为你的精确原值，绑定零变化；仅新增变量，未改图层）',
       });
     }
     else if (msg.type === 'reverse-bind') {

@@ -544,6 +544,29 @@ test("rebuildDetectTheme: dark design detected by background AREA, not frequency
   assert(Object.keys(data.dimTokens).some((k) => k.startsWith("space.")), "space.*");
 });
 
+test("rebuildToFaithfulData: exact values, no consolidation (lossless binding source)", () => {
+  const obs = {
+    fills: [].concat(
+      Array(60).fill({ hex: "#2C2A2A", area: 1440 * 900 }), // dominant warm-gray bg
+      Array(30).fill({ hex: "#E8E6E6", area: 4000 }),
+      Array(20).fill({ hex: "#3B82F6", area: 4800 })
+    ),
+    strokes: [],
+    texts: [{ size: 14 }, { size: 14 }, { size: 15 }, { size: 16 }], // 15 must NOT merge into 14/16
+    radii: [4, 8, 13], spacings: [7, 8, 16],                          // 13 / 7 are off-grid, must stay exact
+  };
+  const data = rebuildToFaithfulData(buildRebuildPlan(obs, { tightness: "medium" }), obs);
+  // the dominant background color is preserved EXACTLY (the fidelity bug)
+  assert(Object.values(data.colorTokens).some((t) => t.light === "#2C2A2A"), "exact warm-gray bg preserved");
+  // sizes are exact + not consolidated (all three distinct sizes present)
+  eq(data.dimTokens["font.size.s14"].value, 14, "size 14 exact");
+  eq(data.dimTokens["font.size.s15"].value, 15, "size 15 kept exact (not snapped)");
+  eq(data.dimTokens["font.size.s16"].value, 16, "size 16 exact");
+  // radii / spacings exact, off-grid values not snapped
+  eq(data.dimTokens["radius.r13"].value, 13, "radius 13 kept exact");
+  eq(data.dimTokens["space.s7"].value, 7, "spacing 7 kept exact (off-grid, not snapped)");
+});
+
 // --- report ----------------------------------------------------------------
 console.log(`\n${passed} passed, ${failed} failed (${passed + failed} total)`);
 process.exit(failed ? 1 : 0);
