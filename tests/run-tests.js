@@ -38,6 +38,8 @@ runGlobal(fs.readFileSync(path.join(ROOT, "exports.js"), "utf8")); // → Design
   runGlobal(slice("function tsFontSizeEntries", "// =============================================\n// Sync: Text Styles", "type-scale helpers"));
   // variable reconcile planners (used by syncVariables)
   runGlobal(slice("function planFontSizeRenames", "async function syncVariables", "reconcile planners"));
+  // 2.0 reverse-audit pure core (used by the audit message branch)
+  runGlobal(slice("// === AUDIT-CORE-START", "// === AUDIT-CORE-END ===", "audit core"));
 })();
 
 // --- tiny test harness -----------------------------------------------------
@@ -281,6 +283,80 @@ test("OKLCH engine keeps dark text.primary at AA contrast", () => {
   const pairs = DesignTokens.checkContrastPairs(tokens, DesignTokens.resolveAllTokenValues(tokens));
   const dp = pairs.find((r) => r.fg === "color.text.primary" && r.bg === "color.bg.page" && r.mode === "dark");
   assert(dp && dp.ratio >= 4.5, "OKLCH dark text.primary/page contrast too low: " + (dp && dp.ratio));
+});
+
+// =============================================================================
+// 7) 2.0 reverse-audit pure core (figma-plugin/code.js AUDIT-CORE region)
+// =============================================================================
+test("auditDeltaE: identical=0, near-dupe small, far large", () => {
+  eq(Math.round(auditDeltaE("#3366FF", "#3366FF")), 0, "identical → 0");
+  assert(auditDeltaE("#3366FF", "#3367FF") < 1, "1-bit diff should be tiny ΔE");
+  assert(auditDeltaE("#000000", "#FFFFFF") > 90, "black vs white should be ~100 ΔE");
+});
+
+test("auditIsNeutral: grays neutral, saturated chromatic", () => {
+  assert(auditIsNeutral("#808080"), "mid gray is neutral");
+  assert(auditIsNeutral("#1C232C"), "dark slate (low sat) is neutral");
+  assert(!auditIsNeutral("#3366FF"), "saturated blue is chromatic");
+});
+
+test("auditTally: frequency desc, auditClusterNumbers: groups within tol", () => {
+  const t = auditTally([16, 16, 16, 14, 14, 24]);
+  eq(t[0].value, 16, "most frequent first"); eq(t[0].count, 3, "count");
+  const cl = auditClusterNumbers([4, 5, 4, 12, 13, 40], 2);
+  eq(cl.length, 3, "→ 3 clusters {4,5,4}{12,13}{40}");
+  eq(cl[0].rep, 4, "rep = mode of first cluster");
+});
+
+test("auditClusterColors: near-dupes collapse, distinct stay split", () => {
+  const cl = auditClusterColors(["#3366FF", "#3367FF", "#3366FE", "#FF0000"], 2.5);
+  eq(cl.length, 2, "3 near-identical blues + 1 red → 2 clusters");
+});
+
+test("buildAuditReport: counts, near-dupes, off-grid, flags", () => {
+  const obs = {
+    nodeCount: 10,
+    fills: [
+      { hex: "#3366FF" }, { hex: "#3366FF" }, { hex: "#3367FF" }, // 2 exact + 1 near-dupe
+      { hex: "#808080" }, { hex: "#1C232C" },
+    ],
+    strokes: [{ hex: "#FF0000" }],
+    texts: [
+      { size: 12, family: "Inter", style: "Regular" },
+      { size: 14, family: "Inter", style: "Regular" },
+      { size: 16, family: "Inter", style: "Bold" },
+      { size: 17, family: "PingFang SC", style: "Regular" },
+      { size: 20, family: "Inter", style: "Bold" },
+      { size: 24, family: "Inter", style: "Bold" },
+      { size: 32, family: "Inter", style: "Bold" },
+    ],
+    radii: [4, 8, 8, 12],
+    shadows: [{ type: "DROP_SHADOW", x: 0, y: 2, blur: 8, spread: 0, hex: "#000000", alpha: 0.1 }],
+    spacings: [8, 8, 16, 7, 13], // 7 & 13 are off the 4px grid
+  };
+  const r = buildAuditReport(obs, { colorDelta: 2.5 });
+  eq(r.counts.fills, 5, "fill count"); eq(r.counts.texts, 7, "text count");
+  eq(r.colors.uniqueCount, 5, "5 distinct colors (#3366FF,#3367FF,#808080,#1C232C,#FF0000)");
+  assert(r.colors.nearDupes.length >= 1, "should flag the #3366FF≈#3367FF near-dupe");
+  eq(r.colors.neutralCount, 2, "gray + slate are neutral");
+  eq(r.type.sizeCount, 7, "7 distinct font sizes");
+  eq(r.spacing.offGrid.length, 2, "7 and 13 are off-grid");
+  assert(r.spacing.offGrid.indexOf(7) >= 0 && r.spacing.offGrid.indexOf(13) >= 0, "off-grid lists 7 & 13");
+  assert(r.flags.some((f) => f.text.indexOf("字号") >= 0), "should flag too many font sizes");
+  assert(r.flags.some((f) => f.text.indexOf("网格") >= 0), "should flag off-grid spacing");
+});
+
+test("buildAuditReport: clean input → no redundancy warnings", () => {
+  const obs = {
+    nodeCount: 4,
+    fills: [{ hex: "#3366FF" }, { hex: "#FFFFFF" }],
+    strokes: [],
+    texts: [{ size: 16, family: "Inter", style: "Regular" }],
+    radii: [8], shadows: [], spacings: [8, 16],
+  };
+  const r = buildAuditReport(obs);
+  eq(r.spacing.offGrid.length, 0, "all spacing on grid");
+  assert(!r.flags.some((f) => f.level === "warn"), "no warn flags for clean input");
 });
 
 // --- report ----------------------------------------------------------------

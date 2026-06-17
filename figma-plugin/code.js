@@ -1416,6 +1416,210 @@ async function generatePreview(data) {
 // =============================================
 // Message Handler
 // =============================================
+/* ==========================================================================
+ * 2.0 反推设计规范 · 阶段① 审计（纯增量，不改动以上任何同步/生成逻辑）
+ * 选中画板 → 采集已用样式 → 频率统计 + 近重复/不一致检测 → 审计报告（只读）
+ * ========================================================================== */
+
+// === AUDIT-CORE-START (纯函数，无 Figma API，可在 Node 中切片单测) ===
+function auditHexToRgb(hex) {
+  var h = String(hex || '').replace('#', '');
+  if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+  if (h.length !== 6) return { r: 0, g: 0, b: 0 };
+  var n = parseInt(h, 16);
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+}
+function auditSrgbToLin(c) {
+  c = c / 255;
+  return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+}
+function auditHexToLab(hex) {
+  var rgb = auditHexToRgb(hex);
+  var r = auditSrgbToLin(rgb.r), g = auditSrgbToLin(rgb.g), b = auditSrgbToLin(rgb.b);
+  var x = (r * 0.4124 + g * 0.3576 + b * 0.1805) / 0.95047;
+  var y = (r * 0.2126 + g * 0.7152 + b * 0.0722);
+  var z = (r * 0.0193 + g * 0.1192 + b * 0.9505) / 1.08883;
+  var f = function (t) { return t > 0.008856 ? Math.cbrt(t) : (7.787 * t) + 16 / 116; };
+  var fx = f(x), fy = f(y), fz = f(z);
+  return { L: 116 * fy - 16, a: 500 * (fx - fy), b: 200 * (fy - fz) };
+}
+function auditDeltaE(h1, h2) {
+  var a = auditHexToLab(h1), b = auditHexToLab(h2);
+  var dL = a.L - b.L, da = a.a - b.a, db = a.b - b.b;
+  return Math.sqrt(dL * dL + da * da + db * db);
+}
+// 中性判定用感知色度（Lab chroma），而非 HSL 饱和度 —— 暗色/亮色近灰在 HSL 下
+// 饱和度会虚高，Lab chroma 能稳定区分「灰/微染中性」与「品牌彩色」。
+function auditChroma(hex) {
+  var l = auditHexToLab(hex);
+  return Math.sqrt(l.a * l.a + l.b * l.b);
+}
+function auditIsNeutral(hex, chromaThreshold) {
+  return auditChroma(hex) <= (chromaThreshold == null ? 10 : chromaThreshold);
+}
+function auditTally(values) {
+  var m = new Map();
+  for (var i = 0; i < values.length; i++) { var k = values[i]; m.set(k, (m.get(k) || 0) + 1); }
+  var out = []; m.forEach(function (count, value) { out.push({ value: value, count: count }); });
+  out.sort(function (a, b) { return b.count - a.count; });
+  return out;
+}
+function auditClusterNumbers(values, tol) {
+  var sorted = values.slice().sort(function (a, b) { return a - b; });
+  var clusters = [];
+  for (var i = 0; i < sorted.length; i++) {
+    var v = sorted[i], last = clusters[clusters.length - 1];
+    if (last && Math.abs(v - last.rep) <= tol) { last.members.push(v); last.count++; }
+    else clusters.push({ rep: v, members: [v], count: 1 });
+  }
+  clusters.forEach(function (c) { c.rep = auditTally(c.members)[0].value; });
+  return clusters;
+}
+function auditClusterColors(hexes, thr) {
+  var seen = {}, uniq = [];
+  for (var i = 0; i < hexes.length; i++) { var h = hexes[i]; if (!seen[h]) { seen[h] = 0; uniq.push(h); } seen[h]++; }
+  var clusters = [];
+  uniq.forEach(function (h) {
+    var best = null, bestD = Infinity;
+    for (var j = 0; j < clusters.length; j++) { var d = auditDeltaE(h, clusters[j].rep); if (d < bestD) { bestD = d; best = clusters[j]; } }
+    if (best && bestD <= thr) {
+      best.members.push(h); best.count += seen[h];
+      if (seen[h] > best.repCount) { best.rep = h; best.repCount = seen[h]; }
+    } else clusters.push({ rep: h, repCount: seen[h], members: [h], count: seen[h] });
+  });
+  return clusters;
+}
+// 把采集到的原始样式（plain data）汇总成审计报告
+function buildAuditReport(obs, opts) {
+  opts = opts || {};
+  var colorDelta = opts.colorDelta == null ? 2.5 : opts.colorDelta;
+  var chromaNeutral = opts.chromaNeutral == null ? 10 : opts.chromaNeutral;
+  var grid = opts.grid == null ? 4 : opts.grid;
+  var fills = obs.fills || [], strokes = obs.strokes || [], texts = obs.texts || [],
+      radii = obs.radii || [], shadows = obs.shadows || [], spacings = obs.spacings || [];
+
+  // 颜色：填充 + 描边
+  var colorHexes = fills.map(function (f) { return f.hex; }).concat(strokes.map(function (s) { return s.hex; }));
+  var colorTally = auditTally(colorHexes);
+  var clusters = auditClusterColors(colorHexes, colorDelta);
+  var neutralCount = 0, chromaticCount = 0;
+  colorTally.forEach(function (t) { if (auditIsNeutral(t.value, chromaNeutral)) neutralCount++; else chromaticCount++; });
+  var nearDupes = [], maxN = Math.min(colorTally.length, 300);
+  for (var i = 0; i < maxN && nearDupes.length < 40; i++) {
+    for (var j = i + 1; j < maxN; j++) {
+      var d = auditDeltaE(colorTally[i].value, colorTally[j].value);
+      if (d > 0 && d < colorDelta) nearDupes.push({ a: colorTally[i].value, b: colorTally[j].value, deltaE: Math.round(d * 10) / 10 });
+    }
+  }
+  nearDupes.sort(function (a, b) { return a.deltaE - b.deltaE; });
+
+  // 字体
+  var sizeTally = auditTally(texts.map(function (t) { return t.size; })).sort(function (a, b) { return a.value - b.value; });
+  var familyTally = auditTally(texts.map(function (t) { return t.family; }).filter(Boolean));
+  var styleTally = auditTally(texts.map(function (t) { return t.style; }).filter(Boolean));
+  // 圆角 / 阴影 / 间距
+  var radiusTally = auditTally(radii).sort(function (a, b) { return a.value - b.value; });
+  var shadowTally = auditTally(shadows.map(function (s) {
+    return s.type + ' ' + s.x + '/' + s.y + ' b' + s.blur + ' s' + s.spread + ' ' + s.hex + '@' + (Math.round((s.alpha == null ? 1 : s.alpha) * 100) / 100);
+  }));
+  var spacingTally = auditTally(spacings).sort(function (a, b) { return a.value - b.value; });
+  var offGrid = spacingTally.filter(function (t) { return (Number(t.value) % grid) !== 0; }).map(function (t) { return t.value; });
+
+  var flags = [];
+  if (nearDupes.length) flags.push({ level: 'warn', text: '发现 ' + nearDupes.length + ' 对几乎重复的颜色（ΔE<' + colorDelta + '），建议合并' });
+  if (colorTally.length) flags.push({ level: 'info', text: '颜色 ' + colorTally.length + ' 种 → 可归并为约 ' + clusters.length + ' 组（中性 ' + neutralCount + ' · 彩色 ' + chromaticCount + '）' });
+  if (sizeTally.length > 6) flags.push({ level: 'warn', text: '字号 ' + sizeTally.length + ' 档偏多，建议收敛到 5–7 档' });
+  if (familyTally.length > 2) flags.push({ level: 'warn', text: '字体家族 ' + familyTally.length + ' 种：' + familyTally.slice(0, 4).map(function (f) { return f.value; }).join('、') });
+  if (offGrid.length) flags.push({ level: 'warn', text: '间距有 ' + offGrid.length + ' 个不在 ' + grid + 'px 网格：' + offGrid.slice(0, 10).join(', ') });
+  if (radiusTally.length > 5) flags.push({ level: 'info', text: '圆角 ' + radiusTally.length + ' 种，可考虑收敛' });
+  if (shadowTally.length > 4) flags.push({ level: 'info', text: '阴影 ' + shadowTally.length + ' 种' });
+  if (!flags.length) flags.push({ level: 'info', text: '样式较为统一，未发现明显冗余 👍' });
+
+  return {
+    counts: { nodes: obs.nodeCount || 0, fills: fills.length, strokes: strokes.length, texts: texts.length, radii: radii.length, shadows: shadows.length, spacings: spacings.length },
+    truncated: !!obs.truncated,
+    colors: { uniqueCount: colorTally.length, clusterCount: clusters.length, neutralCount: neutralCount, chromaticCount: chromaticCount, top: colorTally.slice(0, 12), nearDupes: nearDupes.slice(0, 20) },
+    type: { sizeCount: sizeTally.length, sizes: sizeTally, families: familyTally, styles: styleTally },
+    radius: { uniqueCount: radiusTally.length, values: radiusTally },
+    shadow: { uniqueCount: shadowTally.length, list: shadowTally.slice(0, 12) },
+    spacing: { uniqueCount: spacingTally.length, values: spacingTally, offGrid: offGrid },
+    flags: flags,
+  };
+}
+// === AUDIT-CORE-END ===
+
+// 采集（需 Figma API）：递归遍历选中节点，抽取硬编码样式 → plain data
+function auditLineHeightPx(lh, size) {
+  if (!lh || lh.unit === 'AUTO') return null;
+  if (lh.unit === 'PIXELS') return Math.round(lh.value * 10) / 10;
+  if (lh.unit === 'PERCENT') return Math.round(size * lh.value / 100 * 10) / 10;
+  return null;
+}
+function harvestSelection(nodes, maxNodes) {
+  maxNodes = maxNodes || 20000;
+  var obs = { nodeCount: 0, truncated: false, fills: [], strokes: [], texts: [], radii: [], shadows: [], spacings: [] };
+  function pushSolid(arr, paints, extra) {
+    if (!Array.isArray(paints)) return;
+    for (var i = 0; i < paints.length; i++) {
+      var p = paints[i];
+      if (p && p.type === 'SOLID' && p.visible !== false) {
+        var o = { hex: figmaRgbToHex(p.color), opacity: (p.opacity == null ? 1 : p.opacity) };
+        if (extra) for (var k in extra) o[k] = extra[k];
+        arr.push(o);
+      }
+    }
+  }
+  function visit(node) {
+    if (obs.nodeCount >= maxNodes) { obs.truncated = true; return; }
+    obs.nodeCount++;
+    if ('fills' in node && node.fills !== figma.mixed) pushSolid(obs.fills, node.fills, { nodeType: node.type });
+    if ('strokes' in node) pushSolid(obs.strokes, node.strokes, { weight: (typeof node.strokeWeight === 'number' ? node.strokeWeight : null) });
+    if (node.type === 'TEXT') {
+      try {
+        if (node.fontSize !== figma.mixed && node.fontName !== figma.mixed) {
+          obs.texts.push({ size: node.fontSize, family: node.fontName.family, style: node.fontName.style, lineHeightPx: auditLineHeightPx(node.lineHeight, node.fontSize) });
+        } else {
+          var segs = node.getStyledTextSegments(['fontSize', 'fontName', 'lineHeight']);
+          for (var s = 0; s < segs.length; s++) {
+            obs.texts.push({ size: segs[s].fontSize, family: segs[s].fontName.family, style: segs[s].fontName.style, lineHeightPx: auditLineHeightPx(segs[s].lineHeight, segs[s].fontSize) });
+          }
+        }
+      } catch (e) { /* 跳过无法读取的文本 */ }
+    }
+    if ('cornerRadius' in node) {
+      if (node.cornerRadius !== figma.mixed) {
+        if (typeof node.cornerRadius === 'number' && node.cornerRadius > 0) obs.radii.push(node.cornerRadius);
+      } else {
+        ['topLeftRadius', 'topRightRadius', 'bottomLeftRadius', 'bottomRightRadius'].forEach(function (k) {
+          if (typeof node[k] === 'number' && node[k] > 0) obs.radii.push(node[k]);
+        });
+      }
+    }
+    if ('effects' in node && Array.isArray(node.effects)) {
+      for (var e = 0; e < node.effects.length; e++) {
+        var ef = node.effects[e];
+        if ((ef.type === 'DROP_SHADOW' || ef.type === 'INNER_SHADOW') && ef.visible !== false) {
+          obs.shadows.push({ type: ef.type, x: ef.offset.x, y: ef.offset.y, blur: ef.radius, spread: (ef.spread || 0), hex: figmaRgbToHex(ef.color), alpha: (ef.color.a == null ? 1 : Math.round(ef.color.a * 100) / 100) });
+        }
+      }
+    }
+    if (node.layoutMode && node.layoutMode !== 'NONE') {
+      if (typeof node.itemSpacing === 'number' && node.itemSpacing > 0) obs.spacings.push(node.itemSpacing);
+      ['paddingLeft', 'paddingRight', 'paddingTop', 'paddingBottom'].forEach(function (k) {
+        if (typeof node[k] === 'number' && node[k] > 0) obs.spacings.push(node[k]);
+      });
+    }
+    if ('children' in node) {
+      for (var c = 0; c < node.children.length; c++) {
+        if (obs.nodeCount >= maxNodes) { obs.truncated = true; break; }
+        visit(node.children[c]);
+      }
+    }
+  }
+  for (var i = 0; i < nodes.length; i++) visit(nodes[i]);
+  return obs;
+}
+
 figma.ui.onmessage = async (msg) => {
   try {
     if (msg.type === 'sync') {
@@ -1471,6 +1675,19 @@ figma.ui.onmessage = async (msg) => {
           + ' | 文字样式 ' + (textResult2.created + textResult2.updated)
           + ' · 效果样式 ' + (effectResult2.created + effectResult2.updated),
       });
+    }
+    else if (msg.type === 'audit') {
+      // 2.0 反推 · 阶段①：扫描选中画板，生成审计报告（只读，不改文件）
+      var sel = figma.currentPage.selection;
+      if (!sel || sel.length === 0) {
+        figma.ui.postMessage({ type: 'error', message: '请先在画布上选中至少一个画板或图层' });
+        return;
+      }
+      figma.ui.postMessage({ type: 'progress', message: '正在扫描选中内容...' });
+      figma.ui.resize(360, 640);
+      var auditObs = harvestSelection(sel, 20000);
+      var auditReport = buildAuditReport(auditObs, { colorDelta: (msg.colorDelta || 2.5) });
+      figma.ui.postMessage({ type: 'audit-result', report: auditReport });
     }
   } catch (err) {
     figma.ui.postMessage({ type: 'error', message: '错误: ' + (err.message || String(err)) + ' | stack: ' + (err.stack || '').slice(0, 200) });

@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <meta charset="utf-8">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -60,6 +61,27 @@
       background: #fff; color: #666; font-size: 10px; cursor: pointer; transition: all 0.15s;
     }
     .mini-btn:hover { border-color: #6533E8; color: #6533E8; }
+
+    /* 2.0 反推审计 */
+    .reverse-title { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+    .reverse-badge { font-size: 10px; color: #6533E8; background: #f1ecfd; padding: 1px 6px; border-radius: 8px; font-weight: 500; }
+    .audit-result { margin-top: 12px; display: none; }
+    .audit-result.show { display: block; }
+    .audit-summary { font-size: 10px; color: #888; margin-bottom: 8px; line-height: 1.5; }
+    .audit-flags { margin-bottom: 8px; }
+    .flag { font-size: 11px; padding: 6px 8px; border-radius: 6px; margin-bottom: 4px; line-height: 1.45; }
+    .flag.warn { background: #fff7ed; color: #c2410c; }
+    .flag.info { background: #eff6ff; color: #1d4ed8; }
+    .audit-sec { border-top: 1px solid #eee; padding: 8px 0; }
+    .audit-sec h4 { font-size: 11px; color: #555; margin-bottom: 6px; font-weight: 600; display: flex; justify-content: space-between; align-items: baseline; }
+    .audit-sec h4 .n { color: #999; font-weight: 500; }
+    .swatches { display: flex; flex-wrap: wrap; gap: 4px; }
+    .sw { width: 18px; height: 18px; border-radius: 4px; border: 1px solid rgba(0,0,0,0.12); }
+    .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+    .chip { font-size: 10px; padding: 2px 6px; background: #f3f4f6; border-radius: 10px; color: #444; font-family: 'SF Mono', monospace; }
+    .dupe { font-size: 10px; color: #9a3412; font-family: 'SF Mono', monospace; display: flex; align-items: center; gap: 4px; margin-bottom: 3px; }
+    .dupe .s { width: 12px; height: 12px; border-radius: 3px; display: inline-block; border: 1px solid rgba(0,0,0,0.12); }
+    .scan-note { font-size: 10px; color: #999; margin-top: 6px; line-height: 1.5; }
   </style>
 </head>
 <body>
@@ -95,12 +117,23 @@
     </ol>
   </div>
 
+  <div class="divider"></div>
+
+  <div class="reverse-section">
+    <div class="reverse-title">反推设计规范 <span class="reverse-badge">实验 · 2.0</span></div>
+    <p class="subtitle" style="margin-top:4px; margin-bottom:10px;">选中画板/图层 → 扫描已用样式，生成审计报告（阶段①，只读不改文件）</p>
+    <button class="btn btn-outline" id="auditBtn" style="margin-top:0;">扫描选中内容 · 生成审计</button>
+    <div class="audit-result" id="auditResult"></div>
+  </div>
+
   <script>
     const jsonInput = document.getElementById('jsonInput');
     const jsonMeta = document.getElementById('jsonMeta');
     const syncBtn = document.getElementById('syncBtn');
     const generateBtn = document.getElementById('generateBtn');
     const status = document.getElementById('status');
+    const auditBtn = document.getElementById('auditBtn');
+    const auditResult = document.getElementById('auditResult');
 
     let parsedData = null;
 
@@ -239,6 +272,14 @@
       parent.postMessage({ pluginMessage: { type: 'generate', data: parsedData } }, '*');
     });
 
+    // 2.0 反推 · 阶段①：扫描选中内容生成审计
+    auditBtn.addEventListener('click', () => {
+      auditResult.className = 'audit-result';
+      auditResult.innerHTML = '';
+      showStatus('正在扫描选中内容...', 'progress');
+      parent.postMessage({ pluginMessage: { type: 'audit' } }, '*');
+    });
+
     window.onmessage = (event) => {
       const msg = event.data.pluginMessage;
       if (msg.type === 'result') {
@@ -251,8 +292,70 @@
         generateBtn.disabled = false;
       } else if (msg.type === 'progress') {
         showStatus(`⏳ ${msg.message}`, 'progress');
+      } else if (msg.type === 'audit-result') {
+        auditResult.innerHTML = renderAudit(msg.report);
+        auditResult.className = 'audit-result show';
+        showStatus('✅ 审计完成（只读，未改动文件）', 'success');
       }
     };
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"]/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+      });
+    }
+
+    function renderAudit(r) {
+      var c = r.counts;
+      var h = '';
+      h += '<div class="audit-summary">扫描 ' + c.nodes + ' 个图层 · 填充 ' + c.fills + ' · 描边 ' + c.strokes + ' · 文本 ' + c.texts + ' · 圆角 ' + c.radii + ' · 阴影 ' + c.shadows + ' · 间距 ' + c.spacings + '</div>';
+      if (r.truncated) h += '<div class="flag warn">图层过多，仅扫描了前 ' + c.nodes + ' 个，结果为部分样本</div>';
+      h += '<div class="audit-flags">';
+      r.flags.forEach(function (f) { h += '<div class="flag ' + f.level + '">' + escapeHtml(f.text) + '</div>'; });
+      h += '</div>';
+
+      // 颜色
+      h += '<div class="audit-sec"><h4>颜色 <span class="n">' + r.colors.uniqueCount + ' 种 → ' + r.colors.clusterCount + ' 组</span></h4>';
+      h += '<div class="swatches">' + r.colors.top.map(function (t) {
+        return '<div class="sw" title="' + t.value + ' ×' + t.count + '" style="background:' + t.value + '"></div>';
+      }).join('') + '</div>';
+      if (r.colors.nearDupes.length) {
+        h += '<div class="scan-note">几乎重复（ΔE&lt;2.5）：</div>';
+        h += r.colors.nearDupes.slice(0, 8).map(function (d) {
+          return '<div class="dupe"><span class="s" style="background:' + d.a + '"></span>' + d.a + ' ≈ <span class="s" style="background:' + d.b + '"></span>' + d.b + ' （ΔE ' + d.deltaE + '）</div>';
+        }).join('');
+      }
+      h += '</div>';
+
+      // 字体
+      if (r.type.sizeCount) {
+        h += '<div class="audit-sec"><h4>字体 <span class="n">' + r.type.sizeCount + ' 档字号 · ' + r.type.families.length + ' 家族</span></h4>';
+        h += '<div class="chips">' + r.type.sizes.map(function (t) { return '<span class="chip">' + t.value + 'px·' + t.count + '</span>'; }).join('') + '</div>';
+        if (r.type.families.length) h += '<div class="scan-note">字体：' + r.type.families.map(function (f) { return escapeHtml(f.value) + '(' + f.count + ')'; }).join('、') + '</div>';
+        h += '</div>';
+      }
+      // 圆角
+      if (r.radius.uniqueCount) {
+        h += '<div class="audit-sec"><h4>圆角 <span class="n">' + r.radius.uniqueCount + ' 种</span></h4><div class="chips">' +
+          r.radius.values.map(function (t) { return '<span class="chip">' + t.value + '·' + t.count + '</span>'; }).join('') + '</div></div>';
+      }
+      // 阴影
+      if (r.shadow.uniqueCount) {
+        h += '<div class="audit-sec"><h4>阴影 <span class="n">' + r.shadow.uniqueCount + ' 种</span></h4><div class="chips">' +
+          r.shadow.list.map(function (t) { return '<span class="chip" title="' + escapeHtml(t.value) + '">×' + t.count + '</span>'; }).join('') + '</div></div>';
+      }
+      // 间距
+      if (r.spacing.uniqueCount) {
+        h += '<div class="audit-sec"><h4>间距 <span class="n">' + r.spacing.uniqueCount + ' 种</span></h4><div class="chips">' +
+          r.spacing.values.map(function (t) {
+            var off = (Number(t.value) % 4) !== 0;
+            return '<span class="chip" style="' + (off ? 'background:#fff7ed;color:#c2410c;' : '') + '">' + t.value + '·' + t.count + '</span>';
+          }).join('') + '</div>';
+        if (r.spacing.offGrid.length) h += '<div class="scan-note">橙色 = 不在 4px 网格</div>';
+        h += '</div>';
+      }
+      return h;
+    }
 
     function showStatus(text, cls) {
       status.textContent = text;
