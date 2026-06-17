@@ -399,13 +399,30 @@ test("rebuildColorSystem: primary=most-used chromatic, semantics by hue, neutral
 test("rebuildTypeScale: most-frequent mid size = body, neighbors get roles", () => {
   const obs = { texts: [
     { size: 14 }, { size: 14 }, { size: 14 }, // body (most frequent, in 12–18)
-    { size: 12 }, { size: 16 }, { size: 20 }, { size: 28 },
+    { size: 11 }, { size: 20 }, { size: 28 }, // well-separated → no merging
   ] };
   const ts = rebuildTypeScale(obs);
   const body = ts.roles.find((r) => r.role === "body");
   assert(body && body.size === 14, "body = 14");
-  assert(ts.roles.find((r) => r.size === 12).role !== "body", "12 is not body");
-  eq(ts.mapping.length, ts.roles.length, "one mapping per role");
+  assert(!ts.roles.some((r) => r.size === 11 && r.role === "body"), "11 is not body");
+  eq(ts.mapping.length, 4, "one mapping per distinct raw size");
+});
+
+test("rebuildTypeScale consolidation: merges ±1 noise, keeps distinct steps", () => {
+  const obs = { texts: [
+    { size: 14 }, { size: 14 }, { size: 14 }, { size: 14 }, // 14 dominant
+    { size: 13 }, { size: 12 },                              // noise around 14
+    { size: 16 }, { size: 16 }, { size: 16 }, { size: 17 },  // 16 + noise
+    { size: 20 }, { size: 24 },                              // distinct
+  ] };
+  const ts = rebuildTypeScale(obs);
+  eq(ts.rawCount, 7, "7 distinct raw sizes");
+  assert(ts.roles.length < ts.rawCount, "consolidated to fewer levels (" + ts.roles.length + ")");
+  assert(ts.merges.length >= 1, "recorded merges");
+  const m13 = ts.merges.find((m) => m.from === 13);
+  assert(m13 && m13.to === 14, "13 → 14 (folds into nearest common)");
+  eq(ts.mapping.length, 7, "every raw size has a mapping");
+  assert(ts.mapping.every((m) => /^font\.size\./.test(m.to)), "all map to a role token");
 });
 
 test("rebuildRadius / rebuildSpacing: cluster, name, snap to grid", () => {
@@ -427,7 +444,9 @@ test("buildRebuildPlan: aggregates all dims + flat mapping + JSON round-trips", 
   };
   const plan = buildRebuildPlan(obs, { colorDelta: 2.5 });
   assert(plan.tokenCount > 0, "produces tokens");
-  eq(plan.mapping.length, plan.tokenCount, "every token has exactly one raw→token mapping");
+  // mapping is raw→token (one per raw value / cluster member), so ≥ token count
+  assert(plan.mapping.length >= plan.tokenCount, "raw→token mapping covers at least every token");
+  assert(plan.mapping.every((m) => m.from != null && typeof m.to === "string" && m.to.length), "mapping well-formed");
   const json = JSON.parse(rebuildToJson(plan));
   assert(json.$meta && json.color && json.font && json.font.size, "JSON has expected top-level shape");
   assert(json.color.primary, "primary present in JSON");

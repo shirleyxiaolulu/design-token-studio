@@ -1578,17 +1578,42 @@ function rebuildLStep(L) {
   var idx = Math.round((100 - L) / 100 * (REBUILD_STEPS.length - 1));
   return Math.max(0, Math.min(REBUILD_STEPS.length - 1, idx));
 }
+// 收敛（保留常用值）：把一组带频率的数值合并成少量「档」。
+// 以用得最多的值为代表，近似/偶发值并入最近的代表档；返回档位、原始值→档位映射、合并清单。
+function consolidateNumbers(tally, absTol, relTol) {
+  var byFreq = tally.slice().sort(function (a, b) { return b.count - a.count || a.value - b.value; });
+  var levels = [];
+  byFreq.forEach(function (t) {
+    var nearest = null, nd = Infinity;
+    for (var i = 0; i < levels.length; i++) { var d = Math.abs(t.value - levels[i].value); if (d < nd) { nd = d; nearest = levels[i]; } }
+    var tol = Math.max(absTol, relTol * t.value);
+    if (t.count <= 1) tol *= 1.8;               // 偶发值（仅 1 次）更容易并入
+    if (nearest && nd <= tol) nearest.count += t.count;  // 并入更高频的档
+    else levels.push({ value: t.value, count: t.count });
+  });
+  var map = {}, merges = [];
+  tally.forEach(function (t) {
+    var nearest = levels[0], nd = Math.abs(t.value - levels[0].value);
+    for (var i = 1; i < levels.length; i++) { var d = Math.abs(t.value - levels[i].value); if (d < nd) { nd = d; nearest = levels[i]; } }
+    map[t.value] = nearest.value;
+    if (nearest.value !== t.value) merges.push({ from: t.value, to: nearest.value, count: t.count });
+  });
+  levels.sort(function (a, b) { return a.value - b.value; });
+  return { levels: levels, map: map, merges: merges };
+}
 function rebuildColorSystem(obs, opts) {
   opts = opts || {};
   var delta = opts.colorDelta == null ? 2.5 : opts.colorDelta;
   var chromaT = opts.chromaNeutral == null ? 10 : opts.chromaNeutral;
   var hexes = (obs.fills || []).map(function (f) { return f.hex; }).concat((obs.strokes || []).map(function (s) { return s.hex; }));
   var clusters = auditClusterColors(hexes, delta).map(function (c) {
-    return { hex: c.rep, count: c.count, L: auditHexToLab(c.rep).L, chroma: auditChroma(c.rep), hue: rebuildHueDeg(c.rep) };
+    return { hex: c.rep, count: c.count, members: c.members, L: auditHexToLab(c.rep).L, chroma: auditChroma(c.rep), hue: rebuildHueDeg(c.rep) };
   });
   var neutrals = clusters.filter(function (c) { return auditIsNeutral(c.hex, chromaT); });
   var chromatics = clusters.filter(function (c) { return !auditIsNeutral(c.hex, chromaT); });
   var mapping = [];
+  // 映射表记录簇内每个原始 hex → token（阶段③写回绑定要靠它）
+  function mapCluster(c, name) { (c.members || [c.hex]).forEach(function (h) { mapping.push({ kind: 'color', from: h, to: name }); }); }
 
   // 中性阶：按亮度降序映射到最近标准阶（冲突时顺延到空位）
   neutrals.sort(function (a, b) { return b.L - a.L; });
@@ -1599,7 +1624,7 @@ function rebuildColorSystem(obs, opts) {
     while (usedStep[idx] && idx > 0) idx--;
     usedStep[idx] = true;
     var step = REBUILD_STEPS[idx], name = 'color.neutral.' + step;
-    mapping.push({ kind: 'color', from: c.hex, to: name });
+    mapCluster(c, name);
     return { name: name, step: step, hex: c.hex, count: c.count };
   }).sort(function (a, b) { return a.step - b.step; });
 
@@ -1613,7 +1638,7 @@ function rebuildColorSystem(obs, opts) {
     family.sort(function (a, b) { return b.L - a.L; });
     primaryRamp = family.map(function (c) {
       var step = REBUILD_STEPS[rebuildLStep(c.L)], name = 'color.primary.' + step;
-      mapping.push({ kind: 'color', from: c.hex, to: name });
+      mapCluster(c, name);
       return { name: name, step: step, hex: c.hex, count: c.count };
     });
     // 语义色：从非主色家族的彩色簇里，按色相带各取最频繁者
@@ -1626,7 +1651,7 @@ function rebuildColorSystem(obs, opts) {
       if (bands[band]) {
         var c = bands[band], name = 'color.' + band;
         semantic[band] = { name: name, hex: c.hex, count: c.count, hue: Math.round(c.hue) };
-        mapping.push({ kind: 'color', from: c.hex, to: name });
+        mapCluster(c, name);
         used[c.hex] = true;
       }
     });
@@ -1635,7 +1660,7 @@ function rebuildColorSystem(obs, opts) {
     chromatics.filter(function (c) { return !used[c.hex]; }).slice(0, 4).forEach(function (c) {
       var name = 'color.accent.' + ai;
       accents.push({ name: name, hex: c.hex, count: c.count });
-      mapping.push({ kind: 'color', from: c.hex, to: name });
+      mapCluster(c, name);
       ai++;
     });
   }
@@ -1643,51 +1668,63 @@ function rebuildColorSystem(obs, opts) {
 }
 function rebuildTypeScale(obs) {
   var texts = obs.texts || [];
-  var sizeTally = auditTally(texts.map(function (t) { return t.size; })).filter(function (t) { return typeof t.value === 'number'; });
-  var sorted = sizeTally.slice().sort(function (a, b) { return a.value - b.value; });
-  if (!sorted.length) return { roles: [], mapping: [] };
-  // body = 12–18 内最频繁的字号；否则取中位数那一档
+  var tally = auditTally(texts.map(function (t) { return t.size; })).filter(function (t) { return typeof t.value === 'number'; });
+  if (!tally.length) return { roles: [], mapping: [], merges: [], rawCount: 0 };
+  var cons = consolidateNumbers(tally, 1.5, 0.06);   // 保留常用值，合并 ±1 噪声/偶发
+  var levels = cons.levels;
+  // body = 12–18 内最频繁的档；否则取中位
   var body = null, bestCount = -1;
-  sizeTally.forEach(function (t) { if (t.value >= 12 && t.value <= 18 && t.count > bestCount) { bestCount = t.count; body = t.value; } });
-  if (body == null) body = sorted[Math.floor(sorted.length / 2)].value;
+  levels.forEach(function (l) { if (l.value >= 12 && l.value <= 18 && l.count > bestCount) { bestCount = l.count; body = l.value; } });
+  if (body == null) body = levels[Math.floor(levels.length / 2)].value;
   var bodyIdx = 0;
-  for (var i = 0; i < sorted.length; i++) { if (sorted[i].value === body) { bodyIdx = i; break; } }
+  for (var i = 0; i < levels.length; i++) { if (levels[i].value === body) { bodyIdx = i; break; } }
   var below = ['callout', 'footnote', 'caption', 'caption2', 'micro'];
   var above = ['headline', 'subtitle', 'title3', 'title2', 'title1', 'largeTitle', 'display'];
-  var mapping = [];
-  var roles = sorted.map(function (t, i) {
+  var roleOf = {};
+  var roles = levels.map(function (l, i) {
     var off = i - bodyIdx, role;
     if (off === 0) role = 'body';
     else if (off < 0) role = below[(-off) - 1] || ('xs' + (-off));
     else role = above[off - 1] || ('xl' + off);
     var name = 'font.size.' + role;
-    mapping.push({ kind: 'size', from: t.value, to: name });
-    return { role: role, name: name, size: t.value, count: t.count };
+    roleOf[l.value] = name;
+    return { role: role, name: name, size: l.value, count: l.count };
   });
-  return { roles: roles, mapping: mapping };
+  // 映射：每个原始字号 → 其所属档的角色 token
+  var mapping = tally.map(function (t) { return { kind: 'size', from: t.value, to: roleOf[cons.map[t.value]] }; });
+  return { roles: roles, mapping: mapping, merges: cons.merges, rawCount: tally.length };
 }
 function rebuildRadius(obs) {
-  var clusters = auditClusterNumbers(obs.radii || [], 2).sort(function (a, b) { return a.rep - b.rep; });
-  var names = ['sm', 'md', 'lg', 'xl', '2xl', '3xl'], mapping = [];
-  var scale = clusters.map(function (c, i) {
-    var name = 'radius.' + (c.rep >= 100 ? 'full' : (names[i] || ('s' + i)));
-    mapping.push({ kind: 'radius', from: c.rep, to: name });
-    return { name: name, value: c.rep, count: c.count };
+  var tally = auditTally(obs.radii || []);
+  if (!tally.length) return { scale: [], mapping: [], merges: [], rawCount: 0 };
+  var cons = consolidateNumbers(tally, 2, 0.25);
+  var names = ['sm', 'md', 'lg', 'xl', '2xl', '3xl'], nameOf = {};
+  var scale = cons.levels.map(function (l, i) {
+    var name = 'radius.' + (l.value >= 100 ? 'full' : (names[i] || ('s' + i)));
+    nameOf[l.value] = name;
+    return { name: name, value: l.value, count: l.count };
   });
-  return { scale: scale, mapping: mapping };
+  var mapping = tally.map(function (t) { return { kind: 'radius', from: t.value, to: nameOf[cons.map[t.value]] }; });
+  return { scale: scale, mapping: mapping, merges: cons.merges, rawCount: tally.length };
 }
 function rebuildSpacing(obs, grid) {
   grid = grid || 4;
-  var clusters = auditClusterNumbers(obs.spacings || [], 1).sort(function (a, b) { return a.rep - b.rep; });
-  var mapping = [];
-  var scale = clusters.map(function (c, i) {
-    var snapped = Math.round(c.rep / grid) * grid;
-    if (snapped <= 0) snapped = c.rep;
-    var name = 'space.' + (i + 1);
-    mapping.push({ kind: 'spacing', from: c.rep, to: name });
-    return { name: name, value: snapped, raw: c.rep, count: c.count };
+  var tally = auditTally(obs.spacings || []);
+  if (!tally.length) return { scale: [], mapping: [], merges: [], rawCount: 0 };
+  var cons = consolidateNumbers(tally, 2, 0.15);
+  // 档位吸附到网格，并合并吸附后撞车的档
+  var snapOf = {}, byVal = {};
+  cons.levels.forEach(function (l) {
+    var v = Math.round(l.value / grid) * grid; if (v <= 0) v = l.value;
+    snapOf[l.value] = v;
+    if (!byVal[v]) byVal[v] = { value: v, count: 0 }; byVal[v].count += l.count;
   });
-  return { scale: scale, mapping: mapping };
+  var levels = Object.keys(byVal).map(function (k) { return byVal[k]; }).sort(function (a, b) { return a.value - b.value; });
+  var nameOf = {};
+  var scale = levels.map(function (l, i) { var name = 'space.' + (i + 1); nameOf[l.value] = name; return { name: name, value: l.value, count: l.count }; });
+  var mapping = tally.map(function (t) { return { kind: 'spacing', from: t.value, to: nameOf[snapOf[cons.map[t.value]]] }; });
+  var merges = cons.merges.map(function (m) { return { from: m.from, to: Math.round(m.to / grid) * grid, count: m.count }; });
+  return { scale: scale, mapping: mapping, merges: merges, rawCount: tally.length };
 }
 function rebuildShadow(obs) {
   var map = {};

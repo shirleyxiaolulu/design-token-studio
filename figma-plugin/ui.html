@@ -396,6 +396,17 @@
       function sec(title, n, body) {
         return '<div class="audit-sec"><h4>' + title + ' <span class="n">' + n + '</span></h4>' + body + '</div>';
       }
+      // 收敛标签：原始 N 档 → 收敛 M 档
+      function consLabel(rawCount, levelCount) {
+        return (rawCount > levelCount) ? (rawCount + ' → ' + levelCount + ' 档') : (levelCount + ' 档');
+      }
+      // 合并清单：13→14、15→16…
+      function mergeNote(merges) {
+        if (!merges || !merges.length) return '';
+        var txt = merges.slice(0, 10).map(function (m) { return m.from + '→' + m.to; }).join('、');
+        if (merges.length > 10) txt += ' 等 ' + merges.length + ' 项';
+        return '<div class="scan-note">已合并：' + txt + '</div>';
+      }
       var c = p.colors, h = '';
       h += '<div class="audit-summary">共重建 ' + p.tokenCount + ' 个 token · 草案，仅展示，未改动文件</div>';
       if (c.neutral.length) h += sec('中性色', c.neutral.length, c.neutral.map(colorRow).join(''));
@@ -404,19 +415,19 @@
       if (semKeys.length) h += sec('语义色', semKeys.length, semKeys.map(function (k) { return colorRow(c.semantic[k]); }).join(''));
       if (c.accents.length) h += sec('强调色', c.accents.length, c.accents.map(colorRow).join(''));
       if (p.type.roles.length) {
-        h += sec('字体层级', p.type.roles.length, p.type.roles.map(function (r) {
+        h += sec('字体层级', consLabel(p.type.rawCount, p.type.roles.length), p.type.roles.map(function (r) {
           return '<div class="tk"><span class="tk-name">' + escapeHtml(r.role) + '</span><span class="tk-val">' + r.size + 'px</span></div>';
-        }).join(''));
+        }).join('') + mergeNote(p.type.merges));
       }
       if (p.radius.scale.length) {
-        h += sec('圆角', p.radius.scale.length, '<div class="chips">' + p.radius.scale.map(function (r) {
+        h += sec('圆角', consLabel(p.radius.rawCount, p.radius.scale.length), '<div class="chips">' + p.radius.scale.map(function (r) {
           return '<span class="chip">' + escapeHtml(r.name.replace('radius.', '')) + ' ' + r.value + '</span>';
-        }).join('') + '</div>');
+        }).join('') + '</div>' + mergeNote(p.radius.merges));
       }
       if (p.spacing.scale.length) {
-        h += sec('间距', p.spacing.scale.length, '<div class="chips">' + p.spacing.scale.map(function (s) {
+        h += sec('间距', consLabel(p.spacing.rawCount, p.spacing.scale.length), '<div class="chips">' + p.spacing.scale.map(function (s) {
           return '<span class="chip">' + escapeHtml(s.name.replace('space.', 's')) + ' ' + s.value + '</span>';
-        }).join('') + '</div>');
+        }).join('') + '</div>' + mergeNote(p.spacing.merges));
       }
       if (p.shadow.scale.length) {
         h += sec('阴影', p.shadow.scale.length, '<div class="chips">' + p.shadow.scale.map(function (s) {
