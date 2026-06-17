@@ -1557,6 +1557,12 @@ function buildAuditReport(obs, opts) {
 // === REBUILD-CORE-START (纯函数；依赖 AUDIT-CORE，可在 Node 切片单测) ===
 // 阶段②：把采集到的原始样式聚类、推断语义角色，重建成一套干净 token + 映射表。
 var REBUILD_STEPS = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900];
+// 收敛力度档位：[absTol, relTol] 越大合并越狠、档越少。colorDelta 同理影响颜色聚类。
+var REBUILD_TIGHTNESS = {
+  loose:  { colorDelta: 1.5, font: [1.0, 0.04], radius: [1.5, 0.18], spacing: [1.5, 0.10] },
+  medium: { colorDelta: 2.5, font: [1.5, 0.06], radius: [2.0, 0.25], spacing: [2.0, 0.15] },
+  tight:  { colorDelta: 4.0, font: [2.5, 0.12], radius: [4.0, 0.40], spacing: [4.0, 0.25] },
+};
 function rebuildHueDeg(hex) {
   var rgb = auditHexToRgb(hex), r = rgb.r / 255, g = rgb.g / 255, b = rgb.b / 255;
   var max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min, h = 0;
@@ -1666,11 +1672,11 @@ function rebuildColorSystem(obs, opts) {
   }
   return { neutral: neutralRamp, primary: primaryRamp, semantic: semantic, accents: accents, mapping: mapping };
 }
-function rebuildTypeScale(obs) {
+function rebuildTypeScale(obs, absTol, relTol) {
   var texts = obs.texts || [];
   var tally = auditTally(texts.map(function (t) { return t.size; })).filter(function (t) { return typeof t.value === 'number'; });
   if (!tally.length) return { roles: [], mapping: [], merges: [], rawCount: 0 };
-  var cons = consolidateNumbers(tally, 1.5, 0.06);   // 保留常用值，合并 ±1 噪声/偶发
+  var cons = consolidateNumbers(tally, absTol == null ? 1.5 : absTol, relTol == null ? 0.06 : relTol);
   var levels = cons.levels;
   // body = 12–18 内最频繁的档；否则取中位
   var body = null, bestCount = -1;
@@ -1694,10 +1700,10 @@ function rebuildTypeScale(obs) {
   var mapping = tally.map(function (t) { return { kind: 'size', from: t.value, to: roleOf[cons.map[t.value]] }; });
   return { roles: roles, mapping: mapping, merges: cons.merges, rawCount: tally.length };
 }
-function rebuildRadius(obs) {
+function rebuildRadius(obs, absTol, relTol) {
   var tally = auditTally(obs.radii || []);
   if (!tally.length) return { scale: [], mapping: [], merges: [], rawCount: 0 };
-  var cons = consolidateNumbers(tally, 2, 0.25);
+  var cons = consolidateNumbers(tally, absTol == null ? 2 : absTol, relTol == null ? 0.25 : relTol);
   var names = ['sm', 'md', 'lg', 'xl', '2xl', '3xl'], nameOf = {};
   var scale = cons.levels.map(function (l, i) {
     var name = 'radius.' + (l.value >= 100 ? 'full' : (names[i] || ('s' + i)));
@@ -1707,11 +1713,11 @@ function rebuildRadius(obs) {
   var mapping = tally.map(function (t) { return { kind: 'radius', from: t.value, to: nameOf[cons.map[t.value]] }; });
   return { scale: scale, mapping: mapping, merges: cons.merges, rawCount: tally.length };
 }
-function rebuildSpacing(obs, grid) {
+function rebuildSpacing(obs, grid, absTol, relTol) {
   grid = grid || 4;
   var tally = auditTally(obs.spacings || []);
   if (!tally.length) return { scale: [], mapping: [], merges: [], rawCount: 0 };
-  var cons = consolidateNumbers(tally, 2, 0.15);
+  var cons = consolidateNumbers(tally, absTol == null ? 2 : absTol, relTol == null ? 0.15 : relTol);
   // 档位吸附到网格，并合并吸附后撞车的档
   var snapOf = {}, byVal = {};
   cons.levels.forEach(function (l) {
@@ -1743,15 +1749,20 @@ function rebuildShadow(obs) {
   return { scale: scale, mapping: mapping };
 }
 function buildRebuildPlan(obs, opts) {
-  var colors = rebuildColorSystem(obs, opts);
-  var type = rebuildTypeScale(obs);
-  var radius = rebuildRadius(obs);
-  var spacing = rebuildSpacing(obs, (opts && opts.grid) || 4);
+  opts = opts || {};
+  var tightness = REBUILD_TIGHTNESS[opts.tightness] ? opts.tightness : 'medium';
+  var t = REBUILD_TIGHTNESS[tightness];
+  var grid = opts.grid || 4;
+  var colorDelta = opts.colorDelta != null ? opts.colorDelta : t.colorDelta;
+  var colors = rebuildColorSystem(obs, { colorDelta: colorDelta, chromaNeutral: opts.chromaNeutral });
+  var type = rebuildTypeScale(obs, t.font[0], t.font[1]);
+  var radius = rebuildRadius(obs, t.radius[0], t.radius[1]);
+  var spacing = rebuildSpacing(obs, grid, t.spacing[0], t.spacing[1]);
   var shadow = rebuildShadow(obs);
   var mapping = [].concat(colors.mapping, type.mapping, radius.mapping, spacing.mapping, shadow.mapping);
   var tokenCount = colors.neutral.length + colors.primary.length + Object.keys(colors.semantic).length + colors.accents.length
     + type.roles.length + radius.scale.length + spacing.scale.length + shadow.scale.length;
-  return { colors: colors, type: type, radius: radius, spacing: spacing, shadow: shadow, mapping: mapping, tokenCount: tokenCount };
+  return { tightness: tightness, colors: colors, type: type, radius: radius, spacing: spacing, shadow: shadow, mapping: mapping, tokenCount: tokenCount };
 }
 function rebuildSetDeep(obj, dotted, val) {
   var parts = dotted.split('.'), cur = obj;
@@ -1923,7 +1934,7 @@ figma.ui.onmessage = async (msg) => {
       figma.ui.postMessage({ type: 'progress', message: '正在聚类并重建干净 token...' });
       figma.ui.resize(360, 720);
       var rbObs = harvestSelection(rbSel, 20000);
-      var rbPlan = buildRebuildPlan(rbObs, { colorDelta: (msg.colorDelta || 2.5) });
+      var rbPlan = buildRebuildPlan(rbObs, { tightness: (msg.tightness || 'medium') });
       figma.ui.postMessage({ type: 'rebuild-result', plan: rbPlan, json: rebuildToJson(rbPlan) });
     }
   } catch (err) {

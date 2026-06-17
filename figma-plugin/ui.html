@@ -86,6 +86,12 @@
     .tk { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 11px; }
     .tk-name { flex: 1; color: #444; font-family: 'SF Mono', monospace; }
     .tk-val { color: #999; font-family: 'SF Mono', monospace; }
+    .seg-label { font-size: 10px; color: #999; margin-top: 10px; margin-bottom: 4px; }
+    .seg { display: flex; border: 1px solid #ddd; border-radius: 8px; overflow: hidden; }
+    .seg button { flex: 1; height: 30px; border: none; border-right: 1px solid #eee; background: #fff; color: #666; font-size: 12px; cursor: pointer; transition: all 0.15s; }
+    .seg button:last-child { border-right: none; }
+    .seg button:hover { color: #6533E8; }
+    .seg button.active { background: #6533E8; color: #fff; }
   </style>
 </head>
 <body>
@@ -115,6 +121,12 @@
     <p class="subtitle" style="margin-top:4px; margin-bottom:10px;">选中画板/图层 → 扫描已用样式，生成审计报告（阶段①，只读不改文件）</p>
     <button class="btn btn-outline" id="auditBtn" style="margin-top:0;">① 扫描选中内容 · 生成审计</button>
     <div class="audit-result" id="auditResult"></div>
+    <div class="seg-label">收敛力度（合并近似/偶发值的狠劲）</div>
+    <div class="seg" id="tightnessSeg">
+      <button type="button" data-tight="loose">松</button>
+      <button type="button" data-tight="medium" class="active">中</button>
+      <button type="button" data-tight="tight">紧</button>
+    </div>
     <button class="btn btn-outline" id="rebuildBtn" style="margin-top:8px;">② 重建为干净 token</button>
     <div class="audit-result" id="rebuildResult"></div>
   </div>
@@ -143,6 +155,7 @@
     const rebuildBtn = document.getElementById('rebuildBtn');
     const rebuildResult = document.getElementById('rebuildResult');
     let rebuildJson = '';
+    let tightness = 'medium';
 
     let parsedData = null;
 
@@ -290,11 +303,22 @@
     });
 
     // 2.0 反推 · 阶段②：重建干净 token
-    rebuildBtn.addEventListener('click', () => {
+    function runRebuild() {
       rebuildResult.className = 'audit-result';
       rebuildResult.innerHTML = '';
       showStatus('正在聚类并重建干净 token...', 'progress');
-      parent.postMessage({ pluginMessage: { type: 'rebuild' } }, '*');
+      parent.postMessage({ pluginMessage: { type: 'rebuild', tightness: tightness } }, '*');
+    }
+    rebuildBtn.addEventListener('click', runRebuild);
+
+    // 收敛力度：松 / 中 / 紧；已出结果时切换即重算
+    document.getElementById('tightnessSeg').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-tight]');
+      if (!btn) return;
+      tightness = btn.dataset.tight;
+      var sibs = btn.parentNode.children;
+      for (var i = 0; i < sibs.length; i++) sibs[i].classList.toggle('active', sibs[i] === btn);
+      if (rebuildResult.classList.contains('show')) runRebuild();
     });
 
     window.onmessage = (event) => {
@@ -407,8 +431,9 @@
         if (merges.length > 10) txt += ' 等 ' + merges.length + ' 项';
         return '<div class="scan-note">已合并：' + txt + '</div>';
       }
+      var tightLabel = { loose: '松', medium: '中', tight: '紧' }[p.tightness] || '中';
       var c = p.colors, h = '';
-      h += '<div class="audit-summary">共重建 ' + p.tokenCount + ' 个 token · 草案，仅展示，未改动文件</div>';
+      h += '<div class="audit-summary">共重建 ' + p.tokenCount + ' 个 token · 力度【' + tightLabel + '】· 草案，仅展示，未改动文件</div>';
       if (c.neutral.length) h += sec('中性色', c.neutral.length, c.neutral.map(colorRow).join(''));
       if (c.primary.length) h += sec('主色', c.primary.length, c.primary.map(colorRow).join(''));
       var semKeys = Object.keys(c.semantic);

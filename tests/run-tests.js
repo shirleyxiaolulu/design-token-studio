@@ -452,6 +452,20 @@ test("buildRebuildPlan: aggregates all dims + flat mapping + JSON round-trips", 
   assert(json.color.primary, "primary present in JSON");
 });
 
+test("buildRebuildPlan tightness: tight ≤ medium ≤ loose levels; default=medium", () => {
+  const obs = { texts: [
+    { size: 12 }, { size: 13 }, { size: 14 }, { size: 14 }, { size: 15 }, { size: 16 },
+    { size: 17 }, { size: 18 }, { size: 20 }, { size: 24 }, { size: 28 },
+  ] };
+  const loose = buildRebuildPlan(obs, { tightness: "loose" }).type.roles.length;
+  const medium = buildRebuildPlan(obs, { tightness: "medium" }).type.roles.length;
+  const tight = buildRebuildPlan(obs, { tightness: "tight" }).type.roles.length;
+  assert(tight <= medium && medium <= loose, "tighter → fewer levels (" + tight + "/" + medium + "/" + loose + ")");
+  assert(tight < loose, "tight strictly fewer than loose for noisy input");
+  eq(buildRebuildPlan(obs).tightness, "medium", "default tightness = medium");
+  eq(buildRebuildPlan(obs, { tightness: "bogus" }).tightness, "medium", "unknown tightness falls back to medium");
+});
+
 // --- report ----------------------------------------------------------------
 console.log(`\n${passed} passed, ${failed} failed (${passed + failed} total)`);
 process.exit(failed ? 1 : 0);
