@@ -417,8 +417,14 @@
       if (c.primary.length) h += sec('主色', c.primary.length, c.primary.map(colorRow).join(''));
       if (c.neutral.length) h += sec('中性色', c.neutral.length, c.neutral.map(colorRow).join(''));
       var semKeys = Object.keys(c.semantic);
-      if (semKeys.length) h += sec('语义色', semKeys.length, semKeys.map(function (k) { return colorRow(c.semantic[k]); }).join(''));
+      if (semKeys.length) h += sec('功能色', semKeys.length, semKeys.map(function (k) { return colorRow(c.semantic[k]); }).join(''));
       if (c.accents.length) h += sec('强调色', c.accents.length, c.accents.map(colorRow).join(''));
+      // 按真实用途识别的语义角色（背景/文本/边框）
+      var ctx = p.context || {};
+      function ctxRow(m) { return '<div class="tk"><span class="sw sw-sm" style="background:' + m.hex + '"></span><span class="tk-name">' + m.hex + '</span><span class="tk-val">实际用途</span></div>'; }
+      if (ctx.bg && ctx.bg.length) h += sec('背景色 · 大面积填充', Math.min(ctx.bg.length, 4), ctx.bg.slice(0, 4).map(ctxRow).join(''));
+      if (ctx.text && ctx.text.length) h += sec('文本色 · 文字图层', Math.min(ctx.text.length, 5), ctx.text.slice(0, 5).map(ctxRow).join(''));
+      if (ctx.border && ctx.border.length) h += sec('边框色 · 描边', Math.min(ctx.border.length, 3), ctx.border.slice(0, 3).map(ctxRow).join(''));
       if (p.type.roles.length) {
         h += sec('字体层级', p.type.roles.length + ' 档', p.type.roles.map(function (r) {
           return '<div class="tk"><span class="tk-name">' + escapeHtml(r.role) + '</span><span class="tk-val">' + r.size + 'px</span></div>';

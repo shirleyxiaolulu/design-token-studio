@@ -1744,7 +1744,7 @@ function buildRebuildPlan(obs, opts) {
   var mapping = [].concat(colors.mapping, type.mapping, radius.mapping, spacing.mapping, shadow.mapping);
   var tokenCount = colors.neutral.length + colors.primary.length + Object.keys(colors.semantic).length + colors.accents.length
     + type.roles.length + radius.scale.length + spacing.scale.length + shadow.scale.length;
-  return { theme: rebuildDetectTheme(obs), colors: colors, type: type, radius: radius, spacing: spacing, shadow: shadow, mapping: mapping, tokenCount: tokenCount };
+  return { theme: rebuildDetectTheme(obs), context: rebuildContextColors(obs), colors: colors, type: type, radius: radius, spacing: spacing, shadow: shadow, mapping: mapping, tokenCount: tokenCount };
 }
 function rebuildSetDeep(obj, dotted, val) {
   var parts = dotted.split('.'), cur = obj;
@@ -1765,9 +1765,7 @@ function rebuildToJson(plan) {
 }
 // 把反推 plan 翻译成正向预览 generatePreview 吃的数据结构（纯函数，便于单测）。
 // 单模式：dark=light。从中性阶推导 文本/背景/边框 语义层，让预览和正向一样丰满。
-// 色阶推导（与 Web 端 HSL buildScale 同口径）：从一个锚色生成 10 阶基础色（引用色）。
-// 锚色精确落在第 5 阶，偏移向两端渐隐，让色阶看起来和网页端一致、不再单薄。
-function rebuildClampN(v, lo, hi) { return Math.min(Math.max(v, lo), hi); }
+// RGB→HSL（仅供明暗判定取亮度用）。
 function rebuildRgbToHsl(hex) {
   var c = auditHexToRgb(hex), r = c.r / 255, g = c.g / 255, b = c.b / 255;
   var max = Math.max(r, g, b), min = Math.min(r, g, b), h = 0, s = 0, l = (max + min) / 2;
@@ -1778,28 +1776,7 @@ function rebuildRgbToHsl(hex) {
   }
   return { h: h, s: s * 100, l: l * 100 };
 }
-function rebuildHslToHex(h, s, l) {
-  var hue = ((h % 360) + 360) % 360, sat = rebuildClampN(s, 0, 100) / 100, light = rebuildClampN(l, 0, 100) / 100;
-  var cc = (1 - Math.abs(2 * light - 1)) * sat, x = cc * (1 - Math.abs((hue / 60) % 2 - 1)), m = light - cc / 2, r = 0, g = 0, b = 0;
-  if (hue < 60) { r = cc; g = x; } else if (hue < 120) { r = x; g = cc; } else if (hue < 180) { g = cc; b = x; }
-  else if (hue < 240) { g = x; b = cc; } else if (hue < 300) { r = x; b = cc; } else { r = cc; b = x; }
-  var toH = function (n) { return rebuildClampN(Math.round((n + m) * 255), 0, 255).toString(16).padStart(2, '0'); };
-  return ('#' + toH(r) + toH(g) + toH(b)).toUpperCase();
-}
-var REBUILD_LIGHTS = [97, 92, 84, 74, 64, 54, 44, 34, 24, 15];
-var REBUILD_SATS = [45, 52, 60, 68, 76, 84, 82, 78, 70, 62];
-function rebuildScaleFrom(hex) {
-  var hsl = rebuildRgbToHsl(hex), lo = hsl.l - REBUILD_LIGHTS[5], so = hsl.s - REBUILD_SATS[5];
-  return REBUILD_LIGHTS.map(function (light, i) {
-    var blend = Math.max(0, 1 - Math.abs(i - 5) * 0.18);
-    return rebuildHslToHex(hsl.h, rebuildClampN(REBUILD_SATS[i] + so * blend, 10, 100), rebuildClampN(light + lo * blend, 3, 99));
-  });
-}
-function rebuildGrayScaleFrom(hex) {
-  var hsl = rebuildRgbToHsl(hex), sat = Math.min(hsl.s, 12);
-  return REBUILD_LIGHTS.map(function (light, i) { return rebuildHslToHex(hsl.h, sat, light - (i > 7 ? 2 : 0)); });
-}
-// 与 Web 端一致的基础色谱色相锚点（generatePreview 也只渲染这几族 + primary/gray）。
+// 与基础色谱一致的色相锚点（generatePreview 只渲染这几族 + primary/gray）。
 var REBUILD_SPECTRUM = { red: 4, orange: 32, yellow: 52, green: 146, cyan: 188, blue: 214, purple: 268 };
 function rebuildHueFamily(hue) {
   var best = null, bd = 999;
@@ -1822,133 +1799,64 @@ function rebuildDetectTheme(obs) {
   }
   return rebuildRgbToHsl(best).l < 50 ? 'dark' : 'light';
 }
-function rebuildToPreviewData(plan) {
-  var colorTokens = {}, dimTokens = {};
-  function fn(key) { return key.replace(/\./g, '/'); }
-  function addColor(key, hex, tier, usage, dark) {
-    colorTokens[key] = { figmaName: fn(key), tier: tier || 'primitive', light: hex, dark: dark || hex, usage: usage || '' };
-  }
-  function addDim(key, value, extra) {
-    var o = { figmaName: fn(key), tier: 'primitive', value: value, type: 'dimension', usage: '' };
-    if (extra) for (var k in extra) o[k] = extra[k];
-    dimTokens[key] = o;
-  }
-  var C = plan.colors;
-  var BASE = 5; // 锚色落在的基准档（rebuildScaleFrom 把输入放在 index 5）
-
-  // ===== 基础色 primitive：完整色谱（换绑/扩展永远够引用） =====
-  // 1) 主色族 primary：用检测主色（最常用那档）推 10 阶 → 渲染为大色块「Primary」
-  var primRep = '#3366FF';
-  if (C.primary.length) primRep = C.primary.slice().sort(function (a, b) { return (b.count * auditChroma(b.hex)) - (a.count * auditChroma(a.hex)); })[0].hex;
-  else if (C.neutral.length) primRep = C.neutral[0].hex;
-  var primaryRamp = rebuildScaleFrom(primRep);
-  primaryRamp.forEach(function (hex, i) { addColor('color.palette.primary.' + i, hex, 'primitive'); });
-  // 2) 中性族 gray（注意：generatePreview 用 'gray' 这个族名，不是 'neutral'）
-  var neutralAnchor = C.neutral.length
-    ? C.neutral.slice().sort(function (a, b) { return auditChroma(b.hex) - auditChroma(a.hex); })[0].hex
-    : primRep;
-  var grayRamp = rebuildGrayScaleFrom(neutralAnchor); // index 0=最浅 … 9=最深
-  grayRamp.forEach(function (hex, i) { addColor('color.palette.gray.' + i, hex, 'primitive'); });
-  // 3) 完整色谱 red/orange/yellow/green/cyan/blue/purple：被检测到的族用检测锚（保真），其余用通用锚
-  var familyAnchor = {};
-  function claim(hex, priority) {
-    if (auditChroma(hex) < 18) return;          // 近灰色不去锚定鲜明色族，免得整族发灰
-    var fam = rebuildHueFamily(rebuildHueDeg(hex));
-    if (!familyAnchor[fam] || priority > familyAnchor[fam].p) familyAnchor[fam] = { hex: hex, p: priority };
-  }
-  Object.keys(C.semantic).forEach(function (k) { claim(C.semantic[k].hex, 50); });
-  C.accents.forEach(function (t) { claim(t.hex, 10); });
-  for (var fam in REBUILD_SPECTRUM) {
-    var anchor = familyAnchor[fam] ? familyAnchor[fam].hex : rebuildHslToHex(REBUILD_SPECTRUM[fam], 78, REBUILD_LIGHTS[BASE]);
-    rebuildScaleFrom(anchor).forEach(function (hex, i) { addColor('color.palette.' + fam + '.' + i, hex, 'primitive'); });
-  }
-  // P(fam, lightIdx, darkIdx) → 取色族对应阶的 hex（明/暗各取一阶）
-  function P(fam, li, di) { var l = colorTokens['color.palette.' + fam + '.' + li], d = colorTokens['color.palette.' + fam + '.' + (di == null ? li : di)]; return { light: l ? l.light : null, dark: d ? d.light : null }; }
-  function G(li, di) { return { light: grayRamp[rebuildClampN(li, 0, 9)], dark: grayRamp[rebuildClampN(di == null ? li : di, 0, 9)] }; }
-
-  // ===== 语义色 semantic：角色名 + 引用基础色；品牌色保留 8 级梯度（与 Web 端一致）=====
-  // 品牌 8 级（明/暗各引用 primary 不同阶，主色明确为 primary）
-  var brand = [
-    ['subtle', 0, 9, '品牌最浅底色'], ['soft', 1, 8, '品牌浅色'], ['muted', 2, 7, '品牌中浅色'],
-    ['primary.hover', 4, 4, '主操作悬停'], ['primary', BASE, BASE, '主色 · 主操作'],
-    ['primary.active', 6, 6, '主操作按下'], ['emphasis', 7, 3, '品牌深强调'], ['strong', 8, 2, '品牌最深色'],
-  ];
-  brand.forEach(function (b) { var c = P('primary', b[1], b[2]); addColor('color.brand.' + b[0], c.light, 'semantic', b[3] + ' → primary.' + b[1], c.dark); });
-
-  // 功能色：基准 + 浅底，明/暗各引用所属色族不同阶
-  var fname = { success: 'success', warning: 'warning', error: 'danger', info: 'info' };
-  var fusage = { success: '成功', warning: '警告', error: '危险 / 错误', info: '信息' };
-  Object.keys(C.semantic).forEach(function (k) {
-    var fam = rebuildHueFamily(rebuildHueDeg(C.semantic[k].hex)), nm = fname[k] || k;
-    var base = P(fam, BASE, BASE), bg = P(fam, 1, 8);
-    addColor('color.function.' + nm, base.light, 'semantic', (fusage[k] || '') + ' → ' + fam + '.' + BASE, base.dark);
-    addColor('color.function.' + nm + '-bg', bg.light, 'semantic', (fusage[k] || '') + ' · 浅底', bg.dark);
-  });
-  C.accents.forEach(function (t, i) {
-    var fam = rebuildHueFamily(rebuildHueDeg(t.hex)), c = P(fam, BASE, BASE);
-    addColor('color.auxiliary.' + (i + 1), c.light, 'semantic', '辅助 / 强调 → ' + fam + '.' + BASE, c.dark);
-  });
-
-  // 文本/背景/边框：明暗各引用 gray 阶不同端（明=浅底深字，暗=深底浅字），与 Web 端映射一致
-  var bgPage = G(0, 9), bgSurf = G(0, 8), bgElev = G(0, 7), bgOver = G(9, 9);
-  addColor('color.bg.page', bgPage.light, 'semantic', '页面背景', bgPage.dark);
-  addColor('color.bg.surface', bgSurf.light, 'semantic', '容器背景', bgSurf.dark);
-  addColor('color.bg.elevated', bgElev.light, 'semantic', '浮层背景', bgElev.dark);
-  addColor('color.bg.overlay', bgOver.light, 'semantic', '遮罩', bgOver.dark);
-  var tPri = G(9, 0), tSec = G(7, 2), tTer = G(5, 4), tDis = G(4, 6);
-  addColor('color.text.primary', tPri.light, 'semantic', '主文本', tPri.dark);
-  addColor('color.text.secondary', tSec.light, 'semantic', '次文本', tSec.dark);
-  addColor('color.text.tertiary', tTer.light, 'semantic', '三级文本', tTer.dark);
-  addColor('color.text.disabled', tDis.light, 'semantic', '禁用文本', tDis.dark);
-  var bSub = G(1, 8), bDef = G(2, 7), bStr = G(3, 6);
-  addColor('color.border.subtle', bSub.light, 'semantic', '弱边框', bSub.dark);
-  addColor('color.border.default', bDef.light, 'semantic', '默认边框', bDef.dark);
-  addColor('color.border.strong', bStr.light, 'semantic', '强边框', bStr.dark);
-
-  // 字号 / 圆角 / 间距
-  plan.type.roles.forEach(function (r) {
-    addDim('font.size.' + r.role, r.size, { role: r.role.charAt(0).toUpperCase() + r.role.slice(1), weight: 400, lineHeight: Math.round(r.size * 1.5) });
-  });
-  plan.radius.scale.forEach(function (s) { addDim(s.name, s.value); });
-  plan.spacing.scale.forEach(function (s) { addDim(s.name, s.value); });
-
-  var theme = plan.theme || 'light';
+// 按「用途上下文」识别语义角色（全部用真实检测色）：
+// 背景 = 大面积容器填充（按面积，最大 = 页面）；文本 = 用在文字图层的色；边框 = 描边色。
+function rebuildContextColors(obs) {
+  var fills = obs.fills || [], strokes = obs.strokes || [], map = {};
+  function rec(hex) { if (!map[hex]) map[hex] = { hex: hex, textArea: 0, bgArea: 0, strokeCount: 0 }; return map[hex]; }
+  fills.forEach(function (f) { var m = rec(f.hex); if (f.nodeType === 'TEXT') m.textArea += (f.area || 1); else m.bgArea += (f.area || 1); });
+  strokes.forEach(function (s) { rec(s.hex).strokeCount++; });
+  var all = Object.keys(map).map(function (k) { return map[k]; });
   return {
-    name: '反推设计规范', version: 'reverse', platform: 'app-web',
-    seed: { localFont: 'pingfang', defaultMode: theme }, defaultMode: theme,
-    colorTokens: colorTokens, dimTokens: dimTokens,
+    text: all.filter(function (m) { return m.textArea > 0; }).sort(function (a, b) { return b.textArea - a.textArea; }),
+    bg: all.filter(function (m) { return m.bgArea > 0; }).sort(function (a, b) { return b.bgArea - a.bgArea; }),
+    border: all.filter(function (m) { return m.strokeCount > 0; }).sort(function (a, b) { return b.strokeCount - a.strokeCount; }),
   };
 }
-// 「保真」变量数据：用于创建变量库 + 绑定。颜色用检测到的精确簇代表（≤ΔE2.5，肉眼无差），
-// 字号/圆角/间距用 harvest 的精确去重值（不收敛）→ 绑回设计零变化。
-function rebuildUniqNums(arr) {
-  var seen = {}, out = [];
-  rebuildRoundDims(arr).forEach(function (v) { if (!seen[v]) { seen[v] = 1; out.push(v); } }); // 规整为整数后去重
-  return out.sort(function (a, b) { return a - b; });
+function rebuildDedupeColors(list, thr) {
+  var out = [];
+  (list || []).forEach(function (m) { if (!out.some(function (o) { return auditDeltaE(o.hex, m.hex) < thr; })) out.push(m); });
+  return out;
 }
-function rebuildToFaithfulData(plan, obs) {
-  obs = obs || {};
+// 统一数据构造（预览 + 变量库 + 绑定共用）：全部真实检测色 + 按用途归类的语义层。
+function rebuildToData(plan) {
   var colorTokens = {}, dimTokens = {};
   function fn(k) { return k.replace(/\./g, '/'); }
-  function addC(key, hex, tier, usage) { if (!hex) return; colorTokens[key] = { figmaName: fn(key), tier: tier || 'primitive', light: hex, dark: hex, usage: usage || '' }; }
+  function addC(key, hex, tier, usage) { if (!hex || colorTokens[key]) return; colorTokens[key] = { figmaName: fn(key), tier: tier || 'primitive', light: hex, dark: hex, usage: usage || '' }; }
   function addD(key, value, extra) { var o = { figmaName: fn(key), tier: 'primitive', value: value, type: 'dimension', usage: '' }; if (extra) for (var k in extra) o[k] = extra[k]; dimTokens[key] = o; }
-  var C = plan.colors;
-  C.neutral.forEach(function (t) { addC(t.name, t.hex, 'primitive', '中性色（原值）'); });
-  C.primary.forEach(function (t) { addC(t.name, t.hex, 'primitive', '主色族（原值）'); });
+  var C = plan.colors, ctx = plan.context || { text: [], bg: [], border: [] };
+
+  // 基础色 primitives：全部真实检测色（generatePreview 用 primary 大色块 + gray + 七色族）
+  C.primary.forEach(function (t, i) { addC('color.palette.primary.' + i, t.hex, 'primitive'); });
+  C.neutral.forEach(function (t, i) { addC('color.palette.gray.' + i, t.hex, 'primitive'); });
+  var famN = {};
+  function toFam(hex) { var f = rebuildHueFamily(rebuildHueDeg(hex)); famN[f] = famN[f] || 0; addC('color.palette.' + f + '.' + famN[f], hex, 'primitive'); famN[f]++; }
+  Object.keys(C.semantic).forEach(function (k) { toFam(C.semantic[k].hex); });
+  C.accents.forEach(function (t) { toFam(t.hex); });
+
+  // 语义色 semantic：角色名 + 真实颜色
   if (C.primary.length) {
     var pr = C.primary.slice().sort(function (a, b) { return (b.count * auditChroma(b.hex)) - (a.count * auditChroma(a.hex)); })[0];
-    addC('color.brand.primary', pr.hex, 'semantic', '主色（原值）');
+    addC('color.brand.primary', pr.hex, 'semantic', '主色');
   }
-  Object.keys(C.semantic).forEach(function (k) { addC(C.semantic[k].name, C.semantic[k].hex, 'semantic', '语义色（原值）'); });
-  C.accents.forEach(function (t) { addC(t.name, t.hex, 'semantic', '辅助色（原值）'); });
-  rebuildUniqNums((obs.texts || []).map(function (t) { return t.size; })).forEach(function (s) { addD('font.size.s' + s, s, { role: 's' + s, weight: 400, lineHeight: Math.round(s * 1.5) }); });
-  // 圆角：<100 各自一档；≥100 的全圆/胶囊合并为一个 radius.full（取最大值）
-  var rfull = 0;
-  rebuildUniqNums(obs.radii).forEach(function (r) { if (r >= 100) { if (r > rfull) rfull = r; } else addD('radius.r' + r, r); });
-  if (rfull) addD('radius.full', rfull);
-  rebuildUniqNums(obs.spacings).forEach(function (s) { addD('space.s' + s, s); });
+  var fname = { success: 'success', warning: 'warning', error: 'danger', info: 'info' };
+  var fusage = { success: '成功', warning: '警告', error: '危险 / 错误', info: '信息' };
+  Object.keys(C.semantic).forEach(function (k) { addC('color.function.' + (fname[k] || k), C.semantic[k].hex, 'semantic', fusage[k] || ''); });
+  C.accents.forEach(function (t, i) { addC('color.auxiliary.' + (i + 1), t.hex, 'semantic', '辅助 / 强调'); });
+  var bgN = ['page', 'surface', 'elevated', 'overlay'];
+  rebuildDedupeColors(ctx.bg, 2.5).slice(0, 4).forEach(function (m, i) { addC('color.bg.' + (bgN[i] || ('s' + i)), m.hex, 'semantic', '背景 · 实际大面积填充'); });
+  var txN = ['primary', 'secondary', 'tertiary', 'disabled', 'placeholder'];
+  rebuildDedupeColors(ctx.text, 2.5).slice(0, 5).forEach(function (m, i) { addC('color.text.' + (txN[i] || ('t' + i)), m.hex, 'semantic', '文本 · 实际用在文字'); });
+  var bdN = ['default', 'subtle', 'strong'];
+  rebuildDedupeColors(ctx.border, 2.5).slice(0, 3).forEach(function (m, i) { addC('color.border.' + (bdN[i] || ('b' + i)), m.hex, 'semantic', '边框 · 实际用作描边'); });
+
+  // 尺寸（plan 已规整为整数）
+  plan.type.roles.forEach(function (r) { addD('font.size.' + r.role, r.size, { role: r.role.charAt(0).toUpperCase() + r.role.slice(1), weight: 400, lineHeight: Math.round(r.size * 1.5) }); });
+  plan.radius.scale.forEach(function (s) { addD(s.name, s.value); });
+  plan.spacing.scale.forEach(function (s) { addD(s.name, s.value); });
+
   var theme = plan.theme || 'light';
-  return { name: '反推规范（保真）', version: 'reverse', platform: 'app-web', seed: { localFont: 'pingfang', defaultMode: theme }, defaultMode: theme, colorTokens: colorTokens, dimTokens: dimTokens };
+  return { name: '反推设计规范', version: 'reverse', platform: 'app-web', seed: { localFont: 'pingfang', defaultMode: theme }, defaultMode: theme, colorTokens: colorTokens, dimTokens: dimTokens };
 }
 // === REBUILD-CORE-END ===
 
@@ -2027,16 +1935,15 @@ function harvestSelection(nodes, maxNodes) {
   return obs;
 }
 
-// 反推 · 阶段②衍生：缓存上次重建结果，供「生成预览页」复用。
-// 预览走 rebuildToPreviewData(plan) → 现有 generatePreview，与网页端 JSON 粘贴同一张规范页。
+// 反推 · 阶段②衍生：缓存上次重建结果，供预览/变量库/绑定复用。
+// 预览/变量库/绑定都走 rebuildToData(plan)（真实检测色 + 角色语义层），口径统一。
 var lastRebuildPlan = null;
 
 // 阶段③后半：把选中图层「复制到新页面」后绑定到反推变量（原设计零风险）。
 // 每个属性绑到「最接近的 token 变量」；每次绑定都 try/catch，单点失败不影响整体。
 async function bindReverseVariables(plan) {
   var sel = figma.currentPage.selection;
-  var obs = harvestSelection(sel, 20000);          // 采集精确原值
-  var data = rebuildToFaithfulData(plan, obs);      // 保真：精确原色 / 原字号 / 原圆角 / 原间距
+  var data = rebuildToData(plan);                   // 真实检测色 + 角色语义层（与预览/变量库同一套）
   await syncVariables(data);                        // 创建保真变量（幂等）
   var cols = await figma.variables.getLocalVariableCollectionsAsync();
   var byName = {};
@@ -2203,7 +2110,7 @@ figma.ui.onmessage = async (msg) => {
       }
       figma.ui.postMessage({ type: 'progress', message: '正在生成规范预览页...' });
       // 翻译成正向数据 → 复用现有 generatePreview（不改动 web 端 JSON 的生成路径）
-      await generatePreview(rebuildToPreviewData(rpPlan));
+      await generatePreview(rebuildToData(rpPlan));
       figma.ui.postMessage({ type: 'result', message: '规范预览页已生成（与网页端同款，未改动原设计）' });
     }
     else if (msg.type === 'reverse-sync') {
@@ -2214,10 +2121,9 @@ figma.ui.onmessage = async (msg) => {
         return;
       }
       figma.ui.postMessage({ type: 'progress', message: '正在用反推结果创建保真变量库...' });
-      var rvObs = harvestSelection(rvSel, 20000);
-      var rvPlan = lastRebuildPlan || buildRebuildPlan(rvObs);
-      // 复用现有 syncVariables 创建路径；值为你的精确原值（与 web 端 JSON 同一条创建逻辑）
-      var rvResult = await syncVariables(rebuildToFaithfulData(rvPlan, rvObs));
+      var rvPlan = lastRebuildPlan || buildRebuildPlan(harvestSelection(rvSel, 20000));
+      // 复用现有 syncVariables；值为真实检测色 + 角色语义层（与 web 端 JSON 同一条创建逻辑）
+      var rvResult = await syncVariables(rebuildToData(rvPlan));
       figma.ui.postMessage({
         type: 'result',
         message: '保真变量库已创建：新建 ' + rvResult.created + ' · 更新 ' + rvResult.updated + '（颜色/字号均为你的精确原值，绑定零变化；仅新增变量，未改图层）',

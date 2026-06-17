@@ -406,7 +406,7 @@ test("rebuildColorSystem: vivid brand beats a more-frequent near-gray (slate) fo
     strokes: [],
   };
   // end-to-end: the chosen 主色 must be vivid (the brand), not the frequent slate gray
-  const brandPrimary = rebuildToPreviewData(buildRebuildPlan(obs, { tightness: "medium" })).colorTokens["color.brand.primary"].light;
+  const brandPrimary = rebuildToData(buildRebuildPlan(obs)).colorTokens["color.brand.primary"].light;
   assert(auditChroma(brandPrimary) > 30, "主色 is vivid (chroma " + auditChroma(brandPrimary).toFixed(0) + "), not the slate gray");
 });
 
@@ -467,10 +467,10 @@ test("rebuild dims: decimals rounded to integers, integers unchanged, collisions
   eq(r.scale.length, 2, "7.5/8/12.4 → {8,12}");
   const sp = rebuildSpacing(obs);
   assert(sp.scale.some((x) => x.value === 11) && sp.scale.every((x) => Number.isInteger(x.value)), "11.2→11, spacing integer");
-  // faithful set + JSON also integer (no decimal-named tokens)
-  const data = rebuildToFaithfulData(buildRebuildPlan(obs), obs);
-  assert(data.dimTokens["font.size.s16"], "faithful has s16 (15.5 rounded in)");
-  assert(!Object.keys(data.dimTokens).some((k) => /\.s?\d+\.\d+$/.test(k)), "no decimal-named dim tokens");
+  // unified data also integer (no decimal values / names)
+  const data = rebuildToData(buildRebuildPlan(obs));
+  Object.values(data.dimTokens).forEach((d) => assert(Number.isInteger(d.value), "dim value integer: " + d.value));
+  assert(!Object.keys(data.dimTokens).some((k) => /\d+\.\d+$/.test(k)), "no decimal-named dim tokens");
 });
 
 test("rebuildRadius / rebuildSpacing: faithful exact values (no grid snap)", () => {
@@ -502,91 +502,62 @@ test("buildRebuildPlan: aggregates all dims + flat mapping + JSON round-trips", 
   assert(json.color.primary, "primary present in JSON");
 });
 
-test("rebuildToPreviewData: complete spectrum primitives + role-named semantics", () => {
+test("rebuildContextColors: roles by usage — bg=large area, text=TEXT fills, border=strokes", () => {
   const obs = {
     fills: [].concat(
-      Array(30).fill({ hex: "#2563EB" }), Array(6).fill({ hex: "#10B981" }), Array(5).fill({ hex: "#EF4444" }),
-      Array(40).fill({ hex: "#FFFFFF" }), Array(18).fill({ hex: "#6B7280" }), Array(14).fill({ hex: "#111827" })
+      [{ hex: "#2C2A2A", nodeType: "FRAME", area: 1440 * 900 }],     // page bg (largest)
+      [{ hex: "#22262E", nodeType: "FRAME", area: 300 * 200 }],      // card surface
+      Array(40).fill({ hex: "#FFFFFF", nodeType: "TEXT", area: 120 * 20 }), // white text (most-used text)
+      Array(15).fill({ hex: "#AAAAAA", nodeType: "TEXT", area: 80 * 16 })   // gray text
     ),
-    strokes: [],
-    texts: [{ size: 14 }, { size: 14 }, { size: 20 }],
-    radii: [8, 8, 12], spacings: [8, 16], shadows: [],
+    strokes: [{ hex: "#555555" }, { hex: "#555555" }, { hex: "#444444" }],
   };
-  const data = rebuildToPreviewData(buildRebuildPlan(obs, { tightness: "medium" }));
+  const c = rebuildContextColors(obs);
+  eq(c.bg[0].hex, "#2C2A2A", "largest-area fill = page bg");
+  eq(c.text[0].hex, "#FFFFFF", "most-used TEXT fill = primary text");
+  eq(c.border[0].hex, "#555555", "most-used stroke = default border");
+});
+
+test("rebuildToData: all real colors + context-based semantic roles (no generated/derived)", () => {
+  const obs = {
+    fills: [].concat(
+      [{ hex: "#2C2A2A", nodeType: "FRAME", area: 1440 * 900 }],
+      [{ hex: "#22262E", nodeType: "FRAME", area: 300 * 200 }],
+      Array(40).fill({ hex: "#FFFFFF", nodeType: "TEXT", area: 2400 }),
+      Array(15).fill({ hex: "#AAAAAA", nodeType: "TEXT", area: 1280 }),
+      Array(20).fill({ hex: "#1ABC9C", nodeType: "RECTANGLE", area: 4800 }), // brand
+      Array(5).fill({ hex: "#EF4444", nodeType: "RECTANGLE", area: 1000 })   // red → danger
+    ),
+    strokes: [{ hex: "#555555" }],
+    texts: [{ size: 14 }, { size: 14 }, { size: 20 }], radii: [8, 12], spacings: [8, 16], shadows: [],
+  };
+  const data = rebuildToData(buildRebuildPlan(obs));
   const ct = data.colorTokens;
-  eq(data.seed.defaultMode, "light", "white-dominant design → light theme");
-  // PRIMITIVES: complete spectrum, each family renders in generatePreview's fixed list
-  const fams = ["primary", "gray", "red", "orange", "yellow", "green", "cyan", "blue", "purple"];
-  fams.forEach((f) => {
-    eq(Object.keys(ct).filter((k) => new RegExp("^color\\.palette\\." + f + "\\.\\d+$").test(k)).length, 10, f + " ramp = 10 steps");
-  });
-  // SEMANTICS: brand keeps an 8-level gradient (web parity), main is named, not numeric
-  const brandKeys = Object.keys(ct).filter((k) => k.startsWith("color.brand."));
-  eq(brandKeys.length, 8, "brand keeps 8-level gradient");
-  assert(ct["color.brand.primary"], "explicit 主色 token present");
-  assert(/主色/.test(ct["color.brand.primary"].usage), "主色 labeled in usage");
-  ["subtle", "soft", "muted", "primary.hover", "primary", "primary.active", "emphasis", "strong"].forEach((n) =>
-    assert(ct["color.brand." + n], "brand." + n + " present (named, not numeric)"));
-  assert(!Object.keys(ct).some((k) => /^color\.brand\.\d+$/.test(k)), "no numeric brand.N tokens");
-  assert(ct["color.function.success"] && ct["color.function.danger"], "function success/danger by role");
-  eq(ct["color.function.success"].light, ct["color.palette.green.5"].light, "success → green.5");
-  eq(ct["color.function.danger"].light, ct["color.palette.red.5"].light, "danger → red.5");
-  // neutral-derived layers: text darker than bg in light theme
-  const lum = (hex) => { const n = parseInt(hex.slice(1), 16); return (n >> 16) + ((n >> 8) & 255) + (n & 255); };
-  assert(lum(ct["color.text.primary"].light) < lum(ct["color.bg.page"].light), "text darker than bg (light theme)");
-  // brand carries proper light/dark (subtle is light on light, dark on dark)
-  assert(ct["color.brand.subtle"].light !== ct["color.brand.subtle"].dark, "brand.subtle has distinct light/dark");
-  // every color token well-formed (figmaName slashed, valid light+dark, tier set)
-  Object.values(ct).forEach((t) => {
-    assert(t.figmaName.indexOf("/") >= 0 && t.tier && /^#/.test(t.light) && /^#/.test(t.dark), "color token shape: " + JSON.stringify(t));
-  });
+  // semantic roles come from ACTUAL usage, using REAL hexes
+  eq(ct["color.bg.page"].light, "#2C2A2A", "bg.page = actual largest-area fill (not generated)");
+  eq(ct["color.text.primary"].light, "#FFFFFF", "text.primary = actual most-used text color");
+  eq(ct["color.border.default"].light, "#555555", "border.default = actual stroke color");
+  assert(ct["color.brand.primary"] && ct["color.function.danger"], "brand + function present");
+  // every value is one of the actually-detected colors (no synthesized ramp colors)
+  const detected = new Set(obs.fills.map((f) => f.hex).concat(obs.strokes.map((s) => s.hex)));
+  Object.values(ct).forEach((t) => assert(detected.has(t.light), "token color is a real detected color: " + t.light));
+  // dims are integers
+  Object.values(data.dimTokens).forEach((d) => assert(Number.isInteger(d.value), "dim integer: " + d.value));
 });
 
 test("rebuildDetectTheme: dark design detected by background AREA, not frequency", () => {
-  // dark page bg (one huge node) + many small light text fills → must read as dark
   const obs = {
     fills: [].concat(
-      [{ hex: "#0F172A", area: 1440 * 900 }],                 // the artboard background
-      Array(80).fill({ hex: "#E5E7EB", area: 120 * 20 }),     // lots of light text (frequent, tiny)
-      Array(20).fill({ hex: "#2563EB", area: 100 * 40 })      // brand buttons
+      [{ hex: "#0F172A", nodeType: "FRAME", area: 1440 * 900 }],
+      Array(80).fill({ hex: "#E5E7EB", nodeType: "TEXT", area: 120 * 20 }),
+      Array(20).fill({ hex: "#2563EB", nodeType: "RECTANGLE", area: 100 * 40 })
     ),
     strokes: [], texts: [{ size: 14 }, { size: 14 }], radii: [8], spacings: [8], shadows: [],
   };
-  const plan = buildRebuildPlan(obs, { tightness: "medium" });
+  const plan = buildRebuildPlan(obs);
   eq(plan.theme, "dark", "huge dark bg → dark theme (area-weighted)");
-  const data = rebuildToPreviewData(plan);
-  eq(data.seed.defaultMode, "dark", "preview chrome follows detected dark theme");
-  // in dark theme: page bg dark, primary text light
-  const lum = (hex) => { const n = parseInt(hex.slice(1), 16); return (n >> 16) + ((n >> 8) & 255) + (n & 255); };
-  assert(lum(data.colorTokens["color.bg.page"].dark) < lum(data.colorTokens["color.text.primary"].dark), "dark mode: bg darker than text");
-  // dims: font.size.* carry value+role+weight+lineHeight; radius/space present
-  assert(data.dimTokens["font.size.body"] && data.dimTokens["font.size.body"].value === 14, "font.size.body=14");
-  assert(data.dimTokens["font.size.body"].weight === 400 && data.dimTokens["font.size.body"].lineHeight === 21, "body weight/lineHeight");
-  assert(Object.keys(data.dimTokens).some((k) => k.startsWith("radius.")), "radius.*");
-  assert(Object.keys(data.dimTokens).some((k) => k.startsWith("space.")), "space.*");
-});
-
-test("rebuildToFaithfulData: exact values, no consolidation (lossless binding source)", () => {
-  const obs = {
-    fills: [].concat(
-      Array(60).fill({ hex: "#2C2A2A", area: 1440 * 900 }), // dominant warm-gray bg
-      Array(30).fill({ hex: "#E8E6E6", area: 4000 }),
-      Array(20).fill({ hex: "#3B82F6", area: 4800 })
-    ),
-    strokes: [],
-    texts: [{ size: 14 }, { size: 14 }, { size: 15 }, { size: 16 }], // 15 must NOT merge into 14/16
-    radii: [4, 8, 13], spacings: [7, 8, 16],                          // 13 / 7 are off-grid, must stay exact
-  };
-  const data = rebuildToFaithfulData(buildRebuildPlan(obs, { tightness: "medium" }), obs);
-  // the dominant background color is preserved EXACTLY (the fidelity bug)
-  assert(Object.values(data.colorTokens).some((t) => t.light === "#2C2A2A"), "exact warm-gray bg preserved");
-  // sizes are exact + not consolidated (all three distinct sizes present)
-  eq(data.dimTokens["font.size.s14"].value, 14, "size 14 exact");
-  eq(data.dimTokens["font.size.s15"].value, 15, "size 15 kept exact (not snapped)");
-  eq(data.dimTokens["font.size.s16"].value, 16, "size 16 exact");
-  // radii / spacings exact, off-grid values not snapped
-  eq(data.dimTokens["radius.r13"].value, 13, "radius 13 kept exact");
-  eq(data.dimTokens["space.s7"].value, 7, "spacing 7 kept exact (off-grid, not snapped)");
+  eq(rebuildToData(plan).seed.defaultMode, "dark", "preview chrome follows detected dark theme");
+  eq(rebuildToData(plan).colorTokens["color.bg.page"].light, "#0F172A", "bg.page = the dark artboard fill");
 });
 
 // --- report ----------------------------------------------------------------
