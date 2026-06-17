@@ -2117,6 +2117,25 @@ figma.ui.onmessage = async (msg) => {
       await generatePreview(rebuildToPreviewData(rpPlan));
       figma.ui.postMessage({ type: 'result', message: '规范预览页已生成（与网页端同款，未改动原设计）' });
     }
+    else if (msg.type === 'reverse-sync') {
+      // 2.0 反推 · 阶段③前半：用反推结果创建/同步 Figma 变量库（只新增变量集合，不动图层）
+      var rvPlan = lastRebuildPlan;
+      if (!rvPlan) {
+        var rvSel = figma.currentPage.selection;
+        if (!rvSel || rvSel.length === 0) {
+          figma.ui.postMessage({ type: 'error', message: '请先选中画板并「重建为干净 token」，再创建变量库' });
+          return;
+        }
+        rvPlan = buildRebuildPlan(harvestSelection(rvSel, 20000), { tightness: (msg.tightness || 'medium') });
+      }
+      figma.ui.postMessage({ type: 'progress', message: '正在用反推结果创建变量库...' });
+      // 复用现有 syncVariables（与 web 端 JSON 同一条创建路径，只新增变量集合，不绑定图层）
+      var rvResult = await syncVariables(rebuildToPreviewData(rvPlan));
+      figma.ui.postMessage({
+        type: 'result',
+        message: '反推变量库已创建：新建 ' + rvResult.created + ' · 更新 ' + rvResult.updated + ' · 跳过 ' + rvResult.skipped + '（仅新增变量集合，未改动图层）',
+      });
+    }
   } catch (err) {
     figma.ui.postMessage({ type: 'error', message: '错误: ' + (err.message || String(err)) + ' | stack: ' + (err.stack || '').slice(0, 200) });
   }

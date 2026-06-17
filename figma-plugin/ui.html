@@ -356,6 +356,11 @@
           showStatus('正在生成规范预览页...', 'progress');
           parent.postMessage({ pluginMessage: { type: 'reverse-preview', tightness: tightness } }, '*');
         });
+        var vb = document.getElementById('reverseSyncBtn');
+        if (vb) vb.addEventListener('click', function () {
+          showStatus('正在创建 Figma 变量库...', 'progress');
+          parent.postMessage({ pluginMessage: { type: 'reverse-sync', tightness: tightness } }, '*');
+        });
       }
     };
 
@@ -465,6 +470,7 @@
         }).join('') + '</div>');
       }
       h += '<button class="btn btn-primary" id="genReversePreviewBtn" style="margin-top:12px;">③ 生成规范预览页</button>';
+      h += '<button class="btn btn-outline" id="reverseSyncBtn" style="margin-top:8px;">④ 创建 Figma 变量库</button>';
       h += '<button class="btn btn-outline" id="copyRebuildBtn" style="margin-top:8px;">复制重建 JSON</button>';
       return h;
     }
