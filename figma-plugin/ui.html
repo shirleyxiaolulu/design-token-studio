@@ -351,6 +351,11 @@
           cb.textContent = '已复制 ✓';
           setTimeout(function () { cb.textContent = '复制重建 JSON'; }, 1500);
         });
+        var pb = document.getElementById('genReversePreviewBtn');
+        if (pb) pb.addEventListener('click', function () {
+          showStatus('正在生成规范预览页...', 'progress');
+          parent.postMessage({ pluginMessage: { type: 'reverse-preview', tightness: tightness } }, '*');
+        });
       }
     };
 
@@ -459,7 +464,8 @@
           return '<span class="chip" title="' + escapeHtml(s.sig) + '">' + escapeHtml(s.name.replace('shadow.', '')) + '</span>';
         }).join('') + '</div>');
       }
-      h += '<button class="btn btn-primary" id="copyRebuildBtn" style="margin-top:12px;">复制重建 JSON</button>';
+      h += '<button class="btn btn-primary" id="genReversePreviewBtn" style="margin-top:12px;">③ 生成规范预览页</button>';
+      h += '<button class="btn btn-outline" id="copyRebuildBtn" style="margin-top:8px;">复制重建 JSON</button>';
       return h;
     }
 

@@ -1855,6 +1855,123 @@ function harvestSelection(nodes, maxNodes) {
   return obs;
 }
 
+// 2.0 反推 · 阶段②衍生：用收敛后的干净集生成一张规范预览页（新建框架，不改原设计）。
+// 自包含，沿用 generatePreview 已验证的建节点写法（显式坐标 + 稳健字体加载）。
+var lastRebuildPlan = null;
+async function generateReversePreview(plan) {
+  var loaded = {};
+  async function tryFont(f, s) { try { await figma.loadFontAsync({ family: f, style: s }); loaded[f + '||' + s] = true; return true; } catch (e) { return false; } }
+  var FAM = 'Inter';
+  var cands = ['PingFang SC', 'Noto Sans SC', 'Source Han Sans SC', 'MiSans', 'Inter'];
+  for (var i = 0; i < cands.length; i++) { if (await tryFont(cands[i], 'Regular')) { FAM = cands[i]; break; } }
+  await tryFont('Inter', 'Regular');
+  await tryFont(FAM, 'Medium'); await tryFont(FAM, 'Semibold'); await tryFont(FAM, 'SemiBold'); await tryFont(FAM, 'Bold');
+  var BOLD = loaded[FAM + '||Semibold'] ? 'Semibold' : loaded[FAM + '||SemiBold'] ? 'SemiBold' : loaded[FAM + '||Bold'] ? 'Bold' : loaded[FAM + '||Medium'] ? 'Medium' : 'Regular';
+
+  var BG = { r: 1, g: 1, b: 1 }, INK = { r: 17 / 255, g: 24 / 255, b: 39 / 255 },
+      DIM = { r: 107 / 255, g: 114 / 255, b: 128 / 255 }, LINE = { r: 229 / 255, g: 231 / 255, b: 235 / 255 },
+      FILL = { r: 237 / 255, g: 240 / 255, b: 245 / 255 }, ACCENT = { r: 51 / 255, g: 102 / 255, b: 1 };
+  var PAD = 40, W = 760, x0 = PAD, contentW = W - PAD * 2;
+
+  var frame = figma.createFrame();
+  frame.name = '反推规范预览 · ' + plan.tokenCount + ' tokens';
+  frame.fills = [{ type: 'SOLID', color: BG }];
+  var sel = figma.currentPage.selection;
+  if (sel.length) { frame.x = (sel[0].x || 0) + (sel[0].width || 0) + 200; frame.y = (sel[0].y || 0); }
+  else { frame.x = Math.round(figma.viewport.center.x); frame.y = Math.round(figma.viewport.center.y); }
+
+  function txt(x, y, str, size, style, color) {
+    var t = figma.createText();
+    frame.appendChild(t);
+    try { t.fontName = { family: FAM, style: (loaded[FAM + '||' + style] ? style : 'Regular') }; }
+    catch (e) { try { t.fontName = { family: FAM, style: 'Regular' }; } catch (e2) {} }
+    t.fontSize = size; t.x = x; t.y = y; t.characters = String(str);
+    t.fills = [{ type: 'SOLID', color: color || INK }];
+    return t;
+  }
+  function rect(x, y, w, h, color, radius) {
+    var r = figma.createRectangle(); frame.appendChild(r);
+    r.x = x; r.y = y; r.resize(w, h);
+    if (radius != null) r.cornerRadius = radius;
+    r.fills = [{ type: 'SOLID', color: color }];
+    return r;
+  }
+  function hr(y) { rect(x0, y, contentW, 1, LINE, 0); }
+
+  var y = PAD;
+  txt(x0, y, '反推设计规范 · 草案', 26, BOLD, INK); y += 40;
+  var tl = { loose: '松', medium: '中', tight: '紧' }[plan.tightness] || '中';
+  txt(x0, y, '共 ' + plan.tokenCount + ' 个 token · 力度【' + tl + '】· 由选中设计反推生成，未改动原文件', 13, 'Regular', DIM); y += 34;
+  hr(y); y += 24;
+
+  function colorGroup(title, list) {
+    if (!list || !list.length) return;
+    txt(x0, y, title, 15, BOLD, INK); y += 26;
+    list.forEach(function (t) {
+      rect(x0, y - 2, 26, 26, hexToFigmaRgb(t.hex) || INK, 6);
+      txt(x0 + 38, y, t.name.replace('color.', ''), 13, 'Regular', INK);
+      txt(x0 + contentW - 90, y, t.hex, 12, 'Regular', DIM);
+      y += 34;
+    });
+    y += 10;
+  }
+  colorGroup('中性色', plan.colors.neutral);
+  colorGroup('主色', plan.colors.primary);
+  colorGroup('语义色', Object.keys(plan.colors.semantic).map(function (k) { return plan.colors.semantic[k]; }));
+  colorGroup('强调色', plan.colors.accents);
+
+  if (plan.type.roles.length) {
+    hr(y); y += 20;
+    txt(x0, y, '字体层级', 15, BOLD, INK); y += 30;
+    plan.type.roles.forEach(function (r) {
+      txt(x0, y, '示例文本 Sample 1234', r.size, 'Regular', INK);
+      txt(x0 + contentW - 130, y + Math.max(0, (r.size - 13) / 2), r.role + ' · ' + r.size + 'px', 12, 'Regular', DIM);
+      y += Math.max(r.size, 18) + 16;
+    });
+    y += 10;
+  }
+  if (plan.radius.scale.length) {
+    hr(y); y += 20;
+    txt(x0, y, '圆角', 15, BOLD, INK); y += 30;
+    var rx = x0;
+    plan.radius.scale.forEach(function (s) {
+      var box = rect(rx, y, 56, 56, FILL, s.value >= 100 ? 28 : Math.min(s.value, 24));
+      box.strokes = [{ type: 'SOLID', color: LINE }];
+      txt(rx, y + 62, s.name.replace('radius.', '') + ' ' + (s.value >= 100 ? 'full' : s.value), 11, 'Regular', DIM);
+      rx += 76;
+    });
+    y += 92;
+  }
+  if (plan.spacing.scale.length) {
+    hr(y); y += 20;
+    txt(x0, y, '间距', 15, BOLD, INK); y += 30;
+    plan.spacing.scale.forEach(function (s) {
+      txt(x0, y, s.name.replace('space.', 's'), 12, 'Regular', DIM);
+      var bw = Math.max(2, s.value * 2);
+      rect(x0 + 44, y + 2, bw, 12, ACCENT, 2);
+      txt(x0 + 44 + bw + 8, y, String(s.value), 11, 'Regular', DIM);
+      y += 24;
+    });
+    y += 10;
+  }
+  if (plan.shadow.scale.length) {
+    hr(y); y += 20;
+    txt(x0, y, '阴影', 15, BOLD, INK); y += 30;
+    plan.shadow.scale.forEach(function (s) {
+      txt(x0, y, s.name.replace('shadow.', ''), 12, 'Regular', INK);
+      txt(x0 + 80, y, s.sig, 11, 'Regular', DIM);
+      y += 22;
+    });
+    y += 10;
+  }
+
+  frame.resize(W, y + PAD - 16);
+  figma.currentPage.appendChild(frame);
+  figma.currentPage.selection = [frame];
+  figma.viewport.scrollAndZoomIntoView([frame]);
+  return frame.id;
+}
+
 figma.ui.onmessage = async (msg) => {
   try {
     if (msg.type === 'sync') {
@@ -1935,7 +2052,23 @@ figma.ui.onmessage = async (msg) => {
       figma.ui.resize(360, 720);
       var rbObs = harvestSelection(rbSel, 20000);
       var rbPlan = buildRebuildPlan(rbObs, { tightness: (msg.tightness || 'medium') });
+      lastRebuildPlan = rbPlan;
       figma.ui.postMessage({ type: 'rebuild-result', plan: rbPlan, json: rebuildToJson(rbPlan) });
+    }
+    else if (msg.type === 'reverse-preview') {
+      // 用上一次重建的干净集生成规范预览页（新建框架，不改原设计）
+      var rpPlan = lastRebuildPlan;
+      if (!rpPlan) {
+        var rpSel = figma.currentPage.selection;
+        if (!rpSel || rpSel.length === 0) {
+          figma.ui.postMessage({ type: 'error', message: '请先选中画板并「重建为干净 token」，再生成预览页' });
+          return;
+        }
+        rpPlan = buildRebuildPlan(harvestSelection(rpSel, 20000), { tightness: (msg.tightness || 'medium') });
+      }
+      figma.ui.postMessage({ type: 'progress', message: '正在生成规范预览页...' });
+      await generateReversePreview(rpPlan);
+      figma.ui.postMessage({ type: 'result', message: '规范预览页已生成（新框架，未改动原设计）' });
     }
   } catch (err) {
     figma.ui.postMessage({ type: 'error', message: '错误: ' + (err.message || String(err)) + ' | stack: ' + (err.stack || '').slice(0, 200) });
