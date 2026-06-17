@@ -86,12 +86,6 @@
     .tk { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 11px; }
     .tk-name { flex: 1; color: #444; font-family: 'SF Mono', monospace; }
     .tk-val { color: #999; font-family: 'SF Mono', monospace; }
-    .seg-label { font-size: 10px; color: #999; margin-top: 10px; margin-bottom: 4px; }
-    .seg { display: flex; border: 1px solid #ddd; border-radius: 8px; overflow: hidden; }
-    .seg button { flex: 1; height: 30px; border: none; border-right: 1px solid #eee; background: #fff; color: #666; font-size: 12px; cursor: pointer; transition: all 0.15s; }
-    .seg button:last-child { border-right: none; }
-    .seg button:hover { color: #6533E8; }
-    .seg button.active { background: #6533E8; color: #fff; }
   </style>
 </head>
 <body>
@@ -121,13 +115,7 @@
     <p class="subtitle" style="margin-top:4px; margin-bottom:10px;">选中画板/图层 → 扫描已用样式，生成审计报告（阶段①，只读不改文件）</p>
     <button class="btn btn-outline" id="auditBtn" style="margin-top:0;">① 扫描选中内容 · 生成审计</button>
     <div class="audit-result" id="auditResult"></div>
-    <div class="seg-label">收敛力度（合并近似/偶发值的狠劲）</div>
-    <div class="seg" id="tightnessSeg">
-      <button type="button" data-tight="loose">松</button>
-      <button type="button" data-tight="medium" class="active">中</button>
-      <button type="button" data-tight="tight">紧</button>
-    </div>
-    <button class="btn btn-outline" id="rebuildBtn" style="margin-top:8px;">② 重建为干净 token</button>
+    <button class="btn btn-outline" id="rebuildBtn" style="margin-top:8px;">② 整理出设计 token（保真）</button>
     <div class="audit-result" id="rebuildResult"></div>
   </div>
 
@@ -155,7 +143,6 @@
     const rebuildBtn = document.getElementById('rebuildBtn');
     const rebuildResult = document.getElementById('rebuildResult');
     let rebuildJson = '';
-    let tightness = 'medium';
 
     let parsedData = null;
 
@@ -302,24 +289,14 @@
       parent.postMessage({ pluginMessage: { type: 'audit' } }, '*');
     });
 
-    // 2.0 反推 · 阶段②：重建干净 token
+    // 2.0 反推 · 阶段②：整理出设计 token（保真）
     function runRebuild() {
       rebuildResult.className = 'audit-result';
       rebuildResult.innerHTML = '';
-      showStatus('正在聚类并重建干净 token...', 'progress');
-      parent.postMessage({ pluginMessage: { type: 'rebuild', tightness: tightness } }, '*');
+      showStatus('正在整理设计 token...', 'progress');
+      parent.postMessage({ pluginMessage: { type: 'rebuild' } }, '*');
     }
     rebuildBtn.addEventListener('click', runRebuild);
-
-    // 收敛力度：松 / 中 / 紧；已出结果时切换即重算
-    document.getElementById('tightnessSeg').addEventListener('click', (e) => {
-      const btn = e.target.closest('[data-tight]');
-      if (!btn) return;
-      tightness = btn.dataset.tight;
-      var sibs = btn.parentNode.children;
-      for (var i = 0; i < sibs.length; i++) sibs[i].classList.toggle('active', sibs[i] === btn);
-      if (rebuildResult.classList.contains('show')) runRebuild();
-    });
 
     window.onmessage = (event) => {
       const msg = event.data.pluginMessage;
@@ -354,17 +331,17 @@
         var pb = document.getElementById('genReversePreviewBtn');
         if (pb) pb.addEventListener('click', function () {
           showStatus('正在生成规范预览页...', 'progress');
-          parent.postMessage({ pluginMessage: { type: 'reverse-preview', tightness: tightness } }, '*');
+          parent.postMessage({ pluginMessage: { type: 'reverse-preview' } }, '*');
         });
         var vb = document.getElementById('reverseSyncBtn');
         if (vb) vb.addEventListener('click', function () {
           showStatus('正在创建 Figma 变量库...', 'progress');
-          parent.postMessage({ pluginMessage: { type: 'reverse-sync', tightness: tightness } }, '*');
+          parent.postMessage({ pluginMessage: { type: 'reverse-sync' } }, '*');
         });
         var bb = document.getElementById('reverseBindBtn');
         if (bb) bb.addEventListener('click', function () {
           showStatus('正在复制副本并绑定变量...', 'progress');
-          parent.postMessage({ pluginMessage: { type: 'reverse-bind', tightness: tightness } }, '*');
+          parent.postMessage({ pluginMessage: { type: 'reverse-bind' } }, '*');
         });
       }
     };
@@ -435,39 +412,27 @@
       function sec(title, n, body) {
         return '<div class="audit-sec"><h4>' + title + ' <span class="n">' + n + '</span></h4>' + body + '</div>';
       }
-      // 收敛标签：原始 N 档 → 收敛 M 档
-      function consLabel(rawCount, levelCount) {
-        return (rawCount > levelCount) ? (rawCount + ' → ' + levelCount + ' 档') : (levelCount + ' 档');
-      }
-      // 合并清单：13→14、15→16…
-      function mergeNote(merges) {
-        if (!merges || !merges.length) return '';
-        var txt = merges.slice(0, 10).map(function (m) { return m.from + '→' + m.to; }).join('、');
-        if (merges.length > 10) txt += ' 等 ' + merges.length + ' 项';
-        return '<div class="scan-note">已合并：' + txt + '</div>';
-      }
-      var tightLabel = { loose: '松', medium: '中', tight: '紧' }[p.tightness] || '中';
       var c = p.colors, h = '';
-      h += '<div class="audit-summary">共重建 ' + p.tokenCount + ' 个 token · 力度【' + tightLabel + '】· 草案，仅展示，未改动文件</div>';
+      h += '<div class="audit-summary">整理出 ' + p.tokenCount + ' 个 token（你的精确原值，未改动文件）</div>';
       if (c.neutral.length) h += sec('中性色', c.neutral.length, c.neutral.map(colorRow).join(''));
       if (c.primary.length) h += sec('主色', c.primary.length, c.primary.map(colorRow).join(''));
       var semKeys = Object.keys(c.semantic);
       if (semKeys.length) h += sec('语义色', semKeys.length, semKeys.map(function (k) { return colorRow(c.semantic[k]); }).join(''));
       if (c.accents.length) h += sec('强调色', c.accents.length, c.accents.map(colorRow).join(''));
       if (p.type.roles.length) {
-        h += sec('字体层级', consLabel(p.type.rawCount, p.type.roles.length), p.type.roles.map(function (r) {
+        h += sec('字体层级', p.type.roles.length + ' 档', p.type.roles.map(function (r) {
           return '<div class="tk"><span class="tk-name">' + escapeHtml(r.role) + '</span><span class="tk-val">' + r.size + 'px</span></div>';
-        }).join('') + mergeNote(p.type.merges));
+        }).join(''));
       }
       if (p.radius.scale.length) {
-        h += sec('圆角', consLabel(p.radius.rawCount, p.radius.scale.length), '<div class="chips">' + p.radius.scale.map(function (r) {
+        h += sec('圆角', p.radius.scale.length + ' 种', '<div class="chips">' + p.radius.scale.map(function (r) {
           return '<span class="chip">' + escapeHtml(r.name.replace('radius.', '')) + ' ' + r.value + '</span>';
-        }).join('') + '</div>' + mergeNote(p.radius.merges));
+        }).join('') + '</div>');
       }
       if (p.spacing.scale.length) {
-        h += sec('间距', consLabel(p.spacing.rawCount, p.spacing.scale.length), '<div class="chips">' + p.spacing.scale.map(function (s) {
+        h += sec('间距', p.spacing.scale.length + ' 种', '<div class="chips">' + p.spacing.scale.map(function (s) {
           return '<span class="chip">' + escapeHtml(s.name.replace('space.', 's')) + ' ' + s.value + '</span>';
-        }).join('') + '</div>' + mergeNote(p.spacing.merges));
+        }).join('') + '</div>');
       }
       if (p.shadow.scale.length) {
         h += sec('阴影', p.shadow.scale.length, '<div class="chips">' + p.shadow.scale.map(function (s) {

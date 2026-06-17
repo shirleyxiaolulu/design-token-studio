@@ -422,29 +422,27 @@ test("rebuildTypeScale: most-frequent mid size = body, neighbors get roles", () 
   eq(ts.mapping.length, 4, "one mapping per distinct raw size");
 });
 
-test("rebuildTypeScale consolidation: merges ±1 noise, keeps distinct steps", () => {
+test("rebuildTypeScale: faithful — every distinct size kept (no consolidation)", () => {
   const obs = { texts: [
-    { size: 14 }, { size: 14 }, { size: 14 }, { size: 14 }, // 14 dominant
-    { size: 13 }, { size: 12 },                              // noise around 14
-    { size: 16 }, { size: 16 }, { size: 16 }, { size: 17 },  // 16 + noise
-    { size: 20 }, { size: 24 },                              // distinct
+    { size: 14 }, { size: 14 }, { size: 13 }, { size: 15 },
+    { size: 16 }, { size: 17 }, { size: 20 }, { size: 24 },
   ] };
   const ts = rebuildTypeScale(obs);
-  eq(ts.rawCount, 7, "7 distinct raw sizes");
-  assert(ts.roles.length < ts.rawCount, "consolidated to fewer levels (" + ts.roles.length + ")");
-  assert(ts.merges.length >= 1, "recorded merges");
-  const m13 = ts.merges.find((m) => m.from === 13);
-  assert(m13 && m13.to === 14, "13 → 14 (folds into nearest common)");
-  eq(ts.mapping.length, 7, "every raw size has a mapping");
+  eq(ts.rawCount, 7, "7 distinct sizes");
+  eq(ts.roles.length, 7, "all kept — no merging");
+  assert(ts.roles.some((r) => r.size === 13) && ts.roles.some((r) => r.size === 15), "13 & 15 both kept (not folded)");
+  eq(ts.mapping.length, 7, "one mapping per size");
   assert(ts.mapping.every((m) => /^font\.size\./.test(m.to)), "all map to a role token");
 });
 
-test("rebuildRadius / rebuildSpacing: cluster, name, snap to grid", () => {
+test("rebuildRadius / rebuildSpacing: faithful exact values (no grid snap)", () => {
   const r = rebuildRadius({ radii: [4, 4, 8, 8, 8, 12, 9999] });
-  assert(r.scale.some((x) => x.name === "radius.full"), "huge radius → full");
-  const sp = rebuildSpacing({ spacings: [7, 8, 8, 16, 16, 24] }, 4);
-  const s1 = sp.scale[0];
-  eq(s1.value % 4, 0, "spacing snapped to 4px grid");
+  eq(r.scale.length, 4, "4 distinct radii kept");
+  assert(r.scale.some((x) => x.name === "radius.full" && x.value === 9999), "huge radius → full, exact value");
+  assert(r.scale.some((x) => x.value === 4) && r.scale.some((x) => x.value === 12), "exact radii kept");
+  const sp = rebuildSpacing({ spacings: [7, 8, 8, 16, 16, 24] });
+  assert(sp.scale.some((s) => s.value === 7), "off-grid 7 kept exact (not snapped to 8)");
+  eq(sp.scale.length, 4, "4 distinct spacings kept");
 });
 
 test("buildRebuildPlan: aggregates all dims + flat mapping + JSON round-trips", () => {
@@ -464,20 +462,6 @@ test("buildRebuildPlan: aggregates all dims + flat mapping + JSON round-trips", 
   const json = JSON.parse(rebuildToJson(plan));
   assert(json.$meta && json.color && json.font && json.font.size, "JSON has expected top-level shape");
   assert(json.color.primary, "primary present in JSON");
-});
-
-test("buildRebuildPlan tightness: tight ≤ medium ≤ loose levels; default=medium", () => {
-  const obs = { texts: [
-    { size: 12 }, { size: 13 }, { size: 14 }, { size: 14 }, { size: 15 }, { size: 16 },
-    { size: 17 }, { size: 18 }, { size: 20 }, { size: 24 }, { size: 28 },
-  ] };
-  const loose = buildRebuildPlan(obs, { tightness: "loose" }).type.roles.length;
-  const medium = buildRebuildPlan(obs, { tightness: "medium" }).type.roles.length;
-  const tight = buildRebuildPlan(obs, { tightness: "tight" }).type.roles.length;
-  assert(tight <= medium && medium <= loose, "tighter → fewer levels (" + tight + "/" + medium + "/" + loose + ")");
-  assert(tight < loose, "tight strictly fewer than loose for noisy input");
-  eq(buildRebuildPlan(obs).tightness, "medium", "default tightness = medium");
-  eq(buildRebuildPlan(obs, { tightness: "bogus" }).tightness, "medium", "unknown tightness falls back to medium");
 });
 
 test("rebuildToPreviewData: complete spectrum primitives + role-named semantics", () => {

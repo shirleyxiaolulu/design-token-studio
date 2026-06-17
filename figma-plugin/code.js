@@ -1557,12 +1557,6 @@ function buildAuditReport(obs, opts) {
 // === REBUILD-CORE-START (纯函数；依赖 AUDIT-CORE，可在 Node 切片单测) ===
 // 阶段②：把采集到的原始样式聚类、推断语义角色，重建成一套干净 token + 映射表。
 var REBUILD_STEPS = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900];
-// 收敛力度档位：[absTol, relTol] 越大合并越狠、档越少。colorDelta 同理影响颜色聚类。
-var REBUILD_TIGHTNESS = {
-  loose:  { colorDelta: 1.5, font: [1.0, 0.04], radius: [1.5, 0.18], spacing: [1.5, 0.10] },
-  medium: { colorDelta: 2.5, font: [1.5, 0.06], radius: [2.0, 0.25], spacing: [2.0, 0.15] },
-  tight:  { colorDelta: 4.0, font: [2.5, 0.12], radius: [4.0, 0.40], spacing: [4.0, 0.25] },
-};
 function rebuildHueDeg(hex) {
   var rgb = auditHexToRgb(hex), r = rgb.r / 255, g = rgb.g / 255, b = rgb.b / 255;
   var max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min, h = 0;
@@ -1583,29 +1577,6 @@ function rebuildSemanticBand(hue) {
 function rebuildLStep(L) {
   var idx = Math.round((100 - L) / 100 * (REBUILD_STEPS.length - 1));
   return Math.max(0, Math.min(REBUILD_STEPS.length - 1, idx));
-}
-// 收敛（保留常用值）：把一组带频率的数值合并成少量「档」。
-// 以用得最多的值为代表，近似/偶发值并入最近的代表档；返回档位、原始值→档位映射、合并清单。
-function consolidateNumbers(tally, absTol, relTol) {
-  var byFreq = tally.slice().sort(function (a, b) { return b.count - a.count || a.value - b.value; });
-  var levels = [];
-  byFreq.forEach(function (t) {
-    var nearest = null, nd = Infinity;
-    for (var i = 0; i < levels.length; i++) { var d = Math.abs(t.value - levels[i].value); if (d < nd) { nd = d; nearest = levels[i]; } }
-    var tol = Math.max(absTol, relTol * t.value);
-    if (t.count <= 1) tol *= 1.8;               // 偶发值（仅 1 次）更容易并入
-    if (nearest && nd <= tol) nearest.count += t.count;  // 并入更高频的档
-    else levels.push({ value: t.value, count: t.count });
-  });
-  var map = {}, merges = [];
-  tally.forEach(function (t) {
-    var nearest = levels[0], nd = Math.abs(t.value - levels[0].value);
-    for (var i = 1; i < levels.length; i++) { var d = Math.abs(t.value - levels[i].value); if (d < nd) { nd = d; nearest = levels[i]; } }
-    map[t.value] = nearest.value;
-    if (nearest.value !== t.value) merges.push({ from: t.value, to: nearest.value, count: t.count });
-  });
-  levels.sort(function (a, b) { return a.value - b.value; });
-  return { levels: levels, map: map, merges: merges };
 }
 function rebuildColorSystem(obs, opts) {
   opts = opts || {};
@@ -1672,13 +1643,12 @@ function rebuildColorSystem(obs, opts) {
   }
   return { neutral: neutralRamp, primary: primaryRamp, semantic: semantic, accents: accents, mapping: mapping };
 }
-function rebuildTypeScale(obs, absTol, relTol) {
+// 字号：保真——每个实际字号各成一档（不收敛），按 body 锚点命名角色。
+function rebuildTypeScale(obs) {
   var texts = obs.texts || [];
   var tally = auditTally(texts.map(function (t) { return t.size; })).filter(function (t) { return typeof t.value === 'number'; });
-  if (!tally.length) return { roles: [], mapping: [], merges: [], rawCount: 0 };
-  var cons = consolidateNumbers(tally, absTol == null ? 1.5 : absTol, relTol == null ? 0.06 : relTol);
-  var levels = cons.levels;
-  // body = 12–18 内最频繁的档；否则取中位
+  if (!tally.length) return { roles: [], mapping: [], rawCount: 0 };
+  var levels = tally.slice().sort(function (a, b) { return a.value - b.value; });
   var body = null, bestCount = -1;
   levels.forEach(function (l) { if (l.value >= 12 && l.value <= 18 && l.count > bestCount) { bestCount = l.count; body = l.value; } });
   if (body == null) body = levels[Math.floor(levels.length / 2)].value;
@@ -1686,51 +1656,43 @@ function rebuildTypeScale(obs, absTol, relTol) {
   for (var i = 0; i < levels.length; i++) { if (levels[i].value === body) { bodyIdx = i; break; } }
   var below = ['callout', 'footnote', 'caption', 'caption2', 'micro'];
   var above = ['headline', 'subtitle', 'title3', 'title2', 'title1', 'largeTitle', 'display'];
-  var roleOf = {};
+  var mapping = [];
   var roles = levels.map(function (l, i) {
     var off = i - bodyIdx, role;
     if (off === 0) role = 'body';
     else if (off < 0) role = below[(-off) - 1] || ('xs' + (-off));
     else role = above[off - 1] || ('xl' + off);
     var name = 'font.size.' + role;
-    roleOf[l.value] = name;
+    mapping.push({ kind: 'size', from: l.value, to: name });
     return { role: role, name: name, size: l.value, count: l.count };
   });
-  // 映射：每个原始字号 → 其所属档的角色 token
-  var mapping = tally.map(function (t) { return { kind: 'size', from: t.value, to: roleOf[cons.map[t.value]] }; });
-  return { roles: roles, mapping: mapping, merges: cons.merges, rawCount: tally.length };
+  return { roles: roles, mapping: mapping, rawCount: levels.length };
 }
-function rebuildRadius(obs, absTol, relTol) {
+// 圆角：保真——每个实际圆角各成一档（不收敛）。
+function rebuildRadius(obs) {
   var tally = auditTally(obs.radii || []);
-  if (!tally.length) return { scale: [], mapping: [], merges: [], rawCount: 0 };
-  var cons = consolidateNumbers(tally, absTol == null ? 2 : absTol, relTol == null ? 0.25 : relTol);
-  var names = ['sm', 'md', 'lg', 'xl', '2xl', '3xl'], nameOf = {};
-  var scale = cons.levels.map(function (l, i) {
-    var name = 'radius.' + (l.value >= 100 ? 'full' : (names[i] || ('s' + i)));
-    nameOf[l.value] = name;
+  if (!tally.length) return { scale: [], mapping: [], rawCount: 0 };
+  var levels = tally.slice().sort(function (a, b) { return a.value - b.value; });
+  var names = ['sm', 'md', 'lg', 'xl', '2xl', '3xl', '4xl', '5xl'], mapping = [];
+  var scale = levels.map(function (l, i) {
+    var name = 'radius.' + (l.value >= 100 ? 'full' : (names[i] || ('r' + l.value)));
+    mapping.push({ kind: 'radius', from: l.value, to: name });
     return { name: name, value: l.value, count: l.count };
   });
-  var mapping = tally.map(function (t) { return { kind: 'radius', from: t.value, to: nameOf[cons.map[t.value]] }; });
-  return { scale: scale, mapping: mapping, merges: cons.merges, rawCount: tally.length };
+  return { scale: scale, mapping: mapping, rawCount: levels.length };
 }
-function rebuildSpacing(obs, grid, absTol, relTol) {
-  grid = grid || 4;
+// 间距：保真——每个实际间距各成一档（不吸附网格、不收敛）。
+function rebuildSpacing(obs) {
   var tally = auditTally(obs.spacings || []);
-  if (!tally.length) return { scale: [], mapping: [], merges: [], rawCount: 0 };
-  var cons = consolidateNumbers(tally, absTol == null ? 2 : absTol, relTol == null ? 0.15 : relTol);
-  // 档位吸附到网格，并合并吸附后撞车的档
-  var snapOf = {}, byVal = {};
-  cons.levels.forEach(function (l) {
-    var v = Math.round(l.value / grid) * grid; if (v <= 0) v = l.value;
-    snapOf[l.value] = v;
-    if (!byVal[v]) byVal[v] = { value: v, count: 0 }; byVal[v].count += l.count;
+  if (!tally.length) return { scale: [], mapping: [], rawCount: 0 };
+  var levels = tally.slice().sort(function (a, b) { return a.value - b.value; });
+  var mapping = [];
+  var scale = levels.map(function (l, i) {
+    var name = 'space.' + (i + 1);
+    mapping.push({ kind: 'spacing', from: l.value, to: name });
+    return { name: name, value: l.value, count: l.count };
   });
-  var levels = Object.keys(byVal).map(function (k) { return byVal[k]; }).sort(function (a, b) { return a.value - b.value; });
-  var nameOf = {};
-  var scale = levels.map(function (l, i) { var name = 'space.' + (i + 1); nameOf[l.value] = name; return { name: name, value: l.value, count: l.count }; });
-  var mapping = tally.map(function (t) { return { kind: 'spacing', from: t.value, to: nameOf[snapOf[cons.map[t.value]]] }; });
-  var merges = cons.merges.map(function (m) { return { from: m.from, to: Math.round(m.to / grid) * grid, count: m.count }; });
-  return { scale: scale, mapping: mapping, merges: merges, rawCount: tally.length };
+  return { scale: scale, mapping: mapping, rawCount: levels.length };
 }
 function rebuildShadow(obs) {
   var map = {};
@@ -1750,19 +1712,17 @@ function rebuildShadow(obs) {
 }
 function buildRebuildPlan(obs, opts) {
   opts = opts || {};
-  var tightness = REBUILD_TIGHTNESS[opts.tightness] ? opts.tightness : 'medium';
-  var t = REBUILD_TIGHTNESS[tightness];
-  var grid = opts.grid || 4;
-  var colorDelta = opts.colorDelta != null ? opts.colorDelta : t.colorDelta;
+  // 保真：颜色按 ΔE 做肉眼无差的合并（固定 2.5），字号/圆角/间距保留实际值不收敛。
+  var colorDelta = opts.colorDelta != null ? opts.colorDelta : 2.5;
   var colors = rebuildColorSystem(obs, { colorDelta: colorDelta, chromaNeutral: opts.chromaNeutral });
-  var type = rebuildTypeScale(obs, t.font[0], t.font[1]);
-  var radius = rebuildRadius(obs, t.radius[0], t.radius[1]);
-  var spacing = rebuildSpacing(obs, grid, t.spacing[0], t.spacing[1]);
+  var type = rebuildTypeScale(obs);
+  var radius = rebuildRadius(obs);
+  var spacing = rebuildSpacing(obs);
   var shadow = rebuildShadow(obs);
   var mapping = [].concat(colors.mapping, type.mapping, radius.mapping, spacing.mapping, shadow.mapping);
   var tokenCount = colors.neutral.length + colors.primary.length + Object.keys(colors.semantic).length + colors.accents.length
     + type.roles.length + radius.scale.length + spacing.scale.length + shadow.scale.length;
-  return { tightness: tightness, theme: rebuildDetectTheme(obs), colors: colors, type: type, radius: radius, spacing: spacing, shadow: shadow, mapping: mapping, tokenCount: tokenCount };
+  return { theme: rebuildDetectTheme(obs), colors: colors, type: type, radius: radius, spacing: spacing, shadow: shadow, mapping: mapping, tokenCount: tokenCount };
 }
 function rebuildSetDeep(obj, dotted, val) {
   var parts = dotted.split('.'), cur = obj;
@@ -2201,7 +2161,7 @@ figma.ui.onmessage = async (msg) => {
       figma.ui.postMessage({ type: 'progress', message: '正在聚类并重建干净 token...' });
       figma.ui.resize(360, 720);
       var rbObs = harvestSelection(rbSel, 20000);
-      var rbPlan = buildRebuildPlan(rbObs, { tightness: (msg.tightness || 'medium') });
+      var rbPlan = buildRebuildPlan(rbObs);
       lastRebuildPlan = rbPlan;
       figma.ui.postMessage({ type: 'rebuild-result', plan: rbPlan, json: rebuildToJson(rbPlan) });
     }
@@ -2214,7 +2174,7 @@ figma.ui.onmessage = async (msg) => {
           figma.ui.postMessage({ type: 'error', message: '请先选中画板并「重建为干净 token」，再生成预览页' });
           return;
         }
-        rpPlan = buildRebuildPlan(harvestSelection(rpSel, 20000), { tightness: (msg.tightness || 'medium') });
+        rpPlan = buildRebuildPlan(harvestSelection(rpSel, 20000));
       }
       figma.ui.postMessage({ type: 'progress', message: '正在生成规范预览页...' });
       // 翻译成正向数据 → 复用现有 generatePreview（不改动 web 端 JSON 的生成路径）
@@ -2230,7 +2190,7 @@ figma.ui.onmessage = async (msg) => {
       }
       figma.ui.postMessage({ type: 'progress', message: '正在用反推结果创建保真变量库...' });
       var rvObs = harvestSelection(rvSel, 20000);
-      var rvPlan = lastRebuildPlan || buildRebuildPlan(rvObs, { tightness: (msg.tightness || 'medium') });
+      var rvPlan = lastRebuildPlan || buildRebuildPlan(rvObs);
       // 复用现有 syncVariables 创建路径；值为你的精确原值（与 web 端 JSON 同一条创建逻辑）
       var rvResult = await syncVariables(rebuildToFaithfulData(rvPlan, rvObs));
       figma.ui.postMessage({
@@ -2245,7 +2205,7 @@ figma.ui.onmessage = async (msg) => {
         figma.ui.postMessage({ type: 'error', message: '请先选中要绑定的画板/图层' });
         return;
       }
-      var rbgPlan = lastRebuildPlan || buildRebuildPlan(harvestSelection(rbgSel, 20000), { tightness: (msg.tightness || 'medium') });
+      var rbgPlan = lastRebuildPlan || buildRebuildPlan(harvestSelection(rbgSel, 20000));
       figma.ui.postMessage({ type: 'progress', message: '正在复制副本并绑定变量...' });
       var b = await bindReverseVariables(rbgPlan);
       figma.ui.postMessage({
