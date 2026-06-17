@@ -82,6 +82,10 @@
     .dupe { font-size: 10px; color: #9a3412; font-family: 'SF Mono', monospace; display: flex; align-items: center; gap: 4px; margin-bottom: 3px; }
     .dupe .s { width: 12px; height: 12px; border-radius: 3px; display: inline-block; border: 1px solid rgba(0,0,0,0.12); }
     .scan-note { font-size: 10px; color: #999; margin-top: 6px; line-height: 1.5; }
+    .sw-sm { width: 14px; height: 14px; }
+    .tk { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 11px; }
+    .tk-name { flex: 1; color: #444; font-family: 'SF Mono', monospace; }
+    .tk-val { color: #999; font-family: 'SF Mono', monospace; }
   </style>
 </head>
 <body>
@@ -109,8 +113,10 @@
   <div class="reverse-section">
     <div class="reverse-title">反推设计规范 <span class="reverse-badge">实验 · 2.0</span></div>
     <p class="subtitle" style="margin-top:4px; margin-bottom:10px;">选中画板/图层 → 扫描已用样式，生成审计报告（阶段①，只读不改文件）</p>
-    <button class="btn btn-outline" id="auditBtn" style="margin-top:0;">扫描选中内容 · 生成审计</button>
+    <button class="btn btn-outline" id="auditBtn" style="margin-top:0;">① 扫描选中内容 · 生成审计</button>
     <div class="audit-result" id="auditResult"></div>
+    <button class="btn btn-outline" id="rebuildBtn" style="margin-top:8px;">② 重建为干净 token</button>
+    <div class="audit-result" id="rebuildResult"></div>
   </div>
 
   <div class="divider"></div>
@@ -134,6 +140,9 @@
     const status = document.getElementById('status');
     const auditBtn = document.getElementById('auditBtn');
     const auditResult = document.getElementById('auditResult');
+    const rebuildBtn = document.getElementById('rebuildBtn');
+    const rebuildResult = document.getElementById('rebuildResult');
+    let rebuildJson = '';
 
     let parsedData = null;
 
@@ -280,6 +289,14 @@
       parent.postMessage({ pluginMessage: { type: 'audit' } }, '*');
     });
 
+    // 2.0 反推 · 阶段②：重建干净 token
+    rebuildBtn.addEventListener('click', () => {
+      rebuildResult.className = 'audit-result';
+      rebuildResult.innerHTML = '';
+      showStatus('正在聚类并重建干净 token...', 'progress');
+      parent.postMessage({ pluginMessage: { type: 'rebuild' } }, '*');
+    });
+
     window.onmessage = (event) => {
       const msg = event.data.pluginMessage;
       if (msg.type === 'result') {
@@ -296,6 +313,20 @@
         auditResult.innerHTML = renderAudit(msg.report);
         auditResult.className = 'audit-result show';
         showStatus('✅ 审计完成（只读，未改动文件）', 'success');
+      } else if (msg.type === 'rebuild-result') {
+        rebuildJson = msg.json;
+        rebuildResult.innerHTML = renderRebuild(msg.plan);
+        rebuildResult.className = 'audit-result show';
+        showStatus('✅ 已重建 ' + msg.plan.tokenCount + ' 个 token（草案，未改动文件）', 'success');
+        var cb = document.getElementById('copyRebuildBtn');
+        if (cb) cb.addEventListener('click', function () {
+          (navigator.clipboard ? navigator.clipboard.writeText(rebuildJson) : Promise.reject()).catch(function () {
+            var ta = document.createElement('textarea'); ta.value = rebuildJson;
+            document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
+          });
+          cb.textContent = '已复制 ✓';
+          setTimeout(function () { cb.textContent = '复制重建 JSON'; }, 1500);
+        });
       }
     };
 
@@ -354,6 +385,45 @@
         if (r.spacing.offGrid.length) h += '<div class="scan-note">橙色 = 不在 4px 网格</div>';
         h += '</div>';
       }
+      return h;
+    }
+
+    function renderRebuild(p) {
+      function colorRow(t) {
+        return '<div class="tk"><span class="sw sw-sm" style="background:' + t.hex + '"></span><span class="tk-name">' +
+          escapeHtml(t.name.replace('color.', '')) + '</span><span class="tk-val">' + t.hex + '</span></div>';
+      }
+      function sec(title, n, body) {
+        return '<div class="audit-sec"><h4>' + title + ' <span class="n">' + n + '</span></h4>' + body + '</div>';
+      }
+      var c = p.colors, h = '';
+      h += '<div class="audit-summary">共重建 ' + p.tokenCount + ' 个 token · 草案，仅展示，未改动文件</div>';
+      if (c.neutral.length) h += sec('中性色', c.neutral.length, c.neutral.map(colorRow).join(''));
+      if (c.primary.length) h += sec('主色', c.primary.length, c.primary.map(colorRow).join(''));
+      var semKeys = Object.keys(c.semantic);
+      if (semKeys.length) h += sec('语义色', semKeys.length, semKeys.map(function (k) { return colorRow(c.semantic[k]); }).join(''));
+      if (c.accents.length) h += sec('强调色', c.accents.length, c.accents.map(colorRow).join(''));
+      if (p.type.roles.length) {
+        h += sec('字体层级', p.type.roles.length, p.type.roles.map(function (r) {
+          return '<div class="tk"><span class="tk-name">' + escapeHtml(r.role) + '</span><span class="tk-val">' + r.size + 'px</span></div>';
+        }).join(''));
+      }
+      if (p.radius.scale.length) {
+        h += sec('圆角', p.radius.scale.length, '<div class="chips">' + p.radius.scale.map(function (r) {
+          return '<span class="chip">' + escapeHtml(r.name.replace('radius.', '')) + ' ' + r.value + '</span>';
+        }).join('') + '</div>');
+      }
+      if (p.spacing.scale.length) {
+        h += sec('间距', p.spacing.scale.length, '<div class="chips">' + p.spacing.scale.map(function (s) {
+          return '<span class="chip">' + escapeHtml(s.name.replace('space.', 's')) + ' ' + s.value + '</span>';
+        }).join('') + '</div>');
+      }
+      if (p.shadow.scale.length) {
+        h += sec('阴影', p.shadow.scale.length, '<div class="chips">' + p.shadow.scale.map(function (s) {
+          return '<span class="chip" title="' + escapeHtml(s.sig) + '">' + escapeHtml(s.name.replace('shadow.', '')) + '</span>';
+        }).join('') + '</div>');
+      }
+      h += '<button class="btn btn-primary" id="copyRebuildBtn" style="margin-top:12px;">复制重建 JSON</button>';
       return h;
     }
 

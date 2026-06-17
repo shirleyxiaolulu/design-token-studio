@@ -1454,8 +1454,14 @@ function auditChroma(hex) {
   var l = auditHexToLab(hex);
   return Math.sqrt(l.a * l.a + l.b * l.b);
 }
-function auditIsNeutral(hex, chromaThreshold) {
-  return auditChroma(hex) <= (chromaThreshold == null ? 10 : chromaThreshold);
+function auditIsNeutral(hex, base) {
+  base = base == null ? 10 : base;
+  var lab = auditHexToLab(hex);
+  var C = Math.sqrt(lab.a * lab.a + lab.b * lab.b);
+  // 暗端（及极亮端）给更高容差：微染中性在 L 极端处 chroma 天然偏高，
+  // 固定阈值会把深色 UI 背景（如 #111827 / #0F172A）误判成彩色。
+  var ext = lab.L < 30 ? (30 - lab.L) * 0.5 : (lab.L > 85 ? (lab.L - 85) * 0.5 : 0);
+  return C <= base + ext;
 }
 function auditTally(values) {
   var m = new Map();
@@ -1547,6 +1553,187 @@ function buildAuditReport(obs, opts) {
   };
 }
 // === AUDIT-CORE-END ===
+
+// === REBUILD-CORE-START (纯函数；依赖 AUDIT-CORE，可在 Node 切片单测) ===
+// 阶段②：把采集到的原始样式聚类、推断语义角色，重建成一套干净 token + 映射表。
+var REBUILD_STEPS = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900];
+function rebuildHueDeg(hex) {
+  var rgb = auditHexToRgb(hex), r = rgb.r / 255, g = rgb.g / 255, b = rgb.b / 255;
+  var max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min, h = 0;
+  if (d) {
+    if (max === r) h = ((g - b) / d + (g < b ? 6 : 0));
+    else if (max === g) h = (b - r) / d + 2; else h = (r - g) / d + 4;
+    h *= 60;
+  }
+  return h;
+}
+function rebuildSemanticBand(hue) {
+  if (hue < 15 || hue >= 345) return 'error';   // 红
+  if (hue < 70) return 'warning';               // 橙黄
+  if (hue < 170) return 'success';              // 绿
+  if (hue < 250) return 'info';                 // 青蓝
+  return null;                                  // 紫/品红/粉 → accent
+}
+function rebuildLStep(L) {
+  var idx = Math.round((100 - L) / 100 * (REBUILD_STEPS.length - 1));
+  return Math.max(0, Math.min(REBUILD_STEPS.length - 1, idx));
+}
+function rebuildColorSystem(obs, opts) {
+  opts = opts || {};
+  var delta = opts.colorDelta == null ? 2.5 : opts.colorDelta;
+  var chromaT = opts.chromaNeutral == null ? 10 : opts.chromaNeutral;
+  var hexes = (obs.fills || []).map(function (f) { return f.hex; }).concat((obs.strokes || []).map(function (s) { return s.hex; }));
+  var clusters = auditClusterColors(hexes, delta).map(function (c) {
+    return { hex: c.rep, count: c.count, L: auditHexToLab(c.rep).L, chroma: auditChroma(c.rep), hue: rebuildHueDeg(c.rep) };
+  });
+  var neutrals = clusters.filter(function (c) { return auditIsNeutral(c.hex, chromaT); });
+  var chromatics = clusters.filter(function (c) { return !auditIsNeutral(c.hex, chromaT); });
+  var mapping = [];
+
+  // 中性阶：按亮度降序映射到最近标准阶（冲突时顺延到空位）
+  neutrals.sort(function (a, b) { return b.L - a.L; });
+  var usedStep = {};
+  var neutralRamp = neutrals.map(function (c) {
+    var idx = rebuildLStep(c.L);
+    while (usedStep[idx] && idx < REBUILD_STEPS.length - 1) idx++;
+    while (usedStep[idx] && idx > 0) idx--;
+    usedStep[idx] = true;
+    var step = REBUILD_STEPS[idx], name = 'color.neutral.' + step;
+    mapping.push({ kind: 'color', from: c.hex, to: name });
+    return { name: name, step: step, hex: c.hex, count: c.count };
+  }).sort(function (a, b) { return a.step - b.step; });
+
+  // 主色：频率最高的彩色簇；同色相家族(±18°)铺成多阶
+  chromatics.sort(function (a, b) { return b.count - a.count; });
+  var primaryRamp = [], semantic = {}, accents = [], used = {};
+  if (chromatics.length) {
+    var base = chromatics[0];
+    var family = chromatics.filter(function (c) { var dh = Math.abs(c.hue - base.hue); dh = Math.min(dh, 360 - dh); return dh <= 18; });
+    family.forEach(function (c) { used[c.hex] = true; });
+    family.sort(function (a, b) { return b.L - a.L; });
+    primaryRamp = family.map(function (c) {
+      var step = REBUILD_STEPS[rebuildLStep(c.L)], name = 'color.primary.' + step;
+      mapping.push({ kind: 'color', from: c.hex, to: name });
+      return { name: name, step: step, hex: c.hex, count: c.count };
+    });
+    // 语义色：从非主色家族的彩色簇里，按色相带各取最频繁者
+    var bands = {};
+    chromatics.filter(function (c) { return !used[c.hex]; }).forEach(function (c) {
+      var band = rebuildSemanticBand(c.hue);
+      if (band && (!bands[band] || c.count > bands[band].count)) bands[band] = c;
+    });
+    ['error', 'warning', 'success', 'info'].forEach(function (band) {
+      if (bands[band]) {
+        var c = bands[band], name = 'color.' + band;
+        semantic[band] = { name: name, hex: c.hex, count: c.count, hue: Math.round(c.hue) };
+        mapping.push({ kind: 'color', from: c.hex, to: name });
+        used[c.hex] = true;
+      }
+    });
+    // 强调色：剩余彩色簇（最多 4 个）
+    var ai = 1;
+    chromatics.filter(function (c) { return !used[c.hex]; }).slice(0, 4).forEach(function (c) {
+      var name = 'color.accent.' + ai;
+      accents.push({ name: name, hex: c.hex, count: c.count });
+      mapping.push({ kind: 'color', from: c.hex, to: name });
+      ai++;
+    });
+  }
+  return { neutral: neutralRamp, primary: primaryRamp, semantic: semantic, accents: accents, mapping: mapping };
+}
+function rebuildTypeScale(obs) {
+  var texts = obs.texts || [];
+  var sizeTally = auditTally(texts.map(function (t) { return t.size; })).filter(function (t) { return typeof t.value === 'number'; });
+  var sorted = sizeTally.slice().sort(function (a, b) { return a.value - b.value; });
+  if (!sorted.length) return { roles: [], mapping: [] };
+  // body = 12–18 内最频繁的字号；否则取中位数那一档
+  var body = null, bestCount = -1;
+  sizeTally.forEach(function (t) { if (t.value >= 12 && t.value <= 18 && t.count > bestCount) { bestCount = t.count; body = t.value; } });
+  if (body == null) body = sorted[Math.floor(sorted.length / 2)].value;
+  var bodyIdx = 0;
+  for (var i = 0; i < sorted.length; i++) { if (sorted[i].value === body) { bodyIdx = i; break; } }
+  var below = ['callout', 'footnote', 'caption', 'caption2', 'micro'];
+  var above = ['headline', 'subtitle', 'title3', 'title2', 'title1', 'largeTitle', 'display'];
+  var mapping = [];
+  var roles = sorted.map(function (t, i) {
+    var off = i - bodyIdx, role;
+    if (off === 0) role = 'body';
+    else if (off < 0) role = below[(-off) - 1] || ('xs' + (-off));
+    else role = above[off - 1] || ('xl' + off);
+    var name = 'font.size.' + role;
+    mapping.push({ kind: 'size', from: t.value, to: name });
+    return { role: role, name: name, size: t.value, count: t.count };
+  });
+  return { roles: roles, mapping: mapping };
+}
+function rebuildRadius(obs) {
+  var clusters = auditClusterNumbers(obs.radii || [], 2).sort(function (a, b) { return a.rep - b.rep; });
+  var names = ['sm', 'md', 'lg', 'xl', '2xl', '3xl'], mapping = [];
+  var scale = clusters.map(function (c, i) {
+    var name = 'radius.' + (c.rep >= 100 ? 'full' : (names[i] || ('s' + i)));
+    mapping.push({ kind: 'radius', from: c.rep, to: name });
+    return { name: name, value: c.rep, count: c.count };
+  });
+  return { scale: scale, mapping: mapping };
+}
+function rebuildSpacing(obs, grid) {
+  grid = grid || 4;
+  var clusters = auditClusterNumbers(obs.spacings || [], 1).sort(function (a, b) { return a.rep - b.rep; });
+  var mapping = [];
+  var scale = clusters.map(function (c, i) {
+    var snapped = Math.round(c.rep / grid) * grid;
+    if (snapped <= 0) snapped = c.rep;
+    var name = 'space.' + (i + 1);
+    mapping.push({ kind: 'spacing', from: c.rep, to: name });
+    return { name: name, value: snapped, raw: c.rep, count: c.count };
+  });
+  return { scale: scale, mapping: mapping };
+}
+function rebuildShadow(obs) {
+  var map = {};
+  (obs.shadows || []).forEach(function (s) {
+    var sig = s.type + ' ' + s.x + '/' + s.y + ' b' + s.blur + ' s' + s.spread + ' ' + s.hex + '@' + (Math.round((s.alpha == null ? 1 : s.alpha) * 100) / 100);
+    if (!map[sig]) map[sig] = { sig: sig, blur: s.blur, count: 0 };
+    map[sig].count++;
+  });
+  var arr = Object.keys(map).map(function (k) { return map[k]; }).sort(function (a, b) { return a.blur - b.blur; });
+  var names = ['sm', 'md', 'lg', 'xl', '2xl'], mapping = [];
+  var scale = arr.map(function (o, i) {
+    var name = 'shadow.' + (names[i] || ('s' + i));
+    mapping.push({ kind: 'shadow', from: o.sig, to: name });
+    return { name: name, sig: o.sig, count: o.count };
+  });
+  return { scale: scale, mapping: mapping };
+}
+function buildRebuildPlan(obs, opts) {
+  var colors = rebuildColorSystem(obs, opts);
+  var type = rebuildTypeScale(obs);
+  var radius = rebuildRadius(obs);
+  var spacing = rebuildSpacing(obs, (opts && opts.grid) || 4);
+  var shadow = rebuildShadow(obs);
+  var mapping = [].concat(colors.mapping, type.mapping, radius.mapping, spacing.mapping, shadow.mapping);
+  var tokenCount = colors.neutral.length + colors.primary.length + Object.keys(colors.semantic).length + colors.accents.length
+    + type.roles.length + radius.scale.length + spacing.scale.length + shadow.scale.length;
+  return { colors: colors, type: type, radius: radius, spacing: spacing, shadow: shadow, mapping: mapping, tokenCount: tokenCount };
+}
+function rebuildSetDeep(obj, dotted, val) {
+  var parts = dotted.split('.'), cur = obj;
+  for (var i = 0; i < parts.length - 1; i++) { if (!cur[parts[i]]) cur[parts[i]] = {}; cur = cur[parts[i]]; }
+  cur[parts[parts.length - 1]] = val;
+}
+function rebuildToJson(plan) {
+  var out = { $meta: { generator: 'Design System v2 · 反推重建', tokenCount: plan.tokenCount } };
+  plan.colors.neutral.forEach(function (t) { rebuildSetDeep(out, t.name, t.hex); });
+  plan.colors.primary.forEach(function (t) { rebuildSetDeep(out, t.name, t.hex); });
+  Object.keys(plan.colors.semantic).forEach(function (k) { rebuildSetDeep(out, plan.colors.semantic[k].name, plan.colors.semantic[k].hex); });
+  plan.colors.accents.forEach(function (t) { rebuildSetDeep(out, t.name, t.hex); });
+  plan.type.roles.forEach(function (r) { rebuildSetDeep(out, r.name, r.size); });
+  plan.radius.scale.forEach(function (r) { rebuildSetDeep(out, r.name, r.value); });
+  plan.spacing.scale.forEach(function (s) { rebuildSetDeep(out, s.name, s.value); });
+  plan.shadow.scale.forEach(function (s) { rebuildSetDeep(out, s.name, s.sig); });
+  return JSON.stringify(out, null, 2);
+}
+// === REBUILD-CORE-END ===
 
 // 采集（需 Figma API）：递归遍历选中节点，抽取硬编码样式 → plain data
 function auditLineHeightPx(lh, size) {
@@ -1688,6 +1875,19 @@ figma.ui.onmessage = async (msg) => {
       var auditObs = harvestSelection(sel, 20000);
       var auditReport = buildAuditReport(auditObs, { colorDelta: (msg.colorDelta || 2.5) });
       figma.ui.postMessage({ type: 'audit-result', report: auditReport });
+    }
+    else if (msg.type === 'rebuild') {
+      // 2.0 反推 · 阶段②：聚类重建干净 token（草案，只读，不改文件）
+      var rbSel = figma.currentPage.selection;
+      if (!rbSel || rbSel.length === 0) {
+        figma.ui.postMessage({ type: 'error', message: '请先在画布上选中至少一个画板或图层' });
+        return;
+      }
+      figma.ui.postMessage({ type: 'progress', message: '正在聚类并重建干净 token...' });
+      figma.ui.resize(360, 720);
+      var rbObs = harvestSelection(rbSel, 20000);
+      var rbPlan = buildRebuildPlan(rbObs, { colorDelta: (msg.colorDelta || 2.5) });
+      figma.ui.postMessage({ type: 'rebuild-result', plan: rbPlan, json: rebuildToJson(rbPlan) });
     }
   } catch (err) {
     figma.ui.postMessage({ type: 'error', message: '错误: ' + (err.message || String(err)) + ' | stack: ' + (err.stack || '').slice(0, 200) });

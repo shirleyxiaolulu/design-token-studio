@@ -40,6 +40,8 @@ runGlobal(fs.readFileSync(path.join(ROOT, "exports.js"), "utf8")); // → Design
   runGlobal(slice("function planFontSizeRenames", "async function syncVariables", "reconcile planners"));
   // 2.0 reverse-audit pure core (used by the audit message branch)
   runGlobal(slice("// === AUDIT-CORE-START", "// === AUDIT-CORE-END ===", "audit core"));
+  // 2.0 reverse-rebuild pure core (depends on audit core; used by the rebuild branch)
+  runGlobal(slice("// === REBUILD-CORE-START", "// === REBUILD-CORE-END ===", "rebuild core"));
 })();
 
 // --- tiny test harness -----------------------------------------------------
@@ -357,6 +359,78 @@ test("buildAuditReport: clean input → no redundancy warnings", () => {
   const r = buildAuditReport(obs);
   eq(r.spacing.offGrid.length, 0, "all spacing on grid");
   assert(!r.flags.some((f) => f.level === "warn"), "no warn flags for clean input");
+});
+
+// =============================================================================
+// 8) 2.0 reverse-rebuild pure core (figma-plugin/code.js REBUILD-CORE region)
+// =============================================================================
+test("rebuildSemanticBand maps hue → role", () => {
+  eq(rebuildSemanticBand(5), "error"); eq(rebuildSemanticBand(355), "error");
+  eq(rebuildSemanticBand(40), "warning"); eq(rebuildSemanticBand(140), "success");
+  eq(rebuildSemanticBand(220), "info"); eq(rebuildSemanticBand(300), null);
+});
+
+test("rebuildColorSystem: primary=most-used chromatic, semantics by hue, neutrals split", () => {
+  const obs = {
+    fills: [
+      // dominant blue (primary) ×5
+      { hex: "#2563EB" }, { hex: "#2563EB" }, { hex: "#2563EB" }, { hex: "#2563EB" }, { hex: "#2563EB" },
+      { hex: "#10B981" }, { hex: "#10B981" },             // green → success
+      { hex: "#EF4444" },                                  // red → error
+      { hex: "#F59E0B" },                                  // amber → warning
+      { hex: "#8B5CF6" },                                  // purple → accent
+      { hex: "#FFFFFF" }, { hex: "#111827" }, { hex: "#6B7280" }, // neutrals
+    ],
+    strokes: [],
+  };
+  const cs = rebuildColorSystem(obs, { colorDelta: 2.5 });
+  assert(cs.primary.length >= 1 && cs.primary[0].hex === "#2563EB", "primary base = dominant blue");
+  eq(cs.semantic.success.hex, "#10B981", "green → success");
+  eq(cs.semantic.error.hex, "#EF4444", "red → error");
+  eq(cs.semantic.warning.hex, "#F59E0B", "amber → warning");
+  assert(cs.accents.some((a) => a.hex === "#8B5CF6"), "purple → accent");
+  eq(cs.neutral.length, 3, "3 neutral steps");
+  // neutral steps sorted light→dark by assigned step
+  for (let i = 1; i < cs.neutral.length; i++) assert(cs.neutral[i].step > cs.neutral[i - 1].step, "neutral steps ascending");
+  // every emitted token has a mapping back to a raw hex
+  assert(cs.mapping.every((m) => m.kind === "color" && /^#/.test(m.from) && /^color\./.test(m.to)), "color mapping well-formed");
+});
+
+test("rebuildTypeScale: most-frequent mid size = body, neighbors get roles", () => {
+  const obs = { texts: [
+    { size: 14 }, { size: 14 }, { size: 14 }, // body (most frequent, in 12–18)
+    { size: 12 }, { size: 16 }, { size: 20 }, { size: 28 },
+  ] };
+  const ts = rebuildTypeScale(obs);
+  const body = ts.roles.find((r) => r.role === "body");
+  assert(body && body.size === 14, "body = 14");
+  assert(ts.roles.find((r) => r.size === 12).role !== "body", "12 is not body");
+  eq(ts.mapping.length, ts.roles.length, "one mapping per role");
+});
+
+test("rebuildRadius / rebuildSpacing: cluster, name, snap to grid", () => {
+  const r = rebuildRadius({ radii: [4, 4, 8, 8, 8, 12, 9999] });
+  assert(r.scale.some((x) => x.name === "radius.full"), "huge radius → full");
+  const sp = rebuildSpacing({ spacings: [7, 8, 8, 16, 16, 24] }, 4);
+  const s1 = sp.scale[0];
+  eq(s1.value % 4, 0, "spacing snapped to 4px grid");
+});
+
+test("buildRebuildPlan: aggregates all dims + flat mapping + JSON round-trips", () => {
+  const obs = {
+    fills: [{ hex: "#2563EB" }, { hex: "#2563EB" }, { hex: "#FFFFFF" }, { hex: "#111827" }],
+    strokes: [],
+    texts: [{ size: 14 }, { size: 14 }, { size: 20 }],
+    radii: [8, 8, 12],
+    spacings: [8, 16],
+    shadows: [{ type: "DROP_SHADOW", x: 0, y: 2, blur: 8, spread: 0, hex: "#000000", alpha: 0.1 }],
+  };
+  const plan = buildRebuildPlan(obs, { colorDelta: 2.5 });
+  assert(plan.tokenCount > 0, "produces tokens");
+  eq(plan.mapping.length, plan.tokenCount, "every token has exactly one raw→token mapping");
+  const json = JSON.parse(rebuildToJson(plan));
+  assert(json.$meta && json.color && json.font && json.font.size, "JSON has expected top-level shape");
+  assert(json.color.primary, "primary present in JSON");
 });
 
 // --- report ----------------------------------------------------------------
