@@ -2018,6 +2018,81 @@ function harvestSelection(nodes, maxNodes) {
 // 预览走 rebuildToPreviewData(plan) → 现有 generatePreview，与网页端 JSON 粘贴同一张规范页。
 var lastRebuildPlan = null;
 
+// 阶段③后半：把选中图层「复制到新页面」后绑定到反推变量（原设计零风险）。
+// 每个属性绑到「最接近的 token 变量」；每次绑定都 try/catch，单点失败不影响整体。
+async function bindReverseVariables(plan) {
+  var data = rebuildToPreviewData(plan);
+  await syncVariables(data);                       // 确保变量已创建（幂等）
+  var cols = await figma.variables.getLocalVariableCollectionsAsync();
+  var byName = {};
+  for (var ci = 0; ci < cols.length; ci++) {
+    for (var vi = 0; vi < cols[ci].variableIds.length; vi++) {
+      var v = await figma.variables.getVariableByIdAsync(cols[ci].variableIds[vi]);
+      if (v) byName[v.name] = v;
+    }
+  }
+  var theme = plan.theme || 'light';
+  var colorVars = [], radiusVars = [], spaceVars = [], fontVars = [];
+  Object.keys(data.colorTokens).forEach(function (k) {
+    var t = data.colorTokens[k], vr = byName[t.figmaName];
+    if (vr) colorVars.push({ hex: (theme === 'dark' ? t.dark : t.light), v: vr });
+  });
+  Object.keys(data.dimTokens).forEach(function (k) {
+    var t = data.dimTokens[k], vr = byName[t.figmaName];
+    if (!vr || typeof t.value !== 'number') return;
+    if (k.indexOf('radius.') === 0) radiusVars.push({ val: t.value, v: vr });
+    else if (k.indexOf('space.') === 0) spaceVars.push({ val: t.value, v: vr });
+    else if (k.indexOf('font.size.') === 0) fontVars.push({ val: t.value, v: vr });
+  });
+  function nearestColor(hex) { var best = null, bd = Infinity; for (var i = 0; i < colorVars.length; i++) { var d = auditDeltaE(hex, colorVars[i].hex); if (d < bd) { bd = d; best = colorVars[i].v; } } return best; }
+  function nearestNum(arr, val) { var best = null, bd = Infinity; for (var i = 0; i < arr.length; i++) { var d = Math.abs(arr[i].val - val); if (d < bd) { bd = d; best = arr[i].v; } } return best; }
+
+  // 复制选中画板到新页面，只在副本上绑定
+  var sel = figma.currentPage.selection;
+  var page = figma.createPage();
+  page.name = '反推规范 · 绑定副本';
+  var clones = [];
+  for (var s = 0; s < sel.length; s++) { try { var cl = sel[s].clone(); page.appendChild(cl); clones.push(cl); } catch (e) {} }
+
+  var bound = { fills: 0, strokes: 0, radius: 0, spacing: 0, font: 0 };
+  function bindPaints(node, prop, counter) {
+    var paints = node[prop];
+    if (!Array.isArray(paints) || !paints.length) return;
+    var changed = false;
+    var next = paints.map(function (p) {
+      if (p && p.type === 'SOLID' && p.visible !== false) {
+        var vr = nearestColor(figmaRgbToHex(p.color));
+        if (vr) { try { var np = figma.variables.setBoundVariableForPaint(p, 'color', vr); changed = true; return np; } catch (e) {} }
+      }
+      return p;
+    });
+    if (changed) { try { node[prop] = next; bound[counter]++; } catch (e) {} }
+  }
+  function bindNum(node, field, vr) { if (!vr) return; try { node.setBoundVariable(field, vr); return true; } catch (e) { return false; } }
+  function visit(node) {
+    if ('fills' in node && node.fills !== figma.mixed) bindPaints(node, 'fills', 'fills');
+    if ('strokes' in node) bindPaints(node, 'strokes', 'strokes');
+    if (radiusVars.length && 'cornerRadius' in node && node.cornerRadius !== figma.mixed && typeof node.cornerRadius === 'number' && node.cornerRadius > 0) {
+      var rv = nearestNum(radiusVars, node.cornerRadius), ok = false;
+      ['topLeftRadius', 'topRightRadius', 'bottomLeftRadius', 'bottomRightRadius'].forEach(function (f) { if (bindNum(node, f, rv)) ok = true; });
+      if (ok) bound.radius++;
+    }
+    if (node.layoutMode && node.layoutMode !== 'NONE' && spaceVars.length) {
+      ['itemSpacing', 'paddingLeft', 'paddingRight', 'paddingTop', 'paddingBottom'].forEach(function (f) {
+        if (typeof node[f] === 'number' && node[f] > 0 && bindNum(node, f, nearestNum(spaceVars, node[f]))) bound.spacing++;
+      });
+    }
+    if (node.type === 'TEXT' && fontVars.length && node.fontSize !== figma.mixed && typeof node.fontSize === 'number') {
+      if (bindNum(node, 'fontSize', nearestNum(fontVars, node.fontSize))) bound.font++;
+    }
+    if ('children' in node) { for (var i = 0; i < node.children.length; i++) visit(node.children[i]); }
+  }
+  for (var c2 = 0; c2 < clones.length; c2++) visit(clones[c2]);
+  figma.currentPage = page;
+  try { figma.currentPage.selection = clones; figma.viewport.scrollAndZoomIntoView(clones); } catch (e) {}
+  return bound;
+}
+
 figma.ui.onmessage = async (msg) => {
   try {
     if (msg.type === 'sync') {
@@ -2134,6 +2209,21 @@ figma.ui.onmessage = async (msg) => {
       figma.ui.postMessage({
         type: 'result',
         message: '反推变量库已创建：新建 ' + rvResult.created + ' · 更新 ' + rvResult.updated + ' · 跳过 ' + rvResult.skipped + '（仅新增变量集合，未改动图层）',
+      });
+    }
+    else if (msg.type === 'reverse-bind') {
+      // 2.0 反推 · 阶段③后半：复制选中画板到新页面 → 在副本上绑定反推变量（原设计零风险）
+      var rbgSel = figma.currentPage.selection;
+      if (!rbgSel || rbgSel.length === 0) {
+        figma.ui.postMessage({ type: 'error', message: '请先选中要绑定的画板/图层' });
+        return;
+      }
+      var rbgPlan = lastRebuildPlan || buildRebuildPlan(harvestSelection(rbgSel, 20000), { tightness: (msg.tightness || 'medium') });
+      figma.ui.postMessage({ type: 'progress', message: '正在复制副本并绑定变量...' });
+      var b = await bindReverseVariables(rbgPlan);
+      figma.ui.postMessage({
+        type: 'result',
+        message: '已在新页面「反推规范 · 绑定副本」完成绑定：填充 ' + b.fills + ' · 描边 ' + b.strokes + ' · 圆角 ' + b.radius + ' · 间距 ' + b.spacing + ' · 字号 ' + b.font + '（原设计未改动）',
       });
     }
   } catch (err) {
