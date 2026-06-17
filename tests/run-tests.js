@@ -396,6 +396,20 @@ test("rebuildColorSystem: primary=most-used chromatic, semantics by hue, neutral
   assert(cs.mapping.every((m) => m.kind === "color" && /^#/.test(m.from) && /^color\./.test(m.to)), "color mapping well-formed");
 });
 
+test("rebuildColorSystem: vivid brand beats a more-frequent near-gray (slate) for primary", () => {
+  const obs = {
+    fills: [].concat(
+      Array(40).fill({ hex: "#94A3B8" }), // frequent blue-gray text (near-neutral)
+      Array(20).fill({ hex: "#3B82F6" }), // less frequent but vivid brand
+      Array(50).fill({ hex: "#FFFFFF" }), Array(20).fill({ hex: "#0F172A" })
+    ),
+    strokes: [],
+  };
+  // end-to-end: the chosen 主色 must be vivid (the brand), not the frequent slate gray
+  const brandPrimary = rebuildToPreviewData(buildRebuildPlan(obs, { tightness: "medium" })).colorTokens["color.brand.primary"].light;
+  assert(auditChroma(brandPrimary) > 30, "主色 is vivid (chroma " + auditChroma(brandPrimary).toFixed(0) + "), not the slate gray");
+});
+
 test("rebuildTypeScale: most-frequent mid size = body, neighbors get roles", () => {
   const obs = { texts: [
     { size: 14 }, { size: 14 }, { size: 14 }, // body (most frequent, in 12–18)
@@ -484,21 +498,45 @@ test("rebuildToPreviewData: complete spectrum primitives + role-named semantics"
   fams.forEach((f) => {
     eq(Object.keys(ct).filter((k) => new RegExp("^color\\.palette\\." + f + "\\.\\d+$").test(k)).length, 10, f + " ramp = 10 steps");
   });
-  // SEMANTICS: role-named, no numeric brand.N (the thing the user couldn't read)
+  // SEMANTICS: brand keeps an 8-level gradient (web parity), main is named, not numeric
+  const brandKeys = Object.keys(ct).filter((k) => k.startsWith("color.brand."));
+  eq(brandKeys.length, 8, "brand keeps 8-level gradient");
   assert(ct["color.brand.primary"], "explicit 主色 token present");
   assert(/主色/.test(ct["color.brand.primary"].usage), "主色 labeled in usage");
+  ["subtle", "soft", "muted", "primary.hover", "primary", "primary.active", "emphasis", "strong"].forEach((n) =>
+    assert(ct["color.brand." + n], "brand." + n + " present (named, not numeric)"));
   assert(!Object.keys(ct).some((k) => /^color\.brand\.\d+$/.test(k)), "no numeric brand.N tokens");
   assert(ct["color.function.success"] && ct["color.function.danger"], "function success/danger by role");
-  // function colors reference the spectrum (green for success, red for danger)
   eq(ct["color.function.success"].light, ct["color.palette.green.5"].light, "success → green.5");
   eq(ct["color.function.danger"].light, ct["color.palette.red.5"].light, "danger → red.5");
   // neutral-derived layers: text darker than bg in light theme
   const lum = (hex) => { const n = parseInt(hex.slice(1), 16); return (n >> 16) + ((n >> 8) & 255) + (n & 255); };
   assert(lum(ct["color.text.primary"].light) < lum(ct["color.bg.page"].light), "text darker than bg (light theme)");
-  // every color token well-formed (figmaName slashed, light=dark single-mode, tier set)
+  // brand carries proper light/dark (subtle is light on light, dark on dark)
+  assert(ct["color.brand.subtle"].light !== ct["color.brand.subtle"].dark, "brand.subtle has distinct light/dark");
+  // every color token well-formed (figmaName slashed, valid light+dark, tier set)
   Object.values(ct).forEach((t) => {
-    assert(t.figmaName.indexOf("/") >= 0 && t.tier && t.light && t.dark === t.light, "color token shape: " + JSON.stringify(t));
+    assert(t.figmaName.indexOf("/") >= 0 && t.tier && /^#/.test(t.light) && /^#/.test(t.dark), "color token shape: " + JSON.stringify(t));
   });
+});
+
+test("rebuildDetectTheme: dark design detected by background AREA, not frequency", () => {
+  // dark page bg (one huge node) + many small light text fills → must read as dark
+  const obs = {
+    fills: [].concat(
+      [{ hex: "#0F172A", area: 1440 * 900 }],                 // the artboard background
+      Array(80).fill({ hex: "#E5E7EB", area: 120 * 20 }),     // lots of light text (frequent, tiny)
+      Array(20).fill({ hex: "#2563EB", area: 100 * 40 })      // brand buttons
+    ),
+    strokes: [], texts: [{ size: 14 }, { size: 14 }], radii: [8], spacings: [8], shadows: [],
+  };
+  const plan = buildRebuildPlan(obs, { tightness: "medium" });
+  eq(plan.theme, "dark", "huge dark bg → dark theme (area-weighted)");
+  const data = rebuildToPreviewData(plan);
+  eq(data.seed.defaultMode, "dark", "preview chrome follows detected dark theme");
+  // in dark theme: page bg dark, primary text light
+  const lum = (hex) => { const n = parseInt(hex.slice(1), 16); return (n >> 16) + ((n >> 8) & 255) + (n & 255); };
+  assert(lum(data.colorTokens["color.bg.page"].dark) < lum(data.colorTokens["color.text.primary"].dark), "dark mode: bg darker than text");
   // dims: font.size.* carry value+role+weight+lineHeight; radius/space present
   assert(data.dimTokens["font.size.body"] && data.dimTokens["font.size.body"].value === 14, "font.size.body=14");
   assert(data.dimTokens["font.size.body"].weight === 400 && data.dimTokens["font.size.body"].lineHeight === 21, "body weight/lineHeight");

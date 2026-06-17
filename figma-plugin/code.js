@@ -1634,8 +1634,8 @@ function rebuildColorSystem(obs, opts) {
     return { name: name, step: step, hex: c.hex, count: c.count };
   }).sort(function (a, b) { return a.step - b.step; });
 
-  // 主色：频率最高的彩色簇；同色相家族(±18°)铺成多阶
-  chromatics.sort(function (a, b) { return b.count - a.count; });
+  // 主色：按「频率 × 彩度」选基准——避免高频但发灰的文本色（如蓝灰 slate）压过真正鲜明的品牌色。
+  chromatics.sort(function (a, b) { return (b.count * b.chroma) - (a.count * a.chroma); });
   var primaryRamp = [], semantic = {}, accents = [], used = {};
   if (chromatics.length) {
     var base = chromatics[0];
@@ -1762,7 +1762,7 @@ function buildRebuildPlan(obs, opts) {
   var mapping = [].concat(colors.mapping, type.mapping, radius.mapping, spacing.mapping, shadow.mapping);
   var tokenCount = colors.neutral.length + colors.primary.length + Object.keys(colors.semantic).length + colors.accents.length
     + type.roles.length + radius.scale.length + spacing.scale.length + shadow.scale.length;
-  return { tightness: tightness, colors: colors, type: type, radius: radius, spacing: spacing, shadow: shadow, mapping: mapping, tokenCount: tokenCount };
+  return { tightness: tightness, theme: rebuildDetectTheme(obs), colors: colors, type: type, radius: radius, spacing: spacing, shadow: shadow, mapping: mapping, tokenCount: tokenCount };
 }
 function rebuildSetDeep(obj, dotted, val) {
   var parts = dotted.split('.'), cur = obj;
@@ -1827,11 +1827,24 @@ function rebuildHueFamily(hue) {
   }
   return best;
 }
+// 明暗判定：用「面积最大的填充」（页面背景天然占面积最大），而不是出现次数——
+// 深色 UI 里浅色文本出现最频繁，按次数会误判成浅色。
+function rebuildDetectTheme(obs) {
+  var area = {}, fills = obs.fills || [];
+  for (var i = 0; i < fills.length; i++) area[fills[i].hex] = (area[fills[i].hex] || 0) + (fills[i].area || 0);
+  var best = null, ba = -1;
+  for (var h in area) { if (area[h] > ba) { ba = area[h]; best = h; } }
+  if (!best || ba <= 0) {                       // 没有面积信息时退回按次数
+    var t = auditTally(fills.map(function (f) { return f.hex; }));
+    best = t.length ? t[0].value : '#FFFFFF';
+  }
+  return rebuildRgbToHsl(best).l < 50 ? 'dark' : 'light';
+}
 function rebuildToPreviewData(plan) {
   var colorTokens = {}, dimTokens = {};
   function fn(key) { return key.replace(/\./g, '/'); }
-  function addColor(key, hex, tier, usage) {
-    colorTokens[key] = { figmaName: fn(key), tier: tier || 'primitive', light: hex, dark: hex, usage: usage || '' };
+  function addColor(key, hex, tier, usage, dark) {
+    colorTokens[key] = { figmaName: fn(key), tier: tier || 'primitive', light: hex, dark: dark || hex, usage: usage || '' };
   }
   function addDim(key, value, extra) {
     var o = { figmaName: fn(key), tier: 'primitive', value: value, type: 'dimension', usage: '' };
@@ -1844,7 +1857,7 @@ function rebuildToPreviewData(plan) {
   // ===== 基础色 primitive：完整色谱（换绑/扩展永远够引用） =====
   // 1) 主色族 primary：用检测主色（最常用那档）推 10 阶 → 渲染为大色块「Primary」
   var primRep = '#3366FF';
-  if (C.primary.length) primRep = C.primary.slice().sort(function (a, b) { return b.count - a.count; })[0].hex;
+  if (C.primary.length) primRep = C.primary.slice().sort(function (a, b) { return (b.count * auditChroma(b.hex)) - (a.count * auditChroma(a.hex)); })[0].hex;
   else if (C.neutral.length) primRep = C.neutral[0].hex;
   var primaryRamp = rebuildScaleFrom(primRep);
   primaryRamp.forEach(function (hex, i) { addColor('color.palette.primary.' + i, hex, 'primitive'); });
@@ -1857,6 +1870,7 @@ function rebuildToPreviewData(plan) {
   // 3) 完整色谱 red/orange/yellow/green/cyan/blue/purple：被检测到的族用检测锚（保真），其余用通用锚
   var familyAnchor = {};
   function claim(hex, priority) {
+    if (auditChroma(hex) < 18) return;          // 近灰色不去锚定鲜明色族，免得整族发灰
     var fam = rebuildHueFamily(rebuildHueDeg(hex));
     if (!familyAnchor[fam] || priority > familyAnchor[fam].p) familyAnchor[fam] = { hex: hex, p: priority };
   }
@@ -1866,47 +1880,48 @@ function rebuildToPreviewData(plan) {
     var anchor = familyAnchor[fam] ? familyAnchor[fam].hex : rebuildHslToHex(REBUILD_SPECTRUM[fam], 78, REBUILD_LIGHTS[BASE]);
     rebuildScaleFrom(anchor).forEach(function (hex, i) { addColor('color.palette.' + fam + '.' + i, hex, 'primitive'); });
   }
-  function paletteHex(fam, i) { var t = colorTokens['color.palette.' + fam + '.' + i]; return t ? t.light : null; }
+  // P(fam, lightIdx, darkIdx) → 取色族对应阶的 hex（明/暗各取一阶）
+  function P(fam, li, di) { var l = colorTokens['color.palette.' + fam + '.' + li], d = colorTokens['color.palette.' + fam + '.' + (di == null ? li : di)]; return { light: l ? l.light : null, dark: d ? d.light : null }; }
+  function G(li, di) { return { light: grayRamp[rebuildClampN(li, 0, 9)], dark: grayRamp[rebuildClampN(di == null ? li : di, 0, 9)] }; }
 
-  // ===== 语义色 semantic：角色名，引用基础色（解决「数字认不出主色」）=====
-  addColor('color.brand.primary', paletteHex('primary', BASE), 'semantic', '主色 · primary → primary.' + BASE);
-  addColor('color.brand.hover', paletteHex('primary', BASE + 1), 'semantic', '主色 hover → primary.' + (BASE + 1));
-  addColor('color.brand.active', paletteHex('primary', BASE + 2), 'semantic', '主色按下 → primary.' + (BASE + 2));
-  addColor('color.brand.bg', paletteHex('primary', 1), 'semantic', '主色浅底 → primary.1');
+  // ===== 语义色 semantic：角色名 + 引用基础色；品牌色保留 8 级梯度（与 Web 端一致）=====
+  // 品牌 8 级（明/暗各引用 primary 不同阶，主色明确为 primary）
+  var brand = [
+    ['subtle', 0, 9, '品牌最浅底色'], ['soft', 1, 8, '品牌浅色'], ['muted', 2, 7, '品牌中浅色'],
+    ['primary.hover', 4, 4, '主操作悬停'], ['primary', BASE, BASE, '主色 · 主操作'],
+    ['primary.active', 6, 6, '主操作按下'], ['emphasis', 7, 3, '品牌深强调'], ['strong', 8, 2, '品牌最深色'],
+  ];
+  brand.forEach(function (b) { var c = P('primary', b[1], b[2]); addColor('color.brand.' + b[0], c.light, 'semantic', b[3] + ' → primary.' + b[1], c.dark); });
 
+  // 功能色：基准 + 浅底，明/暗各引用所属色族不同阶
   var fname = { success: 'success', warning: 'warning', error: 'danger', info: 'info' };
   var fusage = { success: '成功', warning: '警告', error: '危险 / 错误', info: '信息' };
   Object.keys(C.semantic).forEach(function (k) {
     var fam = rebuildHueFamily(rebuildHueDeg(C.semantic[k].hex)), nm = fname[k] || k;
-    addColor('color.function.' + nm, paletteHex(fam, BASE), 'semantic', (fusage[k] || '') + ' → ' + fam + '.' + BASE);
-    addColor('color.function.' + nm + '-bg', paletteHex(fam, 1), 'semantic', (fusage[k] || '') + ' · 浅底 → ' + fam + '.1');
+    var base = P(fam, BASE, BASE), bg = P(fam, 1, 8);
+    addColor('color.function.' + nm, base.light, 'semantic', (fusage[k] || '') + ' → ' + fam + '.' + BASE, base.dark);
+    addColor('color.function.' + nm + '-bg', bg.light, 'semantic', (fusage[k] || '') + ' · 浅底', bg.dark);
   });
   C.accents.forEach(function (t, i) {
-    var fam = rebuildHueFamily(rebuildHueDeg(t.hex));
-    addColor('color.auxiliary.' + (i + 1), paletteHex(fam, BASE), 'semantic', '辅助 / 强调 → ' + fam + '.' + BASE);
+    var fam = rebuildHueFamily(rebuildHueDeg(t.hex)), c = P(fam, BASE, BASE);
+    addColor('color.auxiliary.' + (i + 1), c.light, 'semantic', '辅助 / 强调 → ' + fam + '.' + BASE, c.dark);
   });
 
-  // 主题基调：高频中性偏深 → 深色设计；文本/背景/边框引用 gray 阶（frac 0=浅 1=深，深色翻转）
-  var theme = 'light';
-  if (C.neutral.length) {
-    var top = C.neutral.slice().sort(function (a, b) { return b.count - a.count; })[0];
-    theme = (top.step >= 500) ? 'dark' : 'light';
-  }
-  function gpick(frac) {
-    var f = theme === 'dark' ? (1 - frac) : frac;
-    return grayRamp[rebuildClampN(Math.round(f * 9), 0, 9)];
-  }
-  addColor('color.bg.page', gpick(0), 'semantic', '页面背景 → gray 阶');
-  addColor('color.bg.surface', gpick(0.1), 'semantic', '容器背景 → gray 阶');
-  addColor('color.bg.elevated', gpick(0.04), 'semantic', '浮层背景 → gray 阶');
-  addColor('color.bg.overlay', gpick(1), 'semantic', '遮罩 → gray 阶');
-  addColor('color.text.primary', gpick(1), 'semantic', '主文本 → gray 阶');
-  addColor('color.text.secondary', gpick(0.72), 'semantic', '次文本 → gray 阶');
-  addColor('color.text.tertiary', gpick(0.55), 'semantic', '三级文本 → gray 阶');
-  addColor('color.text.disabled', gpick(0.4), 'semantic', '禁用文本 → gray 阶');
-  addColor('color.border.subtle', gpick(0.12), 'semantic', '弱边框 → gray 阶');
-  addColor('color.border.default', gpick(0.22), 'semantic', '默认边框 → gray 阶');
-  addColor('color.border.strong', gpick(0.36), 'semantic', '强边框 → gray 阶');
+  // 文本/背景/边框：明暗各引用 gray 阶不同端（明=浅底深字，暗=深底浅字），与 Web 端映射一致
+  var bgPage = G(0, 9), bgSurf = G(0, 8), bgElev = G(0, 7), bgOver = G(9, 9);
+  addColor('color.bg.page', bgPage.light, 'semantic', '页面背景', bgPage.dark);
+  addColor('color.bg.surface', bgSurf.light, 'semantic', '容器背景', bgSurf.dark);
+  addColor('color.bg.elevated', bgElev.light, 'semantic', '浮层背景', bgElev.dark);
+  addColor('color.bg.overlay', bgOver.light, 'semantic', '遮罩', bgOver.dark);
+  var tPri = G(9, 0), tSec = G(7, 2), tTer = G(5, 4), tDis = G(4, 6);
+  addColor('color.text.primary', tPri.light, 'semantic', '主文本', tPri.dark);
+  addColor('color.text.secondary', tSec.light, 'semantic', '次文本', tSec.dark);
+  addColor('color.text.tertiary', tTer.light, 'semantic', '三级文本', tTer.dark);
+  addColor('color.text.disabled', tDis.light, 'semantic', '禁用文本', tDis.dark);
+  var bSub = G(1, 8), bDef = G(2, 7), bStr = G(3, 6);
+  addColor('color.border.subtle', bSub.light, 'semantic', '弱边框', bSub.dark);
+  addColor('color.border.default', bDef.light, 'semantic', '默认边框', bDef.dark);
+  addColor('color.border.strong', bStr.light, 'semantic', '强边框', bStr.dark);
 
   // 字号 / 圆角 / 间距
   plan.type.roles.forEach(function (r) {
@@ -1915,6 +1930,7 @@ function rebuildToPreviewData(plan) {
   plan.radius.scale.forEach(function (s) { addDim(s.name, s.value); });
   plan.spacing.scale.forEach(function (s) { addDim(s.name, s.value); });
 
+  var theme = plan.theme || 'light';
   return {
     name: '反推设计规范', version: 'reverse', platform: 'app-web',
     seed: { localFont: 'pingfang', defaultMode: theme }, defaultMode: theme,
@@ -1947,7 +1963,10 @@ function harvestSelection(nodes, maxNodes) {
   function visit(node) {
     if (obs.nodeCount >= maxNodes) { obs.truncated = true; return; }
     obs.nodeCount++;
-    if ('fills' in node && node.fills !== figma.mixed) pushSolid(obs.fills, node.fills, { nodeType: node.type });
+    if ('fills' in node && node.fills !== figma.mixed) {
+      var area = (typeof node.width === 'number' && typeof node.height === 'number') ? node.width * node.height : 0;
+      pushSolid(obs.fills, node.fills, { nodeType: node.type, area: area });
+    }
     if ('strokes' in node) pushSolid(obs.strokes, node.strokes, { weight: (typeof node.strokeWeight === 'number' ? node.strokeWeight : null) });
     if (node.type === 'TEXT') {
       try {
