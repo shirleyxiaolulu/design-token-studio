@@ -435,6 +435,25 @@ test("rebuildTypeScale: faithful — every distinct size kept (no consolidation)
   assert(ts.mapping.every((m) => /^font\.size\./.test(m.to)), "all map to a role token");
 });
 
+test("rebuild dims: decimals rounded to integers, integers unchanged, collisions merge", () => {
+  const obs = { texts: [{ size: 14 }, { size: 15.5 }, { size: 16 }], radii: [7.5, 8, 12.4], spacings: [11.2, 16] };
+  const ts = rebuildTypeScale(obs);
+  const sizes = ts.roles.map((r) => r.size);
+  assert(sizes.every(Number.isInteger), "all sizes integer: " + sizes);
+  assert(sizes.indexOf(14) >= 0 && sizes.indexOf(16) >= 0, "integers kept");
+  assert(sizes.indexOf(15.5) < 0, "15.5 not present (rounded to 16, merged)");
+  const r = rebuildRadius(obs);
+  assert(r.scale.every((x) => Number.isInteger(x.value)), "radii integer");
+  assert(r.scale.some((x) => x.value === 8) && r.scale.some((x) => x.value === 12), "7.5→8 (merges), 12.4→12");
+  eq(r.scale.length, 2, "7.5/8/12.4 → {8,12}");
+  const sp = rebuildSpacing(obs);
+  assert(sp.scale.some((x) => x.value === 11) && sp.scale.every((x) => Number.isInteger(x.value)), "11.2→11, spacing integer");
+  // faithful set + JSON also integer (no decimal-named tokens)
+  const data = rebuildToFaithfulData(buildRebuildPlan(obs), obs);
+  assert(data.dimTokens["font.size.s16"], "faithful has s16 (15.5 rounded in)");
+  assert(!Object.keys(data.dimTokens).some((k) => /\.s?\d+\.\d+$/.test(k)), "no decimal-named dim tokens");
+});
+
 test("rebuildRadius / rebuildSpacing: faithful exact values (no grid snap)", () => {
   const r = rebuildRadius({ radii: [4, 4, 8, 8, 8, 12, 9999] });
   eq(r.scale.length, 4, "4 distinct radii kept");

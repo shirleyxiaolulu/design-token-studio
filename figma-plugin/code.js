@@ -1578,6 +1578,15 @@ function rebuildLStep(L) {
   var idx = Math.round((100 - L) / 100 * (REBUILD_STEPS.length - 1));
   return Math.max(0, Math.min(REBUILD_STEPS.length - 1, idx));
 }
+// 数值规整：把字号/圆角/间距里带小数的值四舍五入到最近整数（亚像素噪声 → 整数），
+// 整数保持不变；过滤掉 ≤0 与非有限值。保留重复（供 auditTally 计数 / 后续去重）。
+function rebuildRoundDims(arr) {
+  var out = [];
+  (arr || []).forEach(function (v) {
+    if (typeof v === 'number' && isFinite(v)) { var r = Math.round(v); if (r > 0) out.push(r); }
+  });
+  return out;
+}
 function rebuildColorSystem(obs, opts) {
   opts = opts || {};
   var delta = opts.colorDelta == null ? 2.5 : opts.colorDelta;
@@ -1646,7 +1655,7 @@ function rebuildColorSystem(obs, opts) {
 // 字号：保真——每个实际字号各成一档（不收敛），按 body 锚点命名角色。
 function rebuildTypeScale(obs) {
   var texts = obs.texts || [];
-  var tally = auditTally(texts.map(function (t) { return t.size; })).filter(function (t) { return typeof t.value === 'number'; });
+  var tally = auditTally(rebuildRoundDims(texts.map(function (t) { return t.size; }))); // 小数字号规整为整数
   if (!tally.length) return { roles: [], mapping: [], rawCount: 0 };
   var levels = tally.slice().sort(function (a, b) { return a.value - b.value; });
   var body = null, bestCount = -1;
@@ -1670,7 +1679,7 @@ function rebuildTypeScale(obs) {
 }
 // 圆角：保真——每个实际圆角各成一档（不收敛）。
 function rebuildRadius(obs) {
-  var tally = auditTally(obs.radii || []);
+  var tally = auditTally(rebuildRoundDims(obs.radii)); // 小数圆角规整为整数
   if (!tally.length) return { scale: [], mapping: [], rawCount: 0 };
   var levels = tally.slice().sort(function (a, b) { return a.value - b.value; });
   var names = ['sm', 'md', 'lg', 'xl', '2xl', '3xl', '4xl', '5xl'], mapping = [];
@@ -1683,7 +1692,7 @@ function rebuildRadius(obs) {
 }
 // 间距：保真——每个实际间距各成一档（不吸附网格、不收敛）。
 function rebuildSpacing(obs) {
-  var tally = auditTally(obs.spacings || []);
+  var tally = auditTally(rebuildRoundDims(obs.spacings)); // 小数间距规整为整数
   if (!tally.length) return { scale: [], mapping: [], rawCount: 0 };
   var levels = tally.slice().sort(function (a, b) { return a.value - b.value; });
   var mapping = [];
@@ -1901,7 +1910,7 @@ function rebuildToPreviewData(plan) {
 // 字号/圆角/间距用 harvest 的精确去重值（不收敛）→ 绑回设计零变化。
 function rebuildUniqNums(arr) {
   var seen = {}, out = [];
-  (arr || []).forEach(function (v) { if (typeof v === 'number' && !seen[v]) { seen[v] = 1; out.push(v); } });
+  rebuildRoundDims(arr).forEach(function (v) { if (!seen[v]) { seen[v] = 1; out.push(v); } }); // 规整为整数后去重
   return out.sort(function (a, b) { return a - b; });
 }
 function rebuildToFaithfulData(plan, obs) {
