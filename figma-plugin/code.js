@@ -1781,6 +1781,77 @@ function rebuildToJson(plan) {
   plan.shadow.scale.forEach(function (s) { rebuildSetDeep(out, s.name, s.sig); });
   return JSON.stringify(out, null, 2);
 }
+// 把反推 plan 翻译成正向预览 generatePreview 吃的数据结构（纯函数，便于单测）。
+// 单模式：dark=light。从中性阶推导 文本/背景/边框 语义层，让预览和正向一样丰满。
+function rebuildPickByFrac(sorted, frac) {
+  if (!sorted.length) return null;
+  var i = Math.max(0, Math.min(sorted.length - 1, Math.round(frac * (sorted.length - 1))));
+  return sorted[i];
+}
+function rebuildToPreviewData(plan) {
+  var colorTokens = {}, dimTokens = {};
+  function fn(key) { return key.replace(/\./g, '/'); }
+  function addColor(key, hex, tier, usage) {
+    colorTokens[key] = { figmaName: fn(key), tier: tier || 'primitive', light: hex, dark: hex, usage: usage || '' };
+  }
+  function addDim(key, value, extra) {
+    var o = { figmaName: fn(key), tier: 'primitive', value: value, type: 'dimension', usage: '' };
+    if (extra) for (var k in extra) o[k] = extra[k];
+    dimTokens[key] = o;
+  }
+  var C = plan.colors;
+  // 色板（primitives）
+  C.neutral.forEach(function (t, i) { addColor('color.palette.neutral.' + i, t.hex, 'primitive'); });
+  C.primary.forEach(function (t, i) { addColor('color.palette.primary.' + i, t.hex, 'primitive'); });
+  // 品牌色（semantic 组）+ 品牌强调 key（generatePreview 取它当 accent）
+  var primRep = C.primary.length ? C.primary[Math.floor(C.primary.length / 2)].hex
+              : (C.neutral[0] && C.neutral[0].hex) || '#3366FF';
+  addColor('color.brand.primary', primRep, 'semantic', '主色');
+  C.primary.forEach(function (t, i) { addColor('color.brand.' + (i + 1), t.hex, 'semantic'); });
+  // 功能色（error→danger）
+  var fmap = { success: 'success', warning: 'warning', error: 'danger', info: 'info' };
+  var fusage = { success: '成功', warning: '警告', error: '危险 / 错误', info: '信息' };
+  Object.keys(C.semantic).forEach(function (k) {
+    addColor('color.function.' + (fmap[k] || k), C.semantic[k].hex, 'semantic', fusage[k] || '');
+  });
+  // 辅助色
+  C.accents.forEach(function (t, i) { addColor('color.auxiliary.' + (i + 1), t.hex, 'semantic', '辅助 / 强调'); });
+
+  // 从中性阶推导 文本/背景/边框（单模式）。byLight：浅→深。
+  var byLight = C.neutral.slice().sort(function (a, b) { return a.step - b.step; });
+  var theme = 'light';
+  if (C.neutral.length) {
+    var top = C.neutral.slice().sort(function (a, b) { return b.count - a.count; })[0];
+    theme = (top.step >= 500) ? 'dark' : 'light';   // 高频中性偏深 → 深色设计
+  }
+  function pick(frac) { var p = rebuildPickByFrac(byLight, theme === 'dark' ? (1 - frac) : frac); return p ? p.hex : null; }
+  if (byLight.length) {
+    addColor('color.bg.page', pick(0), 'semantic', '页面背景（由中性阶推导）');
+    addColor('color.bg.surface', pick(0.12), 'semantic', '容器背景（由中性阶推导）');
+    addColor('color.bg.elevated', pick(0.04), 'semantic', '浮层背景（由中性阶推导）');
+    addColor('color.bg.overlay', pick(1), 'semantic', '遮罩（由中性阶推导）');
+    addColor('color.text.primary', pick(1), 'semantic', '主文本（由中性阶推导）');
+    addColor('color.text.secondary', pick(0.72), 'semantic', '次文本（由中性阶推导）');
+    addColor('color.text.tertiary', pick(0.55), 'semantic', '三级文本（由中性阶推导）');
+    addColor('color.text.disabled', pick(0.4), 'semantic', '禁用文本（由中性阶推导）');
+    addColor('color.border.subtle', pick(0.15), 'semantic', '弱边框（由中性阶推导）');
+    addColor('color.border.default', pick(0.25), 'semantic', '默认边框（由中性阶推导）');
+    addColor('color.border.strong', pick(0.4), 'semantic', '强边框（由中性阶推导）');
+  }
+
+  // 字号 / 圆角 / 间距
+  plan.type.roles.forEach(function (r) {
+    addDim('font.size.' + r.role, r.size, { role: r.role.charAt(0).toUpperCase() + r.role.slice(1), weight: 400, lineHeight: Math.round(r.size * 1.5) });
+  });
+  plan.radius.scale.forEach(function (s) { addDim(s.name, s.value); });
+  plan.spacing.scale.forEach(function (s) { addDim(s.name, s.value); });
+
+  return {
+    name: '反推设计规范', version: 'reverse', platform: 'app-web',
+    seed: { localFont: 'pingfang', defaultMode: theme }, defaultMode: theme,
+    colorTokens: colorTokens, dimTokens: dimTokens,
+  };
+}
 // === REBUILD-CORE-END ===
 
 // 采集（需 Figma API）：递归遍历选中节点，抽取硬编码样式 → plain data
@@ -1855,122 +1926,9 @@ function harvestSelection(nodes, maxNodes) {
   return obs;
 }
 
-// 2.0 反推 · 阶段②衍生：用收敛后的干净集生成一张规范预览页（新建框架，不改原设计）。
-// 自包含，沿用 generatePreview 已验证的建节点写法（显式坐标 + 稳健字体加载）。
+// 反推 · 阶段②衍生：缓存上次重建结果，供「生成预览页」复用。
+// 预览走 rebuildToPreviewData(plan) → 现有 generatePreview，与网页端 JSON 粘贴同一张规范页。
 var lastRebuildPlan = null;
-async function generateReversePreview(plan) {
-  var loaded = {};
-  async function tryFont(f, s) { try { await figma.loadFontAsync({ family: f, style: s }); loaded[f + '||' + s] = true; return true; } catch (e) { return false; } }
-  var FAM = 'Inter';
-  var cands = ['PingFang SC', 'Noto Sans SC', 'Source Han Sans SC', 'MiSans', 'Inter'];
-  for (var i = 0; i < cands.length; i++) { if (await tryFont(cands[i], 'Regular')) { FAM = cands[i]; break; } }
-  await tryFont('Inter', 'Regular');
-  await tryFont(FAM, 'Medium'); await tryFont(FAM, 'Semibold'); await tryFont(FAM, 'SemiBold'); await tryFont(FAM, 'Bold');
-  var BOLD = loaded[FAM + '||Semibold'] ? 'Semibold' : loaded[FAM + '||SemiBold'] ? 'SemiBold' : loaded[FAM + '||Bold'] ? 'Bold' : loaded[FAM + '||Medium'] ? 'Medium' : 'Regular';
-
-  var BG = { r: 1, g: 1, b: 1 }, INK = { r: 17 / 255, g: 24 / 255, b: 39 / 255 },
-      DIM = { r: 107 / 255, g: 114 / 255, b: 128 / 255 }, LINE = { r: 229 / 255, g: 231 / 255, b: 235 / 255 },
-      FILL = { r: 237 / 255, g: 240 / 255, b: 245 / 255 }, ACCENT = { r: 51 / 255, g: 102 / 255, b: 1 };
-  var PAD = 40, W = 760, x0 = PAD, contentW = W - PAD * 2;
-
-  var frame = figma.createFrame();
-  frame.name = '反推规范预览 · ' + plan.tokenCount + ' tokens';
-  frame.fills = [{ type: 'SOLID', color: BG }];
-  var sel = figma.currentPage.selection;
-  if (sel.length) { frame.x = (sel[0].x || 0) + (sel[0].width || 0) + 200; frame.y = (sel[0].y || 0); }
-  else { frame.x = Math.round(figma.viewport.center.x); frame.y = Math.round(figma.viewport.center.y); }
-
-  function txt(x, y, str, size, style, color) {
-    var t = figma.createText();
-    frame.appendChild(t);
-    try { t.fontName = { family: FAM, style: (loaded[FAM + '||' + style] ? style : 'Regular') }; }
-    catch (e) { try { t.fontName = { family: FAM, style: 'Regular' }; } catch (e2) {} }
-    t.fontSize = size; t.x = x; t.y = y; t.characters = String(str);
-    t.fills = [{ type: 'SOLID', color: color || INK }];
-    return t;
-  }
-  function rect(x, y, w, h, color, radius) {
-    var r = figma.createRectangle(); frame.appendChild(r);
-    r.x = x; r.y = y; r.resize(w, h);
-    if (radius != null) r.cornerRadius = radius;
-    r.fills = [{ type: 'SOLID', color: color }];
-    return r;
-  }
-  function hr(y) { rect(x0, y, contentW, 1, LINE, 0); }
-
-  var y = PAD;
-  txt(x0, y, '反推设计规范 · 草案', 26, BOLD, INK); y += 40;
-  var tl = { loose: '松', medium: '中', tight: '紧' }[plan.tightness] || '中';
-  txt(x0, y, '共 ' + plan.tokenCount + ' 个 token · 力度【' + tl + '】· 由选中设计反推生成，未改动原文件', 13, 'Regular', DIM); y += 34;
-  hr(y); y += 24;
-
-  function colorGroup(title, list) {
-    if (!list || !list.length) return;
-    txt(x0, y, title, 15, BOLD, INK); y += 26;
-    list.forEach(function (t) {
-      rect(x0, y - 2, 26, 26, hexToFigmaRgb(t.hex) || INK, 6);
-      txt(x0 + 38, y, t.name.replace('color.', ''), 13, 'Regular', INK);
-      txt(x0 + contentW - 90, y, t.hex, 12, 'Regular', DIM);
-      y += 34;
-    });
-    y += 10;
-  }
-  colorGroup('中性色', plan.colors.neutral);
-  colorGroup('主色', plan.colors.primary);
-  colorGroup('语义色', Object.keys(plan.colors.semantic).map(function (k) { return plan.colors.semantic[k]; }));
-  colorGroup('强调色', plan.colors.accents);
-
-  if (plan.type.roles.length) {
-    hr(y); y += 20;
-    txt(x0, y, '字体层级', 15, BOLD, INK); y += 30;
-    plan.type.roles.forEach(function (r) {
-      txt(x0, y, '示例文本 Sample 1234', r.size, 'Regular', INK);
-      txt(x0 + contentW - 130, y + Math.max(0, (r.size - 13) / 2), r.role + ' · ' + r.size + 'px', 12, 'Regular', DIM);
-      y += Math.max(r.size, 18) + 16;
-    });
-    y += 10;
-  }
-  if (plan.radius.scale.length) {
-    hr(y); y += 20;
-    txt(x0, y, '圆角', 15, BOLD, INK); y += 30;
-    var rx = x0;
-    plan.radius.scale.forEach(function (s) {
-      var box = rect(rx, y, 56, 56, FILL, s.value >= 100 ? 28 : Math.min(s.value, 24));
-      box.strokes = [{ type: 'SOLID', color: LINE }];
-      txt(rx, y + 62, s.name.replace('radius.', '') + ' ' + (s.value >= 100 ? 'full' : s.value), 11, 'Regular', DIM);
-      rx += 76;
-    });
-    y += 92;
-  }
-  if (plan.spacing.scale.length) {
-    hr(y); y += 20;
-    txt(x0, y, '间距', 15, BOLD, INK); y += 30;
-    plan.spacing.scale.forEach(function (s) {
-      txt(x0, y, s.name.replace('space.', 's'), 12, 'Regular', DIM);
-      var bw = Math.max(2, s.value * 2);
-      rect(x0 + 44, y + 2, bw, 12, ACCENT, 2);
-      txt(x0 + 44 + bw + 8, y, String(s.value), 11, 'Regular', DIM);
-      y += 24;
-    });
-    y += 10;
-  }
-  if (plan.shadow.scale.length) {
-    hr(y); y += 20;
-    txt(x0, y, '阴影', 15, BOLD, INK); y += 30;
-    plan.shadow.scale.forEach(function (s) {
-      txt(x0, y, s.name.replace('shadow.', ''), 12, 'Regular', INK);
-      txt(x0 + 80, y, s.sig, 11, 'Regular', DIM);
-      y += 22;
-    });
-    y += 10;
-  }
-
-  frame.resize(W, y + PAD - 16);
-  figma.currentPage.appendChild(frame);
-  figma.currentPage.selection = [frame];
-  figma.viewport.scrollAndZoomIntoView([frame]);
-  return frame.id;
-}
 
 figma.ui.onmessage = async (msg) => {
   try {
@@ -2067,8 +2025,9 @@ figma.ui.onmessage = async (msg) => {
         rpPlan = buildRebuildPlan(harvestSelection(rpSel, 20000), { tightness: (msg.tightness || 'medium') });
       }
       figma.ui.postMessage({ type: 'progress', message: '正在生成规范预览页...' });
-      await generateReversePreview(rpPlan);
-      figma.ui.postMessage({ type: 'result', message: '规范预览页已生成（新框架，未改动原设计）' });
+      // 翻译成正向数据 → 复用现有 generatePreview（不改动 web 端 JSON 的生成路径）
+      await generatePreview(rebuildToPreviewData(rpPlan));
+      figma.ui.postMessage({ type: 'result', message: '规范预览页已生成（与网页端同款，未改动原设计）' });
     }
   } catch (err) {
     figma.ui.postMessage({ type: 'error', message: '错误: ' + (err.message || String(err)) + ' | stack: ' + (err.stack || '').slice(0, 200) });

@@ -466,6 +466,41 @@ test("buildRebuildPlan tightness: tight ≤ medium ≤ loose levels; default=med
   eq(buildRebuildPlan(obs, { tightness: "bogus" }).tightness, "medium", "unknown tightness falls back to medium");
 });
 
+test("rebuildToPreviewData: forward-preview shape + neutral-derived semantics", () => {
+  const obs = {
+    fills: [].concat(
+      Array(30).fill({ hex: "#2563EB" }), Array(6).fill({ hex: "#10B981" }), Array(5).fill({ hex: "#EF4444" }),
+      Array(40).fill({ hex: "#FFFFFF" }), Array(18).fill({ hex: "#6B7280" }), Array(14).fill({ hex: "#111827" })
+    ),
+    strokes: [],
+    texts: [{ size: 14 }, { size: 14 }, { size: 20 }],
+    radii: [8, 8, 12], spacings: [8, 16], shadows: [],
+  };
+  const data = rebuildToPreviewData(buildRebuildPlan(obs, { tightness: "medium" }));
+  // top-level contract generatePreview reads
+  assert(data.seed && (data.seed.defaultMode === "light" || data.seed.defaultMode === "dark"), "has seed.defaultMode");
+  eq(data.seed.defaultMode, "light", "white-dominant design → light theme");
+  assert(data.colorTokens["color.brand.primary"], "brand accent key present (generatePreview reads it)");
+  // palette swatches + semantic groups by the prefixes generatePreview iterates
+  assert(Object.keys(data.colorTokens).some((k) => k.startsWith("color.palette.primary.")), "palette.primary.*");
+  assert(Object.keys(data.colorTokens).some((k) => k.startsWith("color.palette.neutral.")), "palette.neutral.*");
+  assert(data.colorTokens["color.function.success"], "green → function.success");
+  assert(data.colorTokens["color.function.danger"], "red → function.danger (error→danger)");
+  // neutral-derived semantic layers: text dark end, bg light end
+  eq(data.colorTokens["color.text.primary"].light, "#111827", "text.primary = darkest neutral");
+  eq(data.colorTokens["color.bg.page"].light, "#FFFFFF", "bg.page = lightest neutral");
+  assert(data.colorTokens["color.border.default"], "border.default derived");
+  // every color token well-formed (figmaName slashed, light=dark single-mode, tier set)
+  Object.values(data.colorTokens).forEach((t) => {
+    assert(t.figmaName.indexOf("/") >= 0 && t.tier && t.light && t.dark === t.light, "color token shape: " + JSON.stringify(t));
+  });
+  // dims: font.size.* carry value+role+weight+lineHeight; radius/space present
+  assert(data.dimTokens["font.size.body"] && data.dimTokens["font.size.body"].value === 14, "font.size.body=14");
+  assert(data.dimTokens["font.size.body"].weight === 400 && data.dimTokens["font.size.body"].lineHeight === 21, "body weight/lineHeight");
+  assert(Object.keys(data.dimTokens).some((k) => k.startsWith("radius.")), "radius.*");
+  assert(Object.keys(data.dimTokens).some((k) => k.startsWith("space.")), "space.*");
+});
+
 // --- report ----------------------------------------------------------------
 console.log(`\n${passed} passed, ${failed} failed (${passed + failed} total)`);
 process.exit(failed ? 1 : 0);
