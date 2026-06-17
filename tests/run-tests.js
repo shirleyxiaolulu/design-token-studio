@@ -410,6 +410,25 @@ test("rebuildColorSystem: vivid brand beats a more-frequent near-gray (slate) fo
   assert(auditChroma(brandPrimary) > 30, "主色 is vivid (chroma " + auditChroma(brandPrimary).toFixed(0) + "), not the slate gray");
 });
 
+test("rebuildColorSystem: many distinct neutrals get unique, ascending names (no collision)", () => {
+  const grays = ["#FFFFFF", "#F0F0F0", "#D8D8D8", "#C7C7C7", "#BCBCBC", "#AAAAAA", "#979797", "#888888", "#727272",
+    "#5E5C5C", "#555555", "#444444", "#333333", "#2C2A2A", "#222222", "#1A1A1A", "#000000"];
+  const cs = rebuildColorSystem({ fills: grays.map((h) => ({ hex: h })), strokes: [] }, { colorDelta: 2.5 });
+  const names = cs.neutral.map((n) => n.name);
+  assert(cs.neutral.length >= 12, "kept the distinct grays (" + cs.neutral.length + ")");
+  eq(new Set(names).size, names.length, "all neutral names unique (no duplicate neutral.50)");
+  for (let i = 1; i < cs.neutral.length; i++) assert(cs.neutral[i].step > cs.neutral[i - 1].step, "steps strictly ascending light→dark");
+});
+
+test("rebuildRadius: multiple full radii (>=100) merge into one radius.full", () => {
+  const r = rebuildRadius({ radii: [4, 8, 999, 9999] });
+  const fulls = r.scale.filter((x) => x.name === "radius.full");
+  eq(fulls.length, 1, "single radius.full token");
+  eq(fulls[0].value, 9999, "full = max value");
+  assert(r.scale.some((x) => x.value === 4) && r.scale.some((x) => x.value === 8), "small radii kept distinct");
+  assert(r.mapping.filter((m) => m.to === "radius.full").length === 2, "both 999 & 9999 map to radius.full");
+});
+
 test("rebuildTypeScale: most-frequent mid size = body, neighbors get roles", () => {
   const obs = { texts: [
     { size: 14 }, { size: 14 }, { size: 14 }, // body (most frequent, in 12–18)

@@ -1601,18 +1601,15 @@ function rebuildColorSystem(obs, opts) {
   // 映射表记录簇内每个原始 hex → token（阶段③写回绑定要靠它）
   function mapCluster(c, name) { (c.members || [c.hex]).forEach(function (h) { mapping.push({ kind: 'color', from: h, to: name }); }); }
 
-  // 中性阶：按亮度降序映射到最近标准阶（冲突时顺延到空位）
-  neutrals.sort(function (a, b) { return b.L - a.L; });
-  var usedStep = {};
-  var neutralRamp = neutrals.map(function (c) {
-    var idx = rebuildLStep(c.L);
-    while (usedStep[idx] && idx < REBUILD_STEPS.length - 1) idx++;
-    while (usedStep[idx] && idx > 0) idx--;
-    usedStep[idx] = true;
-    var step = REBUILD_STEPS[idx], name = 'color.neutral.' + step;
+  // 中性阶：按亮度从浅到深「顺序」赋唯一阶名（50…900，超过 10 个再续 950/1000…）。
+  // 避免旧的「按亮度映射到固定 10 档 + 撞档下沉」导致一堆都叫 neutral.50 的 bug。
+  neutrals.sort(function (a, b) { return b.L - a.L; }); // 浅 → 深
+  var neutralRamp = neutrals.map(function (c, i) {
+    var step = i < REBUILD_STEPS.length ? REBUILD_STEPS[i] : (900 + (i - REBUILD_STEPS.length + 1) * 50);
+    var name = 'color.neutral.' + step;
     mapCluster(c, name);
     return { name: name, step: step, hex: c.hex, count: c.count };
-  }).sort(function (a, b) { return a.step - b.step; });
+  });
 
   // 主色：按「频率 × 彩度」选基准——避免高频但发灰的文本色（如蓝灰 slate）压过真正鲜明的品牌色。
   chromatics.sort(function (a, b) { return (b.count * b.chroma) - (a.count * a.chroma); });
@@ -1622,8 +1619,17 @@ function rebuildColorSystem(obs, opts) {
     var family = chromatics.filter(function (c) { var dh = Math.abs(c.hue - base.hue); dh = Math.min(dh, 360 - dh); return dh <= 18; });
     family.forEach(function (c) { used[c.hex] = true; });
     family.sort(function (a, b) { return b.L - a.L; });
+    var usedP = {};
     primaryRamp = family.map(function (c) {
-      var step = REBUILD_STEPS[rebuildLStep(c.L)], name = 'color.primary.' + step;
+      var idx = rebuildLStep(c.L);                 // 按亮度取档；撞档时就近找空位（保住 300/500 这类直观档名）
+      if (usedP[idx]) {
+        for (var d = 1; d < REBUILD_STEPS.length; d++) {
+          if (idx + d < REBUILD_STEPS.length && !usedP[idx + d]) { idx = idx + d; break; }
+          if (idx - d >= 0 && !usedP[idx - d]) { idx = idx - d; break; }
+        }
+      }
+      usedP[idx] = true;
+      var step = REBUILD_STEPS[idx], name = 'color.primary.' + step;
       mapCluster(c, name);
       return { name: name, step: step, hex: c.hex, count: c.count };
     });
@@ -1677,17 +1683,24 @@ function rebuildTypeScale(obs) {
   });
   return { roles: roles, mapping: mapping, rawCount: levels.length };
 }
-// 圆角：保真——每个实际圆角各成一档（不收敛）。
+// 圆角：保真——每个实际圆角各成一档（不收敛）；所有 ≥100 的「全圆/胶囊」合并为一个 radius.full。
 function rebuildRadius(obs) {
   var tally = auditTally(rebuildRoundDims(obs.radii)); // 小数圆角规整为整数
   if (!tally.length) return { scale: [], mapping: [], rawCount: 0 };
   var levels = tally.slice().sort(function (a, b) { return a.value - b.value; });
-  var names = ['sm', 'md', 'lg', 'xl', '2xl', '3xl', '4xl', '5xl'], mapping = [];
-  var scale = levels.map(function (l, i) {
-    var name = 'radius.' + (l.value >= 100 ? 'full' : (names[i] || ('r' + l.value)));
+  var smalls = levels.filter(function (l) { return l.value < 100; });
+  var fulls = levels.filter(function (l) { return l.value >= 100; });
+  var names = ['sm', 'md', 'lg', 'xl', '2xl', '3xl', '4xl', '5xl'], mapping = [], scale = [];
+  smalls.forEach(function (l, i) {
+    var name = 'radius.' + (names[i] || ('r' + l.value));
     mapping.push({ kind: 'radius', from: l.value, to: name });
-    return { name: name, value: l.value, count: l.count };
+    scale.push({ name: name, value: l.value, count: l.count });
   });
+  if (fulls.length) {                                  // 999 / 9999 等统一成一个 full
+    var maxV = 0, total = 0;
+    fulls.forEach(function (l) { if (l.value > maxV) maxV = l.value; total += l.count; mapping.push({ kind: 'radius', from: l.value, to: 'radius.full' }); });
+    scale.push({ name: 'radius.full', value: maxV, count: total });
+  }
   return { scale: scale, mapping: mapping, rawCount: levels.length };
 }
 // 间距：保真——每个实际间距各成一档（不吸附网格、不收敛）。
@@ -1929,7 +1942,10 @@ function rebuildToFaithfulData(plan, obs) {
   Object.keys(C.semantic).forEach(function (k) { addC(C.semantic[k].name, C.semantic[k].hex, 'semantic', '语义色（原值）'); });
   C.accents.forEach(function (t) { addC(t.name, t.hex, 'semantic', '辅助色（原值）'); });
   rebuildUniqNums((obs.texts || []).map(function (t) { return t.size; })).forEach(function (s) { addD('font.size.s' + s, s, { role: 's' + s, weight: 400, lineHeight: Math.round(s * 1.5) }); });
-  rebuildUniqNums(obs.radii).forEach(function (r) { addD('radius.r' + r, r); });
+  // 圆角：<100 各自一档；≥100 的全圆/胶囊合并为一个 radius.full（取最大值）
+  var rfull = 0;
+  rebuildUniqNums(obs.radii).forEach(function (r) { if (r >= 100) { if (r > rfull) rfull = r; } else addD('radius.r' + r, r); });
+  if (rfull) addD('radius.full', rfull);
   rebuildUniqNums(obs.spacings).forEach(function (s) { addD('space.s' + s, s); });
   var theme = plan.theme || 'light';
   return { name: '反推规范（保真）', version: 'reverse', platform: 'app-web', seed: { localFont: 'pingfang', defaultMode: theme }, defaultMode: theme, colorTokens: colorTokens, dimTokens: dimTokens };

@@ -414,8 +414,8 @@
       }
       var c = p.colors, h = '';
       h += '<div class="audit-summary">整理出 ' + p.tokenCount + ' 个 token（你的精确原值，未改动文件）</div>';
-      if (c.neutral.length) h += sec('中性色', c.neutral.length, c.neutral.map(colorRow).join(''));
       if (c.primary.length) h += sec('主色', c.primary.length, c.primary.map(colorRow).join(''));
+      if (c.neutral.length) h += sec('中性色', c.neutral.length, c.neutral.map(colorRow).join(''));
       var semKeys = Object.keys(c.semantic);
       if (semKeys.length) h += sec('语义色', semKeys.length, semKeys.map(function (k) { return colorRow(c.semantic[k]); }).join(''));
       if (c.accents.length) h += sec('强调色', c.accents.length, c.accents.map(colorRow).join(''));
