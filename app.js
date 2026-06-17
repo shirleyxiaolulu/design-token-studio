@@ -899,6 +899,25 @@ function switchToVersion(versionId) {
   render();
 }
 
+// 方案 A：查看历史版本时编辑控件 → 弹确认。
+// 确定：以该版本为基础复制成草稿继续编辑（会替换当前草稿，退出只读）；
+// 取消：放弃本次修改、回退并留在该版本。返回 true=继续编辑，false=已取消。
+function maybeForkFromVersion() {
+  if (!state.activeVersionId) return true;
+  const ok = window.confirm("当前正在查看历史版本。\n以该版本为基础继续编辑吗？这会替换当前草稿。");
+  if (ok) {
+    state.activeVersionId = null;
+    state.published = false;
+    return true;
+  }
+  // 取消：放弃本次修改，回退到正在查看的版本
+  const project = activeProject();
+  const version = project && project.versions.find((v) => v.id === state.activeVersionId);
+  if (version) applySeed(version.seed);
+  render();
+  return false;
+}
+
 function createProject() {
   const project = DesignStorage.createProjectDraft(currentSeed());
   project.name = `未命名规范 ${state.projects.length + 1}`;
@@ -1019,6 +1038,7 @@ function bindEvents() {
   }
   document.querySelectorAll("[data-mode-switch]").forEach((button) => {
     button.addEventListener("click", () => {
+      if (!maybeForkFromVersion()) return;
       els.defaultMode.value = button.dataset.modeSwitch;
       state.published = false;
       render();
@@ -1044,6 +1064,7 @@ function bindEvents() {
     els.radiusScale,
     els.shadowStrength,
   ].forEach((el) => el.addEventListener("input", () => {
+    if (!maybeForkFromVersion()) return;
     state.published = false;
     render();
   }));
@@ -1059,12 +1080,14 @@ function bindEvents() {
   }
 
   els.primaryColor.addEventListener("input", () => {
+    if (!maybeForkFromVersion()) return;
     els.primaryColorText.value = els.primaryColor.value.toUpperCase();
     state.published = false;
     render();
   });
 
   els.primaryColorText.addEventListener("input", () => {
+    if (!maybeForkFromVersion()) return;
     const next = DesignTokens.normalizeHex(els.primaryColorText.value);
     els.primaryColor.value = next;
     state.published = false;
@@ -1072,6 +1095,7 @@ function bindEvents() {
   });
 
   els.auxiliaryList.addEventListener("input", (event) => {
+    if (!maybeForkFromVersion()) return;
     const row = event.target.closest(".auxiliary-item");
     if (!row) return;
     if (event.target.matches("[data-aux-color]")) {
@@ -1089,6 +1113,7 @@ function bindEvents() {
   els.auxiliaryList.addEventListener("click", (event) => {
     const button = event.target.closest("[data-delete-auxiliary]");
     if (!button) return;
+    if (!maybeForkFromVersion()) return;
     const colors = currentAuxiliaryColors().filter((item) => item.id !== button.dataset.deleteAuxiliary);
     renderAuxiliaryControls(colors.length ? colors : DesignTokens.defaultAuxiliaryColors);
     state.published = false;
@@ -1096,6 +1121,7 @@ function bindEvents() {
   });
 
   els.addAuxiliaryButton.addEventListener("click", () => {
+    if (!maybeForkFromVersion()) return;
     const colors = currentAuxiliaryColors();
     colors.push({
       id: `auxiliary-${colors.length + 1}`,
