@@ -1783,11 +1783,6 @@ function rebuildToJson(plan) {
 }
 // 把反推 plan 翻译成正向预览 generatePreview 吃的数据结构（纯函数，便于单测）。
 // 单模式：dark=light。从中性阶推导 文本/背景/边框 语义层，让预览和正向一样丰满。
-function rebuildPickByFrac(sorted, frac) {
-  if (!sorted.length) return null;
-  var i = Math.max(0, Math.min(sorted.length - 1, Math.round(frac * (sorted.length - 1))));
-  return sorted[i];
-}
 // 色阶推导（与 Web 端 HSL buildScale 同口径）：从一个锚色生成 10 阶基础色（引用色）。
 // 锚色精确落在第 5 阶，偏移向两端渐隐，让色阶看起来和网页端一致、不再单薄。
 function rebuildClampN(v, lo, hi) { return Math.min(Math.max(v, lo), hi); }
@@ -1822,6 +1817,16 @@ function rebuildGrayScaleFrom(hex) {
   var hsl = rebuildRgbToHsl(hex), sat = Math.min(hsl.s, 12);
   return REBUILD_LIGHTS.map(function (light, i) { return rebuildHslToHex(hsl.h, sat, light - (i > 7 ? 2 : 0)); });
 }
+// 与 Web 端一致的基础色谱色相锚点（generatePreview 也只渲染这几族 + primary/gray）。
+var REBUILD_SPECTRUM = { red: 4, orange: 32, yellow: 52, green: 146, cyan: 188, blue: 214, purple: 268 };
+function rebuildHueFamily(hue) {
+  var best = null, bd = 999;
+  for (var name in REBUILD_SPECTRUM) {
+    var dh = Math.abs(hue - REBUILD_SPECTRUM[name]); dh = Math.min(dh, 360 - dh);
+    if (dh < bd) { bd = dh; best = name; }
+  }
+  return best;
+}
 function rebuildToPreviewData(plan) {
   var colorTokens = {}, dimTokens = {};
   function fn(key) { return key.replace(/\./g, '/'); }
@@ -1834,62 +1839,74 @@ function rebuildToPreviewData(plan) {
     dimTokens[key] = o;
   }
   var C = plan.colors;
-  // —— 从检测到的锚色「推导完整色阶」作为基础色（引用色），让色板像 Web 端一样丰满 ——
-  var primRep = C.primary.length ? C.primary[Math.floor(C.primary.length / 2)].hex
-              : (C.neutral[0] && C.neutral[0].hex) || '#3366FF';
+  var BASE = 5; // 锚色落在的基准档（rebuildScaleFrom 把输入放在 index 5）
+
+  // ===== 基础色 primitive：完整色谱（换绑/扩展永远够引用） =====
+  // 1) 主色族 primary：用检测主色（最常用那档）推 10 阶 → 渲染为大色块「Primary」
+  var primRep = '#3366FF';
+  if (C.primary.length) primRep = C.primary.slice().sort(function (a, b) { return b.count - a.count; })[0].hex;
+  else if (C.neutral.length) primRep = C.neutral[0].hex;
   var primaryRamp = rebuildScaleFrom(primRep);
   primaryRamp.forEach(function (hex, i) { addColor('color.palette.primary.' + i, hex, 'primitive'); });
-
-  // 中性阶：取最有彩度的检测中性当 hue 锚，生成 10 阶中性色（避免纯灰丢色相倾向）
+  // 2) 中性族 gray（注意：generatePreview 用 'gray' 这个族名，不是 'neutral'）
   var neutralAnchor = C.neutral.length
     ? C.neutral.slice().sort(function (a, b) { return auditChroma(b.hex) - auditChroma(a.hex); })[0].hex
     : primRep;
-  var neutralRamp = rebuildGrayScaleFrom(neutralAnchor); // index 0=最浅 … 9=最深
-  neutralRamp.forEach(function (hex, i) { addColor('color.palette.neutral.' + i, hex, 'primitive'); });
+  var grayRamp = rebuildGrayScaleFrom(neutralAnchor); // index 0=最浅 … 9=最深
+  grayRamp.forEach(function (hex, i) { addColor('color.palette.gray.' + i, hex, 'primitive'); });
+  // 3) 完整色谱 red/orange/yellow/green/cyan/blue/purple：被检测到的族用检测锚（保真），其余用通用锚
+  var familyAnchor = {};
+  function claim(hex, priority) {
+    var fam = rebuildHueFamily(rebuildHueDeg(hex));
+    if (!familyAnchor[fam] || priority > familyAnchor[fam].p) familyAnchor[fam] = { hex: hex, p: priority };
+  }
+  Object.keys(C.semantic).forEach(function (k) { claim(C.semantic[k].hex, 50); });
+  C.accents.forEach(function (t) { claim(t.hex, 10); });
+  for (var fam in REBUILD_SPECTRUM) {
+    var anchor = familyAnchor[fam] ? familyAnchor[fam].hex : rebuildHslToHex(REBUILD_SPECTRUM[fam], 78, REBUILD_LIGHTS[BASE]);
+    rebuildScaleFrom(anchor).forEach(function (hex, i) { addColor('color.palette.' + fam + '.' + i, hex, 'primitive'); });
+  }
+  function paletteHex(fam, i) { var t = colorTokens['color.palette.' + fam + '.' + i]; return t ? t.light : null; }
 
-  // 品牌强调 key + 品牌色组（用主色阶 8 级梯度）
-  addColor('color.brand.primary', primaryRamp[5], 'semantic', '主色');
-  primaryRamp.forEach(function (hex, i) { addColor('color.brand.' + i, hex, 'semantic'); });
+  // ===== 语义色 semantic：角色名，引用基础色（解决「数字认不出主色」）=====
+  addColor('color.brand.primary', paletteHex('primary', BASE), 'semantic', '主色 · primary → primary.' + BASE);
+  addColor('color.brand.hover', paletteHex('primary', BASE + 1), 'semantic', '主色 hover → primary.' + (BASE + 1));
+  addColor('color.brand.active', paletteHex('primary', BASE + 2), 'semantic', '主色按下 → primary.' + (BASE + 2));
+  addColor('color.brand.bg', paletteHex('primary', 1), 'semantic', '主色浅底 → primary.1');
 
-  // 功能色：每个语义色各推导一条色阶（基础色）+ 组里取基准/浅底
-  var fmap = { success: 'success', warning: 'warning', error: 'danger', info: 'info' };
+  var fname = { success: 'success', warning: 'warning', error: 'danger', info: 'info' };
   var fusage = { success: '成功', warning: '警告', error: '危险 / 错误', info: '信息' };
   Object.keys(C.semantic).forEach(function (k) {
-    var name = fmap[k] || k, ramp = rebuildScaleFrom(C.semantic[k].hex);
-    ramp.forEach(function (hex, i) { addColor('color.palette.' + name + '.' + i, hex, 'primitive'); });
-    addColor('color.function.' + name, ramp[5], 'semantic', fusage[k] || '');
-    addColor('color.function.' + name + '-bg', ramp[1], 'semantic', (fusage[k] || '') + ' · 浅底');
+    var fam = rebuildHueFamily(rebuildHueDeg(C.semantic[k].hex)), nm = fname[k] || k;
+    addColor('color.function.' + nm, paletteHex(fam, BASE), 'semantic', (fusage[k] || '') + ' → ' + fam + '.' + BASE);
+    addColor('color.function.' + nm + '-bg', paletteHex(fam, 1), 'semantic', (fusage[k] || '') + ' · 浅底 → ' + fam + '.1');
   });
-
-  // 辅助色：每个强调色各推导色阶（aux scale 展示）+ 组里基准
   C.accents.forEach(function (t, i) {
-    var id = 'aux' + (i + 1), ramp = rebuildScaleFrom(t.hex);
-    ramp.forEach(function (hex, j) { addColor('color.custom.' + id + '.' + j, hex, 'primitive'); });
-    addColor('color.auxiliary.' + (i + 1), ramp[5], 'semantic', '辅助 / 强调');
+    var fam = rebuildHueFamily(rebuildHueDeg(t.hex));
+    addColor('color.auxiliary.' + (i + 1), paletteHex(fam, BASE), 'semantic', '辅助 / 强调 → ' + fam + '.' + BASE);
   });
 
-  // 主题基调：高频中性偏深 → 深色设计
+  // 主题基调：高频中性偏深 → 深色设计；文本/背景/边框引用 gray 阶（frac 0=浅 1=深，深色翻转）
   var theme = 'light';
   if (C.neutral.length) {
     var top = C.neutral.slice().sort(function (a, b) { return b.count - a.count; })[0];
     theme = (top.step >= 500) ? 'dark' : 'light';
   }
-  // 从「生成的中性阶」推导 文本/背景/边框（单模式）。frac 0=浅 … 1=深；深色主题翻转。
-  function npick(frac) {
+  function gpick(frac) {
     var f = theme === 'dark' ? (1 - frac) : frac;
-    return neutralRamp[rebuildClampN(Math.round(f * (neutralRamp.length - 1)), 0, neutralRamp.length - 1)];
+    return grayRamp[rebuildClampN(Math.round(f * 9), 0, 9)];
   }
-  addColor('color.bg.page', npick(0), 'semantic', '页面背景（由中性阶推导）');
-  addColor('color.bg.surface', npick(0.1), 'semantic', '容器背景（由中性阶推导）');
-  addColor('color.bg.elevated', npick(0.04), 'semantic', '浮层背景（由中性阶推导）');
-  addColor('color.bg.overlay', npick(1), 'semantic', '遮罩（由中性阶推导）');
-  addColor('color.text.primary', npick(1), 'semantic', '主文本（由中性阶推导）');
-  addColor('color.text.secondary', npick(0.72), 'semantic', '次文本（由中性阶推导）');
-  addColor('color.text.tertiary', npick(0.55), 'semantic', '三级文本（由中性阶推导）');
-  addColor('color.text.disabled', npick(0.4), 'semantic', '禁用文本（由中性阶推导）');
-  addColor('color.border.subtle', npick(0.12), 'semantic', '弱边框（由中性阶推导）');
-  addColor('color.border.default', npick(0.22), 'semantic', '默认边框（由中性阶推导）');
-  addColor('color.border.strong', npick(0.36), 'semantic', '强边框（由中性阶推导）');
+  addColor('color.bg.page', gpick(0), 'semantic', '页面背景 → gray 阶');
+  addColor('color.bg.surface', gpick(0.1), 'semantic', '容器背景 → gray 阶');
+  addColor('color.bg.elevated', gpick(0.04), 'semantic', '浮层背景 → gray 阶');
+  addColor('color.bg.overlay', gpick(1), 'semantic', '遮罩 → gray 阶');
+  addColor('color.text.primary', gpick(1), 'semantic', '主文本 → gray 阶');
+  addColor('color.text.secondary', gpick(0.72), 'semantic', '次文本 → gray 阶');
+  addColor('color.text.tertiary', gpick(0.55), 'semantic', '三级文本 → gray 阶');
+  addColor('color.text.disabled', gpick(0.4), 'semantic', '禁用文本 → gray 阶');
+  addColor('color.border.subtle', gpick(0.12), 'semantic', '弱边框 → gray 阶');
+  addColor('color.border.default', gpick(0.22), 'semantic', '默认边框 → gray 阶');
+  addColor('color.border.strong', gpick(0.36), 'semantic', '强边框 → gray 阶');
 
   // 字号 / 圆角 / 间距
   plan.type.roles.forEach(function (r) {

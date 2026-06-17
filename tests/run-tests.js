@@ -466,7 +466,7 @@ test("buildRebuildPlan tightness: tight ≤ medium ≤ loose levels; default=med
   eq(buildRebuildPlan(obs, { tightness: "bogus" }).tightness, "medium", "unknown tightness falls back to medium");
 });
 
-test("rebuildToPreviewData: forward-preview shape + neutral-derived semantics", () => {
+test("rebuildToPreviewData: complete spectrum primitives + role-named semantics", () => {
   const obs = {
     fills: [].concat(
       Array(30).fill({ hex: "#2563EB" }), Array(6).fill({ hex: "#10B981" }), Array(5).fill({ hex: "#EF4444" }),
@@ -477,24 +477,26 @@ test("rebuildToPreviewData: forward-preview shape + neutral-derived semantics", 
     radii: [8, 8, 12], spacings: [8, 16], shadows: [],
   };
   const data = rebuildToPreviewData(buildRebuildPlan(obs, { tightness: "medium" }));
-  // top-level contract generatePreview reads
-  assert(data.seed && (data.seed.defaultMode === "light" || data.seed.defaultMode === "dark"), "has seed.defaultMode");
+  const ct = data.colorTokens;
   eq(data.seed.defaultMode, "light", "white-dominant design → light theme");
-  assert(data.colorTokens["color.brand.primary"], "brand accent key present (generatePreview reads it)");
-  // derived full ramps (基础色/引用色) — 10 steps each, like the web palette
-  var primSteps = Object.keys(data.colorTokens).filter((k) => /^color\.palette\.primary\.\d+$/.test(k));
-  eq(primSteps.length, 10, "primary ramp derived to 10 steps (was thin)");
-  eq(Object.keys(data.colorTokens).filter((k) => /^color\.palette\.neutral\.\d+$/.test(k)).length, 10, "neutral ramp 10 steps");
-  assert(Object.keys(data.colorTokens).some((k) => /^color\.palette\.success\.\d+$/.test(k)), "success ramp derived");
-  assert(Object.keys(data.colorTokens).some((k) => /^color\.palette\.danger\.\d+$/.test(k)), "danger ramp derived (error→danger)");
-  assert(data.colorTokens["color.function.success"], "green → function.success");
-  assert(data.colorTokens["color.function.danger"], "red → function.danger (error→danger)");
-  // neutral-derived semantic layers: text darker than bg in a light theme
-  var lum = (hex) => { const n = parseInt(hex.slice(1), 16); return (n >> 16) + ((n >> 8) & 255) + (n & 255); };
-  assert(lum(data.colorTokens["color.text.primary"].light) < lum(data.colorTokens["color.bg.page"].light), "text darker than bg (light theme)");
-  assert(data.colorTokens["color.border.default"], "border.default derived");
+  // PRIMITIVES: complete spectrum, each family renders in generatePreview's fixed list
+  const fams = ["primary", "gray", "red", "orange", "yellow", "green", "cyan", "blue", "purple"];
+  fams.forEach((f) => {
+    eq(Object.keys(ct).filter((k) => new RegExp("^color\\.palette\\." + f + "\\.\\d+$").test(k)).length, 10, f + " ramp = 10 steps");
+  });
+  // SEMANTICS: role-named, no numeric brand.N (the thing the user couldn't read)
+  assert(ct["color.brand.primary"], "explicit 主色 token present");
+  assert(/主色/.test(ct["color.brand.primary"].usage), "主色 labeled in usage");
+  assert(!Object.keys(ct).some((k) => /^color\.brand\.\d+$/.test(k)), "no numeric brand.N tokens");
+  assert(ct["color.function.success"] && ct["color.function.danger"], "function success/danger by role");
+  // function colors reference the spectrum (green for success, red for danger)
+  eq(ct["color.function.success"].light, ct["color.palette.green.5"].light, "success → green.5");
+  eq(ct["color.function.danger"].light, ct["color.palette.red.5"].light, "danger → red.5");
+  // neutral-derived layers: text darker than bg in light theme
+  const lum = (hex) => { const n = parseInt(hex.slice(1), 16); return (n >> 16) + ((n >> 8) & 255) + (n & 255); };
+  assert(lum(ct["color.text.primary"].light) < lum(ct["color.bg.page"].light), "text darker than bg (light theme)");
   // every color token well-formed (figmaName slashed, light=dark single-mode, tier set)
-  Object.values(data.colorTokens).forEach((t) => {
+  Object.values(ct).forEach((t) => {
     assert(t.figmaName.indexOf("/") >= 0 && t.tier && t.light && t.dark === t.light, "color token shape: " + JSON.stringify(t));
   });
   // dims: font.size.* carry value+role+weight+lineHeight; radius/space present
