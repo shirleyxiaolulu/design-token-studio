@@ -1788,6 +1788,40 @@ function rebuildPickByFrac(sorted, frac) {
   var i = Math.max(0, Math.min(sorted.length - 1, Math.round(frac * (sorted.length - 1))));
   return sorted[i];
 }
+// 色阶推导（与 Web 端 HSL buildScale 同口径）：从一个锚色生成 10 阶基础色（引用色）。
+// 锚色精确落在第 5 阶，偏移向两端渐隐，让色阶看起来和网页端一致、不再单薄。
+function rebuildClampN(v, lo, hi) { return Math.min(Math.max(v, lo), hi); }
+function rebuildRgbToHsl(hex) {
+  var c = auditHexToRgb(hex), r = c.r / 255, g = c.g / 255, b = c.b / 255;
+  var max = Math.max(r, g, b), min = Math.min(r, g, b), h = 0, s = 0, l = (max + min) / 2;
+  if (max !== min) {
+    var d = max - min; s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    if (max === r) h = (g - b) / d + (g < b ? 6 : 0); else if (max === g) h = (b - r) / d + 2; else h = (r - g) / d + 4;
+    h *= 60;
+  }
+  return { h: h, s: s * 100, l: l * 100 };
+}
+function rebuildHslToHex(h, s, l) {
+  var hue = ((h % 360) + 360) % 360, sat = rebuildClampN(s, 0, 100) / 100, light = rebuildClampN(l, 0, 100) / 100;
+  var cc = (1 - Math.abs(2 * light - 1)) * sat, x = cc * (1 - Math.abs((hue / 60) % 2 - 1)), m = light - cc / 2, r = 0, g = 0, b = 0;
+  if (hue < 60) { r = cc; g = x; } else if (hue < 120) { r = x; g = cc; } else if (hue < 180) { g = cc; b = x; }
+  else if (hue < 240) { g = x; b = cc; } else if (hue < 300) { r = x; b = cc; } else { r = cc; b = x; }
+  var toH = function (n) { return rebuildClampN(Math.round((n + m) * 255), 0, 255).toString(16).padStart(2, '0'); };
+  return ('#' + toH(r) + toH(g) + toH(b)).toUpperCase();
+}
+var REBUILD_LIGHTS = [97, 92, 84, 74, 64, 54, 44, 34, 24, 15];
+var REBUILD_SATS = [45, 52, 60, 68, 76, 84, 82, 78, 70, 62];
+function rebuildScaleFrom(hex) {
+  var hsl = rebuildRgbToHsl(hex), lo = hsl.l - REBUILD_LIGHTS[5], so = hsl.s - REBUILD_SATS[5];
+  return REBUILD_LIGHTS.map(function (light, i) {
+    var blend = Math.max(0, 1 - Math.abs(i - 5) * 0.18);
+    return rebuildHslToHex(hsl.h, rebuildClampN(REBUILD_SATS[i] + so * blend, 10, 100), rebuildClampN(light + lo * blend, 3, 99));
+  });
+}
+function rebuildGrayScaleFrom(hex) {
+  var hsl = rebuildRgbToHsl(hex), sat = Math.min(hsl.s, 12);
+  return REBUILD_LIGHTS.map(function (light, i) { return rebuildHslToHex(hsl.h, sat, light - (i > 7 ? 2 : 0)); });
+}
 function rebuildToPreviewData(plan) {
   var colorTokens = {}, dimTokens = {};
   function fn(key) { return key.replace(/\./g, '/'); }
@@ -1800,44 +1834,62 @@ function rebuildToPreviewData(plan) {
     dimTokens[key] = o;
   }
   var C = plan.colors;
-  // 色板（primitives）
-  C.neutral.forEach(function (t, i) { addColor('color.palette.neutral.' + i, t.hex, 'primitive'); });
-  C.primary.forEach(function (t, i) { addColor('color.palette.primary.' + i, t.hex, 'primitive'); });
-  // 品牌色（semantic 组）+ 品牌强调 key（generatePreview 取它当 accent）
+  // —— 从检测到的锚色「推导完整色阶」作为基础色（引用色），让色板像 Web 端一样丰满 ——
   var primRep = C.primary.length ? C.primary[Math.floor(C.primary.length / 2)].hex
               : (C.neutral[0] && C.neutral[0].hex) || '#3366FF';
-  addColor('color.brand.primary', primRep, 'semantic', '主色');
-  C.primary.forEach(function (t, i) { addColor('color.brand.' + (i + 1), t.hex, 'semantic'); });
-  // 功能色（error→danger）
+  var primaryRamp = rebuildScaleFrom(primRep);
+  primaryRamp.forEach(function (hex, i) { addColor('color.palette.primary.' + i, hex, 'primitive'); });
+
+  // 中性阶：取最有彩度的检测中性当 hue 锚，生成 10 阶中性色（避免纯灰丢色相倾向）
+  var neutralAnchor = C.neutral.length
+    ? C.neutral.slice().sort(function (a, b) { return auditChroma(b.hex) - auditChroma(a.hex); })[0].hex
+    : primRep;
+  var neutralRamp = rebuildGrayScaleFrom(neutralAnchor); // index 0=最浅 … 9=最深
+  neutralRamp.forEach(function (hex, i) { addColor('color.palette.neutral.' + i, hex, 'primitive'); });
+
+  // 品牌强调 key + 品牌色组（用主色阶 8 级梯度）
+  addColor('color.brand.primary', primaryRamp[5], 'semantic', '主色');
+  primaryRamp.forEach(function (hex, i) { addColor('color.brand.' + i, hex, 'semantic'); });
+
+  // 功能色：每个语义色各推导一条色阶（基础色）+ 组里取基准/浅底
   var fmap = { success: 'success', warning: 'warning', error: 'danger', info: 'info' };
   var fusage = { success: '成功', warning: '警告', error: '危险 / 错误', info: '信息' };
   Object.keys(C.semantic).forEach(function (k) {
-    addColor('color.function.' + (fmap[k] || k), C.semantic[k].hex, 'semantic', fusage[k] || '');
+    var name = fmap[k] || k, ramp = rebuildScaleFrom(C.semantic[k].hex);
+    ramp.forEach(function (hex, i) { addColor('color.palette.' + name + '.' + i, hex, 'primitive'); });
+    addColor('color.function.' + name, ramp[5], 'semantic', fusage[k] || '');
+    addColor('color.function.' + name + '-bg', ramp[1], 'semantic', (fusage[k] || '') + ' · 浅底');
   });
-  // 辅助色
-  C.accents.forEach(function (t, i) { addColor('color.auxiliary.' + (i + 1), t.hex, 'semantic', '辅助 / 强调'); });
 
-  // 从中性阶推导 文本/背景/边框（单模式）。byLight：浅→深。
-  var byLight = C.neutral.slice().sort(function (a, b) { return a.step - b.step; });
+  // 辅助色：每个强调色各推导色阶（aux scale 展示）+ 组里基准
+  C.accents.forEach(function (t, i) {
+    var id = 'aux' + (i + 1), ramp = rebuildScaleFrom(t.hex);
+    ramp.forEach(function (hex, j) { addColor('color.custom.' + id + '.' + j, hex, 'primitive'); });
+    addColor('color.auxiliary.' + (i + 1), ramp[5], 'semantic', '辅助 / 强调');
+  });
+
+  // 主题基调：高频中性偏深 → 深色设计
   var theme = 'light';
   if (C.neutral.length) {
     var top = C.neutral.slice().sort(function (a, b) { return b.count - a.count; })[0];
-    theme = (top.step >= 500) ? 'dark' : 'light';   // 高频中性偏深 → 深色设计
+    theme = (top.step >= 500) ? 'dark' : 'light';
   }
-  function pick(frac) { var p = rebuildPickByFrac(byLight, theme === 'dark' ? (1 - frac) : frac); return p ? p.hex : null; }
-  if (byLight.length) {
-    addColor('color.bg.page', pick(0), 'semantic', '页面背景（由中性阶推导）');
-    addColor('color.bg.surface', pick(0.12), 'semantic', '容器背景（由中性阶推导）');
-    addColor('color.bg.elevated', pick(0.04), 'semantic', '浮层背景（由中性阶推导）');
-    addColor('color.bg.overlay', pick(1), 'semantic', '遮罩（由中性阶推导）');
-    addColor('color.text.primary', pick(1), 'semantic', '主文本（由中性阶推导）');
-    addColor('color.text.secondary', pick(0.72), 'semantic', '次文本（由中性阶推导）');
-    addColor('color.text.tertiary', pick(0.55), 'semantic', '三级文本（由中性阶推导）');
-    addColor('color.text.disabled', pick(0.4), 'semantic', '禁用文本（由中性阶推导）');
-    addColor('color.border.subtle', pick(0.15), 'semantic', '弱边框（由中性阶推导）');
-    addColor('color.border.default', pick(0.25), 'semantic', '默认边框（由中性阶推导）');
-    addColor('color.border.strong', pick(0.4), 'semantic', '强边框（由中性阶推导）');
+  // 从「生成的中性阶」推导 文本/背景/边框（单模式）。frac 0=浅 … 1=深；深色主题翻转。
+  function npick(frac) {
+    var f = theme === 'dark' ? (1 - frac) : frac;
+    return neutralRamp[rebuildClampN(Math.round(f * (neutralRamp.length - 1)), 0, neutralRamp.length - 1)];
   }
+  addColor('color.bg.page', npick(0), 'semantic', '页面背景（由中性阶推导）');
+  addColor('color.bg.surface', npick(0.1), 'semantic', '容器背景（由中性阶推导）');
+  addColor('color.bg.elevated', npick(0.04), 'semantic', '浮层背景（由中性阶推导）');
+  addColor('color.bg.overlay', npick(1), 'semantic', '遮罩（由中性阶推导）');
+  addColor('color.text.primary', npick(1), 'semantic', '主文本（由中性阶推导）');
+  addColor('color.text.secondary', npick(0.72), 'semantic', '次文本（由中性阶推导）');
+  addColor('color.text.tertiary', npick(0.55), 'semantic', '三级文本（由中性阶推导）');
+  addColor('color.text.disabled', npick(0.4), 'semantic', '禁用文本（由中性阶推导）');
+  addColor('color.border.subtle', npick(0.12), 'semantic', '弱边框（由中性阶推导）');
+  addColor('color.border.default', npick(0.22), 'semantic', '默认边框（由中性阶推导）');
+  addColor('color.border.strong', npick(0.36), 'semantic', '强边框（由中性阶推导）');
 
   // 字号 / 圆角 / 间距
   plan.type.roles.forEach(function (r) {

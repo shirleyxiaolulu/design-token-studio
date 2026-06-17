@@ -481,14 +481,17 @@ test("rebuildToPreviewData: forward-preview shape + neutral-derived semantics", 
   assert(data.seed && (data.seed.defaultMode === "light" || data.seed.defaultMode === "dark"), "has seed.defaultMode");
   eq(data.seed.defaultMode, "light", "white-dominant design → light theme");
   assert(data.colorTokens["color.brand.primary"], "brand accent key present (generatePreview reads it)");
-  // palette swatches + semantic groups by the prefixes generatePreview iterates
-  assert(Object.keys(data.colorTokens).some((k) => k.startsWith("color.palette.primary.")), "palette.primary.*");
-  assert(Object.keys(data.colorTokens).some((k) => k.startsWith("color.palette.neutral.")), "palette.neutral.*");
+  // derived full ramps (基础色/引用色) — 10 steps each, like the web palette
+  var primSteps = Object.keys(data.colorTokens).filter((k) => /^color\.palette\.primary\.\d+$/.test(k));
+  eq(primSteps.length, 10, "primary ramp derived to 10 steps (was thin)");
+  eq(Object.keys(data.colorTokens).filter((k) => /^color\.palette\.neutral\.\d+$/.test(k)).length, 10, "neutral ramp 10 steps");
+  assert(Object.keys(data.colorTokens).some((k) => /^color\.palette\.success\.\d+$/.test(k)), "success ramp derived");
+  assert(Object.keys(data.colorTokens).some((k) => /^color\.palette\.danger\.\d+$/.test(k)), "danger ramp derived (error→danger)");
   assert(data.colorTokens["color.function.success"], "green → function.success");
   assert(data.colorTokens["color.function.danger"], "red → function.danger (error→danger)");
-  // neutral-derived semantic layers: text dark end, bg light end
-  eq(data.colorTokens["color.text.primary"].light, "#111827", "text.primary = darkest neutral");
-  eq(data.colorTokens["color.bg.page"].light, "#FFFFFF", "bg.page = lightest neutral");
+  // neutral-derived semantic layers: text darker than bg in a light theme
+  var lum = (hex) => { const n = parseInt(hex.slice(1), 16); return (n >> 16) + ((n >> 8) & 255) + (n & 255); };
+  assert(lum(data.colorTokens["color.text.primary"].light) < lum(data.colorTokens["color.bg.page"].light), "text darker than bg (light theme)");
   assert(data.colorTokens["color.border.default"], "border.default derived");
   // every color token well-formed (figmaName slashed, light=dark single-mode, tier set)
   Object.values(data.colorTokens).forEach((t) => {
