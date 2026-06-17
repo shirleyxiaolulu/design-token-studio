@@ -73,6 +73,11 @@ const els = {
   publishVersion: document.querySelector("#publishVersion"),
   publishChangelog: document.querySelector("#publishChangelog"),
   confirmPublishButton: document.querySelector("#confirmPublishButton"),
+  confirmDialog: document.querySelector("#confirmDialog"),
+  confirmDialogTitle: document.querySelector("#confirmDialogTitle"),
+  confirmDialogMessage: document.querySelector("#confirmDialogMessage"),
+  confirmDialogOk: document.querySelector("#confirmDialogOk"),
+  confirmDialogCancel: document.querySelector("#confirmDialogCancel"),
   toast: document.querySelector("#toast"),
 };
 
@@ -899,23 +904,79 @@ function switchToVersion(versionId) {
   render();
 }
 
-// 方案 A：查看历史版本时编辑控件 → 弹确认。
-// 确定：以该版本为基础复制成草稿继续编辑（会替换当前草稿，退出只读）；
-// 取消：放弃本次修改、回退并留在该版本。返回 true=继续编辑，false=已取消。
-function maybeForkFromVersion() {
-  if (!state.activeVersionId) return true;
-  const ok = window.confirm("当前正在查看历史版本。\n以该版本为基础继续编辑吗？这会替换当前草稿。");
-  if (ok) {
-    state.activeVersionId = null;
-    state.published = false;
-    return true;
-  }
-  // 取消：放弃本次修改，回退到正在查看的版本
-  const project = activeProject();
-  const version = project && project.versions.find((v) => v.id === state.activeVersionId);
-  if (version) applySeed(version.seed);
-  render();
-  return false;
+// 与 UI 风格一致的自定义确认框（替代原生 window.confirm）。
+// 返回 Promise<boolean>。基于原生 <dialog>.showModal()，居中显示并带遮罩。
+function openConfirm({ title, message, confirmText = "确定", cancelText = "取消" } = {}) {
+  return new Promise((resolve) => {
+    const dlg = els.confirmDialog;
+    if (!dlg) { resolve(window.confirm(`${title || ""}\n${message || ""}`.trim())); return; }
+    els.confirmDialogTitle.textContent = title || "提示";
+    els.confirmDialogMessage.textContent = message || "";
+    els.confirmDialogOk.textContent = confirmText;
+    els.confirmDialogCancel.textContent = cancelText;
+    let settled = false;
+    const finish = (val) => {
+      if (settled) return;
+      settled = true;
+      els.confirmDialogOk.removeEventListener("click", onOk);
+      els.confirmDialogCancel.removeEventListener("click", onCancel);
+      dlg.removeEventListener("cancel", onDialogCancel);
+      dlg.removeEventListener("click", onBackdrop);
+      if (dlg.open) dlg.close();
+      resolve(val);
+    };
+    const onOk = () => finish(true);
+    const onCancel = () => finish(false);
+    const onDialogCancel = (event) => { event.preventDefault(); finish(false); }; // Esc
+    const onBackdrop = (event) => { if (event.target === dlg) finish(false); };    // 点遮罩
+    els.confirmDialogOk.addEventListener("click", onOk);
+    els.confirmDialogCancel.addEventListener("click", onCancel);
+    dlg.addEventListener("cancel", onDialogCancel);
+    dlg.addEventListener("click", onBackdrop);
+    dlg.showModal();
+    els.confirmDialogOk.focus();
+  });
+}
+
+// 方案 A：查看历史版本时编辑控件 → 弹确认（异步）。
+// 确定：以该版本为基础复制成草稿继续编辑（会替换当前草稿，退出只读），随后执行 proceed；
+// 取消：放弃本次修改、回退并留在该版本。
+let versionGuardBusy = false;
+function guardVersionEdit(proceed) {
+  if (!state.activeVersionId) { proceed(); return; }
+  if (versionGuardBusy) return; // 已有确认框打开时，忽略后续触发
+  versionGuardBusy = true;
+  openConfirm({
+    title: "当前正在查看历史版本",
+    message: "以该版本为基础继续编辑吗？这会替换当前草稿。",
+    confirmText: "继续编辑",
+    cancelText: "取消",
+  }).then((ok) => {
+    versionGuardBusy = false;
+    if (ok) {
+      state.activeVersionId = null;
+      state.published = false;
+      proceed();
+    } else {
+      // 取消：放弃本次修改，回退到正在查看的版本
+      const project = activeProject();
+      const version = project && project.versions.find((v) => v.id === state.activeVersionId);
+      if (version) applySeed(version.seed);
+      render();
+    }
+  });
+}
+
+// 复制/下载成功反馈：用 SVG 勾替代文本 ✓，并临时切换到成功态样式。
+const CHECK_SVG = '<svg class="btn-check" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 13l4 4L19 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+function flashButtonSuccess(btn, label, restore, duration = 1500) {
+  if (!btn) return;
+  btn.classList.add("is-success");
+  btn.innerHTML = `${CHECK_SVG}<span>${label}</span>`;
+  setTimeout(() => {
+    btn.classList.remove("is-success");
+    btn.textContent = restore;
+  }, duration);
 }
 
 function createProject() {
@@ -1038,10 +1099,11 @@ function bindEvents() {
   }
   document.querySelectorAll("[data-mode-switch]").forEach((button) => {
     button.addEventListener("click", () => {
-      if (!maybeForkFromVersion()) return;
-      els.defaultMode.value = button.dataset.modeSwitch;
-      state.published = false;
-      render();
+      guardVersionEdit(() => {
+        els.defaultMode.value = button.dataset.modeSwitch;
+        state.published = false;
+        render();
+      });
     });
   });
   const contrastGrid = document.querySelector("#contrastGrid");
@@ -1064,9 +1126,10 @@ function bindEvents() {
     els.radiusScale,
     els.shadowStrength,
   ].forEach((el) => el.addEventListener("input", () => {
-    if (!maybeForkFromVersion()) return;
-    state.published = false;
-    render();
+    guardVersionEdit(() => {
+      state.published = false;
+      render();
+    });
   }));
 
   // v2: naming strategy
@@ -1080,57 +1143,62 @@ function bindEvents() {
   }
 
   els.primaryColor.addEventListener("input", () => {
-    if (!maybeForkFromVersion()) return;
-    els.primaryColorText.value = els.primaryColor.value.toUpperCase();
-    state.published = false;
-    render();
+    guardVersionEdit(() => {
+      els.primaryColorText.value = els.primaryColor.value.toUpperCase();
+      state.published = false;
+      render();
+    });
   });
 
   els.primaryColorText.addEventListener("input", () => {
-    if (!maybeForkFromVersion()) return;
-    const next = DesignTokens.normalizeHex(els.primaryColorText.value);
-    els.primaryColor.value = next;
-    state.published = false;
-    render();
+    guardVersionEdit(() => {
+      const next = DesignTokens.normalizeHex(els.primaryColorText.value);
+      els.primaryColor.value = next;
+      state.published = false;
+      render();
+    });
   });
 
   els.auxiliaryList.addEventListener("input", (event) => {
-    if (!maybeForkFromVersion()) return;
     const row = event.target.closest(".auxiliary-item");
     if (!row) return;
-    if (event.target.matches("[data-aux-color]")) {
-      row.querySelector("[data-aux-text]").value = event.target.value.toUpperCase();
-    }
-    if (event.target.matches("[data-aux-text]")) {
-      const next = DesignTokens.normalizeHex(event.target.value);
-      event.target.value = next;
-      row.querySelector("[data-aux-color]").value = next;
-    }
-    state.published = false;
-    render();
+    guardVersionEdit(() => {
+      if (event.target.matches("[data-aux-color]")) {
+        row.querySelector("[data-aux-text]").value = event.target.value.toUpperCase();
+      }
+      if (event.target.matches("[data-aux-text]")) {
+        const next = DesignTokens.normalizeHex(event.target.value);
+        event.target.value = next;
+        row.querySelector("[data-aux-color]").value = next;
+      }
+      state.published = false;
+      render();
+    });
   });
 
   els.auxiliaryList.addEventListener("click", (event) => {
     const button = event.target.closest("[data-delete-auxiliary]");
     if (!button) return;
-    if (!maybeForkFromVersion()) return;
-    const colors = currentAuxiliaryColors().filter((item) => item.id !== button.dataset.deleteAuxiliary);
-    renderAuxiliaryControls(colors.length ? colors : DesignTokens.defaultAuxiliaryColors);
-    state.published = false;
-    render();
+    guardVersionEdit(() => {
+      const colors = currentAuxiliaryColors().filter((item) => item.id !== button.dataset.deleteAuxiliary);
+      renderAuxiliaryControls(colors.length ? colors : DesignTokens.defaultAuxiliaryColors);
+      state.published = false;
+      render();
+    });
   });
 
   els.addAuxiliaryButton.addEventListener("click", () => {
-    if (!maybeForkFromVersion()) return;
-    const colors = currentAuxiliaryColors();
-    colors.push({
-      id: `auxiliary-${colors.length + 1}`,
-      name: `Auxiliary ${colors.length + 1}`,
-      color: "#8B5CF6",
+    guardVersionEdit(() => {
+      const colors = currentAuxiliaryColors();
+      colors.push({
+        id: `auxiliary-${colors.length + 1}`,
+        name: `Auxiliary ${colors.length + 1}`,
+        color: "#8B5CF6",
+      });
+      renderAuxiliaryControls(colors);
+      state.published = false;
+      render();
     });
-    renderAuxiliaryControls(colors);
-    state.published = false;
-    render();
   });
 
   document.querySelectorAll("[data-export]").forEach((button) => {
@@ -1158,8 +1226,12 @@ function bindEvents() {
       const projectId = deleteButton.dataset.deleteProject;
       const project = state.projects.find((p) => p.id === projectId);
       const label = project ? project.name : "该项目";
-      if (!confirm(`确定删除「${label}」吗？该项目的所有版本记录都将丢失。`)) return;
-      deleteProject(projectId);
+      openConfirm({
+        title: "删除项目",
+        message: `确定删除「${label}」吗？该项目的所有版本记录都将丢失。`,
+        confirmText: "删除",
+        cancelText: "取消",
+      }).then((ok) => { if (ok) deleteProject(projectId); });
       return;
     }
     const item = event.target.closest("[data-project-id]");
@@ -1174,16 +1246,23 @@ function bindEvents() {
       const project = activeProject();
       const version = project?.versions.find((v) => v.id === versionId);
       const label = version ? `v${version.version}` : "该版本";
-      if (!confirm(`确定删除 ${label} 吗？删除后无法恢复。`)) return;
-      project.versions = project.versions.filter((v) => v.id !== versionId);
-      if (state.activeVersionId === versionId) {
-        state.activeVersionId = null;
-        state.published = false;
-        applySeed(project.draft || currentSeed());
-      }
-      saveProjects();
-      render();
-      showToast(`已删除 ${label}`);
+      openConfirm({
+        title: "删除版本",
+        message: `确定删除 ${label} 吗？删除后无法恢复。`,
+        confirmText: "删除",
+        cancelText: "取消",
+      }).then((ok) => {
+        if (!ok) return;
+        project.versions = project.versions.filter((v) => v.id !== versionId);
+        if (state.activeVersionId === versionId) {
+          state.activeVersionId = null;
+          state.published = false;
+          applySeed(project.draft || currentSeed());
+        }
+        saveProjects();
+        render();
+        showToast(`已删除 ${label}`);
+      });
       return;
     }
     // Click container to switch
@@ -1193,17 +1272,11 @@ function bindEvents() {
 
   els.downloadButton.addEventListener("click", () => {
     downloadExport();
-    const btn = els.downloadButton;
-    const original = btn.textContent;
-    btn.textContent = "已下载 ✓";
-    setTimeout(() => { btn.textContent = original; }, 1500);
+    flashButtonSuccess(els.downloadButton, "已下载", "下载");
   });
   els.copyExportButton.addEventListener("click", () => {
     copyExport();
-    const btn = els.copyExportButton;
-    const original = btn.textContent;
-    btn.textContent = "已复制 ✓";
-    setTimeout(() => { btn.textContent = original; }, 1500);
+    flashButtonSuccess(els.copyExportButton, "已复制", "复制");
   });
 
   els.exportCodeCopyButton?.addEventListener("click", () => {
@@ -1231,9 +1304,7 @@ function bindEvents() {
       document.execCommand("copy");
       ta.remove();
     }
-    const btn = document.getElementById("copyAiPromptButton");
-    btn.textContent = "已复制 ✓";
-    setTimeout(() => { btn.textContent = "复制 AI Prompt"; }, 1500);
+    flashButtonSuccess(document.getElementById("copyAiPromptButton"), "已复制", "复制 AI Prompt");
   });
 
   document.getElementById("copyAiJsonButton").addEventListener("click", async () => {
@@ -1250,9 +1321,7 @@ function bindEvents() {
       document.execCommand("copy");
       ta.remove();
     }
-    const btn = document.getElementById("copyAiJsonButton");
-    btn.textContent = "已复制 ✓";
-    setTimeout(() => { btn.textContent = "复制 AI JSON"; }, 1500);
+    flashButtonSuccess(document.getElementById("copyAiJsonButton"), "已复制", "复制 AI JSON");
   });
 
   document.getElementById("downloadAiJsonButton").addEventListener("click", () => {
@@ -1294,10 +1363,8 @@ function bindEvents() {
       document.execCommand("copy");
       ta.remove();
     }
-    const btn = document.getElementById("quickCopyJsonButton");
-    btn.textContent = "已复制 ✓";
     state.exportDirty = false;
-    setTimeout(() => { btn.textContent = "复制 JSON"; }, 1500);
+    flashButtonSuccess(document.getElementById("quickCopyJsonButton"), "已复制", "复制 JSON");
     showToast("JSON 已复制到剪贴板");
   });
 
@@ -1316,9 +1383,7 @@ function bindEvents() {
       document.execCommand("copy");
       ta.remove();
     }
-    const btn = document.getElementById("shareUrlButton");
-    btn.textContent = "已复制 ✓";
-    setTimeout(() => { btn.textContent = "分享链接"; }, 1500);
+    flashButtonSuccess(document.getElementById("shareUrlButton"), "已复制", "分享链接");
     showToast("分享链接已复制，发给同事即可打开相同配置");
   });
 

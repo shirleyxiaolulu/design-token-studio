@@ -664,51 +664,49 @@ input[type="range"] {
   font-size: 12px;
 }
 
+/* 导出框「下载 / 复制」：默认灰 → 悬停有色线框 → 按下/成功为色块 */
 .download-button {
   width: 100%;
   height: 34px;
   margin: 0;
-  border: 1px solid var(--primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: transparent;
-  color: var(--primary);
+  color: var(--text-soft);
   font-weight: 700;
   cursor: pointer;
-  transition: background 0.15s, transform 0.1s;
+  transition: border-color 0.15s, background 0.15s, color 0.15s, transform 0.1s;
 }
 
 .download-button:hover {
-  background: rgba(var(--primary-rgb, 101, 51, 232), 0.12);
+  border-color: var(--primary);
+  color: var(--primary);
+  background: transparent;
   transform: translateY(-1px);
 }
 
-.download-button:active {
-  transform: translateY(0);
-  background: rgba(var(--primary-rgb, 101, 51, 232), 0.2);
-}
-
-.download-button.secondary {
-  border-color: var(--line);
-  background: transparent;
-  color: var(--text);
-}
-
-.download-button.secondary:hover {
-  background: rgba(255,255,255,0.06);
-}
-
-body[data-default-mode="light"] .download-button {
+.download-button:active,
+.download-button.is-success {
   border-color: var(--primary);
+  background: var(--primary);
+  color: #fff;
+  transform: translateY(0);
 }
 
-body[data-default-mode="light"] .download-button.secondary {
-  border-color: var(--line);
-  background: #fff;
-  color: var(--text);
+.btn-check {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  vertical-align: -2px;
+  margin-right: 5px;
 }
 
-body[data-default-mode="light"] .download-button.secondary:hover {
-  background: #f5f5f5;
+.download-button .btn-check {
+  margin-right: 0; /* flex gap 已处理间距 */
 }
 
 .action-button.active,
@@ -1705,6 +1703,30 @@ body[data-default-mode="light"] .toast {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
+}
+
+/* 自定义确认框（替代原生 confirm，居中显示、风格统一） */
+.confirm-modal {
+  width: min(420px, calc(100vw - 32px));
+  padding: 24px;
+}
+
+.confirm-modal h3 {
+  font-size: 18px;
+  margin-bottom: 10px;
+}
+
+.confirm-modal p {
+  font-size: 14px;
+  line-height: 1.6;
+  margin-bottom: 22px;
+}
+
+.confirm-modal .modal-actions button {
+  white-space: nowrap;
+  min-width: 72px;
+  padding-left: 16px;
+  padding-right: 16px;
 }
 
 @media (max-width: 1180px) {
