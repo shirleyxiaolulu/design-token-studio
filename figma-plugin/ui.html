@@ -106,6 +106,15 @@
 
   <div class="divider"></div>
 
+  <div class="reverse-section">
+    <div class="reverse-title">反推设计规范 <span class="reverse-badge">实验 · 2.0</span></div>
+    <p class="subtitle" style="margin-top:4px; margin-bottom:10px;">选中画板/图层 → 扫描已用样式，生成审计报告（阶段①，只读不改文件）</p>
+    <button class="btn btn-outline" id="auditBtn" style="margin-top:0;">扫描选中内容 · 生成审计</button>
+    <div class="audit-result" id="auditResult"></div>
+  </div>
+
+  <div class="divider"></div>
+
   <div class="steps">
     <strong>使用流程</strong>
     <ol>
@@ -115,15 +124,6 @@
       <li>点击「同步变量」更新所有 Figma Variables</li>
       <li>需要时点击「生成预览页」创建可视文档</li>
     </ol>
-  </div>
-
-  <div class="divider"></div>
-
-  <div class="reverse-section">
-    <div class="reverse-title">反推设计规范 <span class="reverse-badge">实验 · 2.0</span></div>
-    <p class="subtitle" style="margin-top:4px; margin-bottom:10px;">选中画板/图层 → 扫描已用样式，生成审计报告（阶段①，只读不改文件）</p>
-    <button class="btn btn-outline" id="auditBtn" style="margin-top:0;">扫描选中内容 · 生成审计</button>
-    <div class="audit-result" id="auditResult"></div>
   </div>
 
   <script>

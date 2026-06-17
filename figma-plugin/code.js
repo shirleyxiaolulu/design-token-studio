@@ -2,7 +2,7 @@
 // 功能 1: 同步变量（从 Web 端 JSON 更新 Figma Variables）
 // 功能 2: 生成预览页（基于 JSON 数据创建可视化文档）
 
-figma.showUI(__html__, { width: 340, height: 520 });
+figma.showUI(__html__, { width: 360, height: 640 });
 
 // =============================================
 // Helpers
