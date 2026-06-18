@@ -45,7 +45,9 @@ function setup() {
     var node = {
       children: [], _bound: {}, _ranges: [],
       appendChild: function (c) { this.children.push(c); },
+      _explicitModes: {},
       setBoundVariable: function (field, v) { this._bound[field] = v; },
+      setExplicitVariableModeForCollection: function (col, modeId) { this._explicitModes[col.id || col] = modeId; },
       setRangeFills: function (s, e, f) { this._ranges.push({ start: s, end: e, fills: f }); },
       getStyledTextSegments: function () { return this._segments || []; },
       clone: function () {
@@ -99,7 +101,7 @@ function setup() {
   }
   function varByName(name) { for (var id in _vid) { if (_vid[id].name === name) return _vid[id]; } return null; }
 
-  function varRaw(name) { var v = varByName(name); return v ? rawValue(v) : undefined; } // 不跟随别名，看原始值（判断是否为 alias）
+  function varRaw(name, modeName) { var v = varByName(name); return v ? rawValue(v, modeName) : undefined; } // 不跟随别名，看原始值（判断是否为 alias）
   function varById(id) { return _vid[id] || null; }
   return { figma: figma, N: N, solid: solid, grad: grad, rgb: rgb, MIXED: MIXED, COLS: COLS, PAGES: PAGES, varValue: varValue, varRaw: varRaw, varByName: varByName, varById: varById };
 }

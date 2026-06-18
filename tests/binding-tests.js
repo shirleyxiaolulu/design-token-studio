@@ -152,6 +152,21 @@ test('绑定小结：统计图片填充 / 特效节点 / 绑定计数', async ()
   assert(typeof b.fills === 'number', 'bound.fills 仍为数值');
 });
 
+test('双模式：中性语义色对侧模式镜像明度(别名不同)、品牌色两模式相同、副本锁检测模式', async () => {
+  fresh(); const { N, solid } = M;
+  const tags = []; for (let i = 0; i < 8; i++) tags.push(N({ type: 'FRAME', width: 120, height: 40, y: i * 50, characters: '', fills: [solid('#FF6B00')], strokes: [] }));
+  const title = N({ type: 'TEXT', width: 300, height: 30, y: 500, characters: '标题', fontSize: 24, fontName: { family: 'Inter', style: 'Bold' }, lineHeight: { unit: 'AUTO' }, fills: [solid('#FFFFFF')] });
+  const card = N({ type: 'FRAME', width: 400, height: 200, y: 600, characters: '', fills: [solid('#888888')], strokes: [] });
+  const page = N({ type: 'FRAME', width: 1440, height: 1200, characters: '', fills: [solid('#1A1A1A')], strokes: [], children: tags.concat([title, card]) });
+  const root = await bind(page);
+  const bgL = M.varRaw('color/bg/page', 'Light'), bgD = M.varRaw('color/bg/page', 'Dark');
+  assert(bgL && bgD && bgL.type === 'VARIABLE_ALIAS' && bgD.type === 'VARIABLE_ALIAS', 'bg/page 两模式都应是别名');
+  assert(bgL.id !== bgD.id, '中性色 bg/page 对侧模式应镜像到不同基础色, L=' + JSON.stringify(bgL) + ' D=' + JSON.stringify(bgD));
+  const brL = M.varRaw('color/brand/primary', 'Light'), brD = M.varRaw('color/brand/primary', 'Dark');
+  assert(brL && brD && brL.id === brD.id, '品牌色两模式应指向相同基础色');
+  assert(Object.keys(root._explicitModes).length > 0, '副本应锁定到检测主题的模式');
+});
+
 test('主题覆盖：手动指定浅/深，自动回到检测值，预览 chrome 跟随', async () => {
   fresh();
   const darkObs = { fills: [{ hex: '#1A1A1A', opacity: 1, nodeType: 'FRAME', area: 1440 * 3000 }], strokes: [], texts: [{ size: 14 }], radii: [8], spacings: [8], shadows: [] };

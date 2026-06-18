@@ -2045,12 +2045,25 @@ async function aliasReverseSemantics(data) {
       } catch (e) {}
       return;
     }
-    // 不透明语义色：只别名到「不透明」基础色（不要吸到半透明基础色）
+    // 不透明语义色：检测到的那一模式别名到「真实同色」基础色；对侧模式——中性角色镜像明度、品牌/状态色保持相同。
     var best = null, bd = Infinity;
     for (var i = 0; i < prims.length; i++) { if (prims[i].alpha < 1) continue; var d = auditDeltaE(t.light, prims[i].hex); if (d < bd) { bd = d; best = prims[i]; } }
-    if (best && bd < 1.5 && best.v.id !== sv.id) {
-      try { var a = figma.variables.createVariableAlias(best.v); sv.setValueForMode(mdA.light, a); sv.setValueForMode(mdA.dark, a); aliased++; } catch (e) {}
-    }
+    if (!(best && bd < 1.5 && best.v.id !== sv.id)) return;
+    try {
+      var detMode = (data.defaultMode === 'dark') ? mdA.dark : mdA.light;
+      var oppMode = (data.defaultMode === 'dark') ? mdA.light : mdA.dark;
+      sv.setValueForMode(detMode, figma.variables.createVariableAlias(best.v));
+      // 中性角色(bg/text/border 且近中性)：对侧模式指向「明度相反」的灰阶基础色（亮↔暗翻转）；其余两模式相同。
+      var isNeutralRole = (k.indexOf('color.bg.') === 0 || k.indexOf('color.text.') === 0 || k.indexOf('color.border.') === 0);
+      var oppBase = best;
+      if (isNeutralRole && auditIsNeutral(t.light)) {
+        var targetL = 100 - auditHexToLab(t.light).L, gp = null, gd = Infinity;
+        for (var gi = 0; gi < prims.length; gi++) { if (prims[gi].alpha < 1 || !auditIsNeutral(prims[gi].hex)) continue; var dl = Math.abs(auditHexToLab(prims[gi].hex).L - targetL); if (dl < gd) { gd = dl; gp = prims[gi]; } }
+        if (gp) oppBase = gp;
+      }
+      sv.setValueForMode(oppMode, figma.variables.createVariableAlias(oppBase.v));
+      aliased++;
+    } catch (e) {}
   });
   return aliased;
 }
@@ -2206,6 +2219,15 @@ async function bindReverseVariables(plan) {
       }
     } catch (e) { /* 跳过无法绑定的文本 */ }
   }
+  // 把副本锁定到「检测到的主题」那一模式渲染——这样即使集合默认模式不是它，副本仍显示原始主题（保真）。
+  try {
+    var wantMode = (theme === 'dark') ? 'Dark' : 'Light';
+    for (var ci3 = 0; ci3 < cols.length; ci3++) {
+      var dm3 = cols[ci3].modes.find(function (m) { return m.name === wantMode; });
+      if (!dm3) continue;
+      for (var cl3 = 0; cl3 < clones.length; cl3++) { try { clones[cl3].setExplicitVariableModeForCollection(cols[ci3], dm3.modeId); } catch (e) {} }
+    }
+  } catch (e) {}
   figma.currentPage = page;
   try { figma.currentPage.selection = clones; figma.viewport.scrollAndZoomIntoView(clones); } catch (e) {}
   bound.skipped = skipped;
