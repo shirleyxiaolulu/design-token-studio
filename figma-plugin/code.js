@@ -1835,9 +1835,11 @@ function rebuildToData(plan) {
   C.accents.forEach(function (t) { toFam(t.hex); });
 
   // 语义色 semantic：角色名 + 真实颜色
+  // 品牌色：每个主色阶都给一个语义角色，避免多余主色阶绑回基础色
   if (C.primary.length) {
     var pr = C.primary.slice().sort(function (a, b) { return (b.count * auditChroma(b.hex)) - (a.count * auditChroma(a.hex)); })[0];
-    addC('color.brand.primary', pr.hex, 'semantic', '主色');
+    addC('color.brand.primary', pr.hex, 'semantic', '主色 · 主操作');
+    C.primary.forEach(function (t) { if (t.hex !== pr.hex) addC('color.brand.' + t.step, t.hex, 'semantic', '品牌色 · ' + t.step); });
   }
   var fname = { success: 'success', warning: 'warning', error: 'danger', info: 'info' };
   var fusage = { success: '成功', warning: '警告', error: '危险 / 错误', info: '信息' };
@@ -2020,7 +2022,8 @@ async function bindReverseVariables(plan) {
   function resolveColor(role, hex) {
     if (role === 'border') return nearestIn(borderVars, hex, 3) || nearestIn(primVars, hex, Infinity);
     if (role === 'text') return nearestIn(textVars, hex, 3) || nearestIn(brandVars, hex, 3) || nearestIn(primVars, hex, Infinity);
-    return nearestIn(brandVars, hex, 3) || nearestIn(bgVars, hex, 3) || nearestIn(primVars, hex, Infinity); // fill
+    // fill（含图标/形状）：品牌/状态色 → 背景 → 文本(图标常复用文本灰) → 兜底基础色
+    return nearestIn(brandVars, hex, 3) || nearestIn(bgVars, hex, 3) || nearestIn(textVars, hex, 3) || nearestIn(primVars, hex, Infinity);
   }
   function nearestNum(arr, val) { var best = null, bd = Infinity; for (var i = 0; i < arr.length; i++) { var d = Math.abs(arr[i].val - val); if (d < bd) { bd = d; best = arr[i].v; } } return best; }
 
