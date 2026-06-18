@@ -1951,12 +1951,42 @@ function harvestSelection(nodes, maxNodes) {
 // 预览/变量库/绑定都走 rebuildToData(plan)（真实检测色 + 角色语义层），口径统一。
 var lastRebuildPlan = null;
 
-// 阶段③后半：把选中图层「复制到新页面」后绑定到反推变量（原设计零风险）。
-// 每个属性绑到「最接近的 token 变量」；每次绑定都 try/catch，单点失败不影响整体。
+// 让语义色变量「别名引用」最接近的基础色变量（两层联动）。在 syncVariables 之后调用。
+async function aliasReverseSemantics(data) {
+  var cols = await figma.variables.getLocalVariableCollectionsAsync();
+  var byName = {}, modesByCol = {};
+  for (var ci = 0; ci < cols.length; ci++) {
+    var col = cols[ci];
+    var lm = col.modes.find(function (m) { return m.name === 'Light'; });
+    var dm = col.modes.find(function (m) { return m.name === 'Dark'; });
+    modesByCol[col.id] = { light: lm ? lm.modeId : col.modes[0].modeId, dark: dm ? dm.modeId : (col.modes[1] ? col.modes[1].modeId : col.modes[0].modeId) };
+    for (var vi = 0; vi < col.variableIds.length; vi++) { var v = await figma.variables.getVariableByIdAsync(col.variableIds[vi]); if (v) byName[v.name] = v; }
+  }
+  function fn(k) { return k.replace(/\./g, '/'); }
+  var prims = [];
+  Object.keys(data.colorTokens).forEach(function (k) { if (k.indexOf('color.palette.') !== 0) return; var v = byName[fn(k)]; if (v) prims.push({ hex: data.colorTokens[k].light, v: v }); });
+  if (!prims.length) return 0;
+  var aliased = 0;
+  Object.keys(data.colorTokens).forEach(function (k) {
+    var t = data.colorTokens[k];
+    if (t.tier !== 'semantic') return;
+    var sv = byName[t.figmaName]; if (!sv) return;
+    var best = null, bd = Infinity;
+    for (var i = 0; i < prims.length; i++) { var d = auditDeltaE(t.light, prims[i].hex); if (d < bd) { bd = d; best = prims[i]; } }
+    if (best && bd < 3 && best.v.id !== sv.id) {
+      try { var md = modesByCol[sv.variableCollectionId], a = figma.variables.createVariableAlias(best.v); sv.setValueForMode(md.light, a); sv.setValueForMode(md.dark, a); aliased++; } catch (e) {}
+    }
+  });
+  return aliased;
+}
+
+// 阶段③后半：把选中图层「复制到新页面」后按「角色」绑定到语义色变量（原设计零风险）。
+// 描边→border、文字→text、背景→bg、品牌/状态→brand/function；说不清的兜底基础色。
 async function bindReverseVariables(plan) {
   var sel = figma.currentPage.selection;
   var data = rebuildToData(plan);                   // 真实检测色 + 角色语义层（与预览/变量库同一套）
-  await syncVariables(data);                        // 创建保真变量（幂等）
+  await syncVariables(data);                        // 创建变量
+  await aliasReverseSemantics(data);                // 语义色别名引用基础色（两层联动）
   var cols = await figma.variables.getLocalVariableCollectionsAsync();
   var byName = {};
   for (var ci = 0; ci < cols.length; ci++) {
@@ -1966,10 +1996,17 @@ async function bindReverseVariables(plan) {
     }
   }
   var theme = plan.theme || 'light';
-  var colorVars = [], radiusVars = [], spaceVars = [], fontVars = [];
+  // 按角色分组变量：图层据此绑到语义色（border/text/bg/brand），基础色(palette)兜底。
+  var borderVars = [], textVars = [], bgVars = [], brandVars = [], primVars = [], radiusVars = [], spaceVars = [], fontVars = [];
   Object.keys(data.colorTokens).forEach(function (k) {
     var t = data.colorTokens[k], vr = byName[t.figmaName];
-    if (vr) colorVars.push({ hex: (theme === 'dark' ? t.dark : t.light), v: vr });
+    if (!vr) return;
+    var e = { hex: (theme === 'dark' ? t.dark : t.light), v: vr };
+    if (k.indexOf('color.palette.') === 0) primVars.push(e);
+    else if (k.indexOf('color.border.') === 0) borderVars.push(e);
+    else if (k.indexOf('color.text.') === 0) textVars.push(e);
+    else if (k.indexOf('color.bg.') === 0) bgVars.push(e);
+    else brandVars.push(e); // brand / function / auxiliary
   });
   Object.keys(data.dimTokens).forEach(function (k) {
     var t = data.dimTokens[k], vr = byName[t.figmaName];
@@ -1978,7 +2015,13 @@ async function bindReverseVariables(plan) {
     else if (k.indexOf('space.') === 0) spaceVars.push({ val: t.value, v: vr });
     else if (k.indexOf('font.size.') === 0) fontVars.push({ val: t.value, v: vr });
   });
-  function nearestColor(hex) { var best = null, bd = Infinity; for (var i = 0; i < colorVars.length; i++) { var d = auditDeltaE(hex, colorVars[i].hex); if (d < bd) { bd = d; best = colorVars[i].v; } } return best; }
+  function nearestIn(list, hex, maxD) { var best = null, bd = Infinity; for (var i = 0; i < list.length; i++) { var d = auditDeltaE(hex, list[i].hex); if (d < bd) { bd = d; best = list[i].v; } } return (best && bd <= maxD) ? best : null; }
+  // 角色优先绑语义色，基础色兜底（语义色就是真实检测色，命中 ΔE≈0）
+  function resolveColor(role, hex) {
+    if (role === 'border') return nearestIn(borderVars, hex, 3) || nearestIn(primVars, hex, Infinity);
+    if (role === 'text') return nearestIn(textVars, hex, 3) || nearestIn(brandVars, hex, 3) || nearestIn(primVars, hex, Infinity);
+    return nearestIn(brandVars, hex, 3) || nearestIn(bgVars, hex, 3) || nearestIn(primVars, hex, Infinity); // fill
+  }
   function nearestNum(arr, val) { var best = null, bd = Infinity; for (var i = 0; i < arr.length; i++) { var d = Math.abs(arr[i].val - val); if (d < bd) { bd = d; best = arr[i].v; } } return best; }
 
   // 复制选中画板到新页面，只在副本上绑定（sel 已在顶部取得）
@@ -1989,20 +2032,20 @@ async function bindReverseVariables(plan) {
 
   var bound = { fills: 0, strokes: 0, radius: 0, spacing: 0, font: 0 };
   var mixedText = [];
-  function bindPaints(node, prop, counter) {
+  function bindPaints(node, prop, counter, role) {
     var paints = node[prop];
     if (!Array.isArray(paints) || !paints.length) return;
     var changed = false;
     var next = paints.map(function (p) {
       if (!p || p.visible === false) return p;
       if (p.type === 'SOLID') {
-        var vr = nearestColor(figmaRgbToHex(p.color));
+        var vr = resolveColor(role, figmaRgbToHex(p.color));
         if (vr) { try { var np = figma.variables.setBoundVariableForPaint(p, 'color', vr); changed = true; return np; } catch (e) {} }
       } else if (typeof p.type === 'string' && p.type.indexOf('GRADIENT_') === 0 && Array.isArray(p.gradientStops)) {
-        // 渐变：把每个色标颜色绑到最近的颜色变量（主色常用在渐变里）
+        // 渐变：把每个色标颜色绑到对应角色的变量（主色常用在渐变里）
         var anyStop = false;
         var stops = p.gradientStops.map(function (st) {
-          var v2 = nearestColor(figmaRgbToHex(st.color));
+          var v2 = resolveColor(role, figmaRgbToHex(st.color));
           if (v2) { try { anyStop = true; return { position: st.position, color: st.color, boundVariables: { color: figma.variables.createVariableAlias(v2) } }; } catch (e) {} }
           return { position: st.position, color: st.color };
         });
@@ -2014,8 +2057,8 @@ async function bindReverseVariables(plan) {
   }
   function bindNum(node, field, vr) { if (!vr) return; try { node.setBoundVariable(field, vr); return true; } catch (e) { return false; } }
   function visit(node) {
-    if ('fills' in node && node.fills !== figma.mixed) bindPaints(node, 'fills', 'fills');
-    if ('strokes' in node) bindPaints(node, 'strokes', 'strokes');
+    if ('fills' in node && node.fills !== figma.mixed) bindPaints(node, 'fills', 'fills', node.type === 'TEXT' ? 'text' : 'fill');
+    if ('strokes' in node) bindPaints(node, 'strokes', 'strokes', 'border');
     if (radiusVars.length && 'cornerRadius' in node && node.cornerRadius !== figma.mixed && typeof node.cornerRadius === 'number' && node.cornerRadius > 0) {
       var rv = nearestNum(radiusVars, node.cornerRadius), ok = false;
       ['topLeftRadius', 'topRightRadius', 'bottomLeftRadius', 'bottomRightRadius'].forEach(function (f) { if (bindNum(node, f, rv)) ok = true; });
@@ -2043,7 +2086,7 @@ async function bindReverseVariables(plan) {
       for (var si = 0; si < fillSegs.length; si++) {
         var seg = fillSegs[si];
         var nf = (seg.fills || []).map(function (p) {
-          if (p && p.type === 'SOLID' && p.visible !== false) { var vr = nearestColor(figmaRgbToHex(p.color)); if (vr) { try { return figma.variables.setBoundVariableForPaint(p, 'color', vr); } catch (e) {} } }
+          if (p && p.type === 'SOLID' && p.visible !== false) { var vr = resolveColor('text', figmaRgbToHex(p.color)); if (vr) { try { return figma.variables.setBoundVariableForPaint(p, 'color', vr); } catch (e) {} } }
           return p;
         });
         try { tn.setRangeFills(seg.start, seg.end, nf); bound.fills++; } catch (e) {}
@@ -2161,13 +2204,15 @@ figma.ui.onmessage = async (msg) => {
         figma.ui.postMessage({ type: 'error', message: '请先选中画板再创建变量库' });
         return;
       }
-      figma.ui.postMessage({ type: 'progress', message: '正在用反推结果创建保真变量库...' });
+      figma.ui.postMessage({ type: 'progress', message: '正在用反推结果创建两层变量库...' });
       var rvPlan = lastRebuildPlan || buildRebuildPlan(harvestSelection(rvSel, 20000));
-      // 复用现有 syncVariables；值为真实检测色 + 角色语义层（与 web 端 JSON 同一条创建逻辑）
-      var rvResult = await syncVariables(rebuildToData(rvPlan));
+      var rvData = rebuildToData(rvPlan);
+      // 复用现有 syncVariables 创建（与 web 端 JSON 同一条路径），再让语义色别名引用基础色
+      var rvResult = await syncVariables(rvData);
+      var rvAliased = await aliasReverseSemantics(rvData);
       figma.ui.postMessage({
         type: 'result',
-        message: '保真变量库已创建：新建 ' + rvResult.created + ' · 更新 ' + rvResult.updated + '（颜色/字号均为你的精确原值，绑定零变化；仅新增变量，未改图层）',
+        message: '两层变量库已创建：新建 ' + rvResult.created + ' · 更新 ' + rvResult.updated + ' · 语义色引用基础色 ' + rvAliased + ' 个（基础色=真实检测色，语义色按用途；仅新增变量，未改图层）',
       });
     }
     else if (msg.type === 'reverse-bind') {
