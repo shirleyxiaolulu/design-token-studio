@@ -2002,6 +2002,19 @@ function harvestSelection(nodes, maxNodes) {
 var lastRebuildPlan = null;
 // 主题覆盖：UI 选「浅色/深色」时覆盖自动检测；选「自动」(或未传)时回到检测值（不残留上次覆盖）。
 function applyReverseTheme(plan, t) { if (plan) plan.theme = (t === 'light' || t === 'dark') ? t : (plan.detectedTheme || plan.theme); return plan; }
+// 反推专用：把 Primitives 集合收成单模式（基础色是固定值、不该有明暗两栏）。仅在反推流程「最后一步」调用——
+// syncVariables 每次会补回 Dark 模式，所以这里在 sync 之后移除。删 Dark 不丢信息（基础色 Light=Dark）。语义色(Tokens)保持双模式。
+function collapsePrimitivesMode(cols) {
+  try {
+    for (var i = 0; i < cols.length; i++) {
+      if (cols[i].name !== 'Primitives' || cols[i].modes.length <= 1) continue;
+      var dark = cols[i].modes.find(function (m) { return m.name === 'Dark'; });
+      var light = cols[i].modes.find(function (m) { return m.name === 'Light'; });
+      if (dark && light && dark.modeId !== light.modeId) cols[i].removeMode(dark.modeId);
+      return;
+    }
+  } catch (e) {}
+}
 
 // 让语义色变量「别名引用」最接近的基础色变量（两层联动）。在 syncVariables 之后调用。
 async function aliasReverseSemantics(data) {
@@ -2219,6 +2232,7 @@ async function bindReverseVariables(plan) {
       }
     } catch (e) { /* 跳过无法绑定的文本 */ }
   }
+  collapsePrimitivesMode(cols); // 基础色收成单值（在显式模式之前，这样 Primitives 已无 Dark、下面会自动跳过它）
   // 把副本锁定到「检测到的主题」那一模式渲染——这样即使集合默认模式不是它，副本仍显示原始主题（保真）。
   try {
     var wantMode = (theme === 'dark') ? 'Dark' : 'Light';
@@ -2349,6 +2363,8 @@ figma.ui.onmessage = async (msg) => {
       // 复用现有 syncVariables 创建（与 web 端 JSON 同一条路径），再让语义色别名引用基础色
       var rvResult = await syncVariables(rvData);
       var rvAliased = await aliasReverseSemantics(rvData);
+      collapsePrimitivesMode(await figma.variables.getLocalVariableCollectionsAsync()); // 基础色收成单值
+
       figma.ui.postMessage({
         type: 'result',
         message: '两层变量库已创建：新建 ' + rvResult.created + ' · 更新 ' + rvResult.updated + ' · 语义色引用基础色 ' + rvAliased + ' 个（基础色=真实检测色，语义色按用途；仅新增变量，未改图层）',

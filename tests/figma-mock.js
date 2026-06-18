@@ -38,6 +38,7 @@ function setup() {
       id: 'c' + (idc++), name: name, modes: [{ modeId: 'mode-' + (idc++), name: 'Mode 1' }], variableIds: [],
       renameMode: function (id, nm) { var x = this.modes.find(function (z) { return z.modeId === id; }); if (x) x.name = nm; },
       addMode: function (nm) { var id = 'mode-' + (idc++); this.modes.push({ modeId: id, name: nm }); return id; },
+      removeMode: function (id) { if (this.modes.length <= 1) throw new Error('cannot remove last mode'); this.modes = this.modes.filter(function (m) { return m.modeId !== id; }); },
     };
   }
 

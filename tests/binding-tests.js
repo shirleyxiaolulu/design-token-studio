@@ -167,6 +167,17 @@ test('双模式：中性语义色对侧模式镜像明度(别名不同)、品牌
   assert(Object.keys(root._explicitModes).length > 0, '副本应锁定到检测主题的模式');
 });
 
+test('基础色单值：Primitives 收成单模式，语义色 Tokens 仍双模式', async () => {
+  fresh(); const root = await bind(darkBusyPage());
+  const prim = M.COLS.find(function (c) { return c.name === 'Primitives'; });
+  const tok = M.COLS.find(function (c) { return c.name === 'Tokens'; });
+  assert(prim, '应有 Primitives 集合');
+  eq(prim.modes.length, 1, '基础色集合应收成单模式(单值)');
+  assert(tok && tok.modes.length === 2, '语义色集合应保持 Light/Dark 双模式');
+  // 收成单模式后语义色双模式仍可用（绑定/别名不受影响）
+  assert(ref(root.children[5].fills[0]), '半透明填充仍绑着变量');
+});
+
 test('主题覆盖：手动指定浅/深，自动回到检测值，预览 chrome 跟随', async () => {
   fresh();
   const darkObs = { fills: [{ hex: '#1A1A1A', opacity: 1, nodeType: 'FRAME', area: 1440 * 3000 }], strokes: [], texts: [{ size: 14 }], radii: [8], spacings: [8], shadows: [] };
