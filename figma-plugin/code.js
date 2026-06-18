@@ -2035,7 +2035,14 @@ async function bindReverseVariables(plan) {
   for (var s = 0; s < sel.length; s++) { try { var cl = sel[s].clone(); page.appendChild(cl); clones.push(cl); } catch (e) {} }
 
   var bound = { fills: 0, strokes: 0, radius: 0, spacing: 0, font: 0 };
-  var mixedText = [];
+  var textNodes = [];
+  // 绑定一个纯色 paint 到对应角色变量，并「保留原本的不透明度」（如 20% 白描边不会变实白）
+  function bindSolid(p, role) {
+    if (!p || p.type !== 'SOLID' || p.visible === false) return p;
+    var vr = resolveColor(role, figmaRgbToHex(p.color));
+    if (vr) { try { var np = figma.variables.setBoundVariableForPaint(p, 'color', vr); if (typeof p.opacity === 'number') np.opacity = p.opacity; return np; } catch (e) {} }
+    return p;
+  }
   function bindPaints(node, prop, counter, role) {
     var paints = node[prop];
     if (!Array.isArray(paints) || !paints.length) return;
@@ -2043,8 +2050,8 @@ async function bindReverseVariables(plan) {
     var next = paints.map(function (p) {
       if (!p || p.visible === false) return p;
       if (p.type === 'SOLID') {
-        var vr = resolveColor(role, figmaRgbToHex(p.color));
-        if (vr) { try { var np = figma.variables.setBoundVariableForPaint(p, 'color', vr); changed = true; return np; } catch (e) {} }
+        var np = bindSolid(p, role);
+        if (np !== p) { changed = true; return np; }
       } else if (typeof p.type === 'string' && p.type.indexOf('GRADIENT_') === 0 && Array.isArray(p.gradientStops)) {
         // 渐变：把每个色标颜色绑到对应角色的变量（主色常用在渐变里）
         var anyStop = false;
@@ -2061,7 +2068,8 @@ async function bindReverseVariables(plan) {
   }
   function bindNum(node, field, vr) { if (!vr) return; try { node.setBoundVariable(field, vr); return true; } catch (e) { return false; } }
   function visit(node) {
-    if ('fills' in node && node.fills !== figma.mixed) bindPaints(node, 'fills', 'fills', node.type === 'TEXT' ? 'text' : 'fill');
+    // 文本填充统一留到后面「先加载字体再绑」，否则 Figma 不刷新渲染（点了才出现）
+    if (node.type !== 'TEXT' && 'fills' in node && node.fills !== figma.mixed) bindPaints(node, 'fills', 'fills', 'fill');
     if ('strokes' in node) bindPaints(node, 'strokes', 'strokes', 'border');
     if (radiusVars.length && 'cornerRadius' in node && node.cornerRadius !== figma.mixed && typeof node.cornerRadius === 'number' && node.cornerRadius > 0) {
       var rv = nearestNum(radiusVars, node.cornerRadius), ok = false;
@@ -2076,26 +2084,29 @@ async function bindReverseVariables(plan) {
     if (node.type === 'TEXT' && fontVars.length && node.fontSize !== figma.mixed && typeof node.fontSize === 'number') {
       if (bindNum(node, 'fontSize', nearestNum(fontVars, node.fontSize))) bound.font++;
     }
-    if (node.type === 'TEXT' && node.fills === figma.mixed) mixedText.push(node); // 多色文本：留到后面按段绑定
+    if (node.type === 'TEXT') textNodes.push(node); // 文本：留到后面（加载字体后）绑定填充
     if ('children' in node) { for (var i = 0; i < node.children.length; i++) visit(node.children[i]); }
   }
   for (var c2 = 0; c2 < clones.length; c2++) visit(clones[c2]);
-  // 多色文本：按字符分段绑定每段颜色（需先加载该段字体；setRangeFills 才能写）
-  for (var mt = 0; mt < mixedText.length; mt++) {
-    var tn = mixedText[mt];
+  // 文本填充：先加载字体再绑（否则不刷新渲染）；多色文本按字符分段绑。颜色绑 text 角色、保留不透明度。
+  for (var mt = 0; mt < textNodes.length; mt++) {
+    var tn = textNodes[mt];
     try {
       var fontSegs = tn.getStyledTextSegments(['fontName']);
       for (var fi2 = 0; fi2 < fontSegs.length; fi2++) { try { await figma.loadFontAsync(fontSegs[fi2].fontName); } catch (e) {} }
-      var fillSegs = tn.getStyledTextSegments(['fills']);
-      for (var si = 0; si < fillSegs.length; si++) {
-        var seg = fillSegs[si];
-        var nf = (seg.fills || []).map(function (p) {
-          if (p && p.type === 'SOLID' && p.visible !== false) { var vr = resolveColor('text', figmaRgbToHex(p.color)); if (vr) { try { return figma.variables.setBoundVariableForPaint(p, 'color', vr); } catch (e) {} } }
-          return p;
-        });
-        try { tn.setRangeFills(seg.start, seg.end, nf); bound.fills++; } catch (e) {}
+      if (tn.fills === figma.mixed) {
+        var fillSegs = tn.getStyledTextSegments(['fills']);
+        for (var si = 0; si < fillSegs.length; si++) {
+          var seg = fillSegs[si];
+          var nfSeg = (seg.fills || []).map(function (p) { return bindSolid(p, 'text'); });
+          try { tn.setRangeFills(seg.start, seg.end, nfSeg); bound.fills++; } catch (e) {}
+        }
+      } else if (Array.isArray(tn.fills) && tn.fills.length) {
+        var changedT = false;
+        var nfAll = tn.fills.map(function (p) { var np = bindSolid(p, 'text'); if (np !== p) changedT = true; return np; });
+        if (changedT) { try { tn.fills = nfAll; bound.fills++; } catch (e) {} }
       }
-    } catch (e) { /* 跳过无法绑定的多色文本 */ }
+    } catch (e) { /* 跳过无法绑定的文本 */ }
   }
   figma.currentPage = page;
   try { figma.currentPage.selection = clones; figma.viewport.scrollAndZoomIntoView(clones); } catch (e) {}
