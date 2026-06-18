@@ -2040,8 +2040,16 @@ async function bindReverseVariables(plan) {
   function bindSolid(p, role) {
     if (!p || p.type !== 'SOLID' || p.visible === false) return p;
     var vr = resolveColor(role, figmaRgbToHex(p.color));
-    if (vr) { try { var np = figma.variables.setBoundVariableForPaint(p, 'color', vr); if (typeof p.opacity === 'number') np.opacity = p.opacity; return np; } catch (e) {} }
-    return p;
+    if (!vr) return p;
+    try {
+      var np = figma.variables.setBoundVariableForPaint(p, 'color', vr);
+      // Figma 返回的 paint 是只读的，直接改 np.opacity 不生效 → 重建成可变 paint，
+      // 携带变量绑定 + 原始不透明度（20% 白描边绑定后仍是 20%，不会变实白）
+      var out = { type: 'SOLID', color: np.color || p.color, visible: p.visible !== false, boundVariables: np.boundVariables };
+      out.opacity = (typeof p.opacity === 'number') ? p.opacity : 1;
+      if (p.blendMode) out.blendMode = p.blendMode;
+      return out;
+    } catch (e) { return p; }
   }
   function bindPaints(node, prop, counter, role) {
     var paints = node[prop];
