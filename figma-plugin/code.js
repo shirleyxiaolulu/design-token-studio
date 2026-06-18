@@ -1801,11 +1801,13 @@ function rebuildDetectTheme(obs) {
 }
 // 按「用途上下文」识别语义角色（全部用真实检测色）：
 // 背景 = 大面积容器填充（按面积，最大 = 页面）；文本 = 用在文字图层的色；边框 = 描边色。
+function rebuildOpacity(v) { return (v == null ? 1 : Math.round(v * 100) / 100); }
 function rebuildContextColors(obs) {
   var fills = obs.fills || [], strokes = obs.strokes || [], map = {};
-  function rec(hex) { if (!map[hex]) map[hex] = { hex: hex, textArea: 0, bgArea: 0, strokeCount: 0 }; return map[hex]; }
-  fills.forEach(function (f) { var m = rec(f.hex); if (f.nodeType === 'TEXT') m.textArea += (f.area || 1); else m.bgArea += (f.area || 1); });
-  strokes.forEach(function (s) { rec(s.hex).strokeCount++; });
+  // 颜色身份 = hex + 不透明度：白@5% 与 白@100% 是不同的色（半透明绑定后靠变量自带 alpha 还原）
+  function rec(hex, op) { var key = hex + '@' + op; if (!map[key]) map[key] = { hex: hex, opacity: op, textArea: 0, bgArea: 0, strokeCount: 0 }; return map[key]; }
+  fills.forEach(function (f) { var m = rec(f.hex, rebuildOpacity(f.opacity)); if (f.nodeType === 'TEXT') m.textArea += (f.area || 1); else m.bgArea += (f.area || 1); });
+  strokes.forEach(function (s) { rec(s.hex, rebuildOpacity(s.opacity)).strokeCount++; });
   var all = Object.keys(map).map(function (k) { return map[k]; });
   return {
     text: all.filter(function (m) { return m.textArea > 0; }).sort(function (a, b) { return b.textArea - a.textArea; }),
@@ -1815,14 +1817,15 @@ function rebuildContextColors(obs) {
 }
 function rebuildDedupeColors(list, thr) {
   var out = [];
-  (list || []).forEach(function (m) { if (!out.some(function (o) { return auditDeltaE(o.hex, m.hex) < thr; })) out.push(m); });
+  // 仅当色相接近「且」不透明度也接近时才合并——否则白@5% 会被白@100% 吞掉
+  (list || []).forEach(function (m) { if (!out.some(function (o) { return auditDeltaE(o.hex, m.hex) < thr && Math.abs(rebuildOpacity(o.opacity) - rebuildOpacity(m.opacity)) < 0.03; })) out.push(m); });
   return out;
 }
 // 统一数据构造（预览 + 变量库 + 绑定共用）：全部真实检测色 + 按用途归类的语义层。
 function rebuildToData(plan) {
   var colorTokens = {}, dimTokens = {};
   function fn(k) { return k.replace(/\./g, '/'); }
-  function addC(key, hex, tier, usage) { if (!hex || colorTokens[key]) return; colorTokens[key] = { figmaName: fn(key), tier: tier || 'primitive', light: hex, dark: hex, usage: usage || '' }; }
+  function addC(key, hex, tier, usage, alpha) { if (!hex || colorTokens[key]) return; var o = { figmaName: fn(key), tier: tier || 'primitive', light: hex, dark: hex, usage: usage || '' }; if (alpha != null && alpha < 1) o.alpha = alpha; colorTokens[key] = o; }
   function addD(key, value, extra) { var o = { figmaName: fn(key), tier: 'primitive', value: value, type: 'dimension', usage: '' }; if (extra) for (var k in extra) o[k] = extra[k]; dimTokens[key] = o; }
   var C = plan.colors, ctx = plan.context || { text: [], bg: [], border: [] };
 
@@ -1846,11 +1849,11 @@ function rebuildToData(plan) {
   Object.keys(C.semantic).forEach(function (k) { addC('color.function.' + (fname[k] || k), C.semantic[k].hex, 'semantic', fusage[k] || ''); });
   C.accents.forEach(function (t, i) { addC('color.auxiliary.' + (i + 1), t.hex, 'semantic', '辅助 / 强调'); });
   var bgN = ['page', 'surface', 'elevated', 'overlay'];
-  rebuildDedupeColors(ctx.bg, 1.0).slice(0, 4).forEach(function (m, i) { addC('color.bg.' + (bgN[i] || ('s' + i)), m.hex, 'semantic', '背景 · 实际大面积填充'); });
+  rebuildDedupeColors(ctx.bg, 1.0).slice(0, 4).forEach(function (m, i) { addC('color.bg.' + (bgN[i] || ('s' + i)), m.hex, 'semantic', '背景 · 实际大面积填充', m.opacity); });
   var txN = ['primary', 'secondary', 'tertiary', 'disabled', 'placeholder'];
-  rebuildDedupeColors(ctx.text, 1.0).slice(0, 5).forEach(function (m, i) { addC('color.text.' + (txN[i] || ('t' + i)), m.hex, 'semantic', '文本 · 实际用在文字'); });
+  rebuildDedupeColors(ctx.text, 1.0).slice(0, 5).forEach(function (m, i) { addC('color.text.' + (txN[i] || ('t' + i)), m.hex, 'semantic', '文本 · 实际用在文字', m.opacity); });
   var bdN = ['default', 'subtle', 'strong'];
-  rebuildDedupeColors(ctx.border, 1.0).slice(0, 3).forEach(function (m, i) { addC('color.border.' + (bdN[i] || ('b' + i)), m.hex, 'semantic', '边框 · 实际用作描边'); });
+  rebuildDedupeColors(ctx.border, 1.0).slice(0, 3).forEach(function (m, i) { addC('color.border.' + (bdN[i] || ('b' + i)), m.hex, 'semantic', '边框 · 实际用作描边', m.opacity); });
 
   // 尺寸（plan 已规整为整数）
   plan.type.roles.forEach(function (r) { addD('font.size.' + r.role, r.size, { role: r.role.charAt(0).toUpperCase() + r.role.slice(1), weight: 400, lineHeight: Math.round(r.size * 1.5) }); });
@@ -1973,6 +1976,16 @@ async function aliasReverseSemantics(data) {
     var t = data.colorTokens[k];
     if (t.tier !== 'semantic') return;
     var sv = byName[t.figmaName]; if (!sv) return;
+    // 半透明语义色：直接写入带 alpha 的 RGBA 值，不别名到不透明基础色（否则又把透明度丢了）
+    if (t.alpha != null && t.alpha < 1) {
+      try {
+        var mdA = modesByCol[sv.variableCollectionId];
+        var lr = hexToFigmaRgb(t.light) || { r: 0, g: 0, b: 0 }; lr.a = t.alpha;
+        var dr = hexToFigmaRgb(t.dark) || { r: 0, g: 0, b: 0 }; dr.a = t.alpha;
+        sv.setValueForMode(mdA.light, lr); sv.setValueForMode(mdA.dark, dr);
+      } catch (e) {}
+      return;
+    }
     var best = null, bd = Infinity;
     for (var i = 0; i < prims.length; i++) { var d = auditDeltaE(t.light, prims[i].hex); if (d < bd) { bd = d; best = prims[i]; } }
     if (best && bd < 1.5 && best.v.id !== sv.id) {
@@ -2003,7 +2016,7 @@ async function bindReverseVariables(plan) {
   Object.keys(data.colorTokens).forEach(function (k) {
     var t = data.colorTokens[k], vr = byName[t.figmaName];
     if (!vr) return;
-    var e = { hex: (theme === 'dark' ? t.dark : t.light), v: vr };
+    var e = { hex: (theme === 'dark' ? t.dark : t.light), v: vr, a: (t.alpha == null ? 1 : t.alpha) };
     if (k.indexOf('color.palette.') === 0) primVars.push(e);
     else if (k.indexOf('color.border.') === 0) borderVars.push(e);
     else if (k.indexOf('color.text.') === 0) textVars.push(e);
@@ -2017,14 +2030,16 @@ async function bindReverseVariables(plan) {
     else if (k.indexOf('space.') === 0) spaceVars.push({ val: t.value, v: vr });
     else if (k.indexOf('font.size.') === 0) fontVars.push({ val: t.value, v: vr });
   });
-  function nearestIn(list, hex, maxD) { var best = null, bd = Infinity; for (var i = 0; i < list.length; i++) { var d = auditDeltaE(hex, list[i].hex); if (d < bd) { bd = d; best = list[i].v; } } return (best && bd <= maxD) ? best : null; }
+  // 颜色匹配同时看色相(ΔE)与不透明度：不透明度差 >0.04 视为不同色（白@5% 不会命中不透明白）
+  function nearestIn(list, hex, alpha, maxD) { var best = null, bd = Infinity; for (var i = 0; i < list.length; i++) { if (Math.abs((list[i].a == null ? 1 : list[i].a) - alpha) > 0.04) continue; var d = auditDeltaE(hex, list[i].hex); if (d < bd) { bd = d; best = list[i].v; } } return (best && bd <= maxD) ? best : null; }
   // 角色优先绑语义色，基础色兜底（语义色就是真实检测色，命中 ΔE≈0）
-  function resolveColor(role, hex) {
+  function resolveColor(role, hex, alpha) {
+    if (alpha == null) alpha = 1;
     // 语义色匹配收紧到 ΔE<2（只有(近)同色才归到该角色），否则兜底到「精确同值」的基础色——避免大面积色被吸到别的色
-    if (role === 'border') return nearestIn(borderVars, hex, 2) || nearestIn(primVars, hex, Infinity);
-    if (role === 'text') return nearestIn(textVars, hex, 2) || nearestIn(brandVars, hex, 2) || nearestIn(primVars, hex, Infinity);
+    if (role === 'border') return nearestIn(borderVars, hex, alpha, 2) || nearestIn(primVars, hex, alpha, Infinity);
+    if (role === 'text') return nearestIn(textVars, hex, alpha, 2) || nearestIn(brandVars, hex, alpha, 2) || nearestIn(primVars, hex, alpha, Infinity);
     // fill（含图标/形状）：品牌/状态色 → 背景 → 文本(图标常复用文本灰) → 兜底基础色
-    return nearestIn(brandVars, hex, 2) || nearestIn(bgVars, hex, 2) || nearestIn(textVars, hex, 2) || nearestIn(primVars, hex, Infinity);
+    return nearestIn(brandVars, hex, alpha, 2) || nearestIn(bgVars, hex, alpha, 2) || nearestIn(textVars, hex, alpha, 2) || nearestIn(primVars, hex, alpha, Infinity);
   }
   function nearestNum(arr, val) { var best = null, bd = Infinity; for (var i = 0; i < arr.length; i++) { var d = Math.abs(arr[i].val - val); if (d < bd) { bd = d; best = arr[i].v; } } return best; }
 
@@ -2039,14 +2054,13 @@ async function bindReverseVariables(plan) {
   // 绑定一个纯色 paint 到对应角色变量，并「保留原本的不透明度」（如 20% 白描边不会变实白）
   function bindSolid(p, role) {
     if (!p || p.type !== 'SOLID' || p.visible === false) return p;
-    var vr = resolveColor(role, figmaRgbToHex(p.color));
-    if (!vr) return p;
+    // 按「色相 + 不透明度」找变量：半透明色只命中带相同 alpha 的语义变量（绑定后透明度由变量自带）
+    var vr = resolveColor(role, figmaRgbToHex(p.color), (typeof p.opacity === 'number' ? p.opacity : 1));
+    if (!vr) return p; // 没有同色同透明度的变量就不绑，保留原 paint（含原本的透明度）——保真优先
     try {
       var np = figma.variables.setBoundVariableForPaint(p, 'color', vr);
-      // Figma 返回的 paint 是只读的，直接改 np.opacity 不生效 → 重建成可变 paint，
-      // 携带变量绑定 + 原始不透明度（20% 白描边绑定后仍是 20%，不会变实白）
-      var out = { type: 'SOLID', color: np.color || p.color, visible: p.visible !== false, boundVariables: np.boundVariables };
-      out.opacity = (typeof p.opacity === 'number') ? p.opacity : 1;
+      // Figma 绑定颜色变量后会忽略 paint.opacity（透明度已写进变量的 RGBA），置 1 避免二次变暗
+      var out = { type: 'SOLID', color: np.color || p.color, visible: p.visible !== false, boundVariables: np.boundVariables, opacity: 1 };
       if (p.blendMode) out.blendMode = p.blendMode;
       return out;
     } catch (e) { return p; }
@@ -2064,7 +2078,7 @@ async function bindReverseVariables(plan) {
         // 渐变：把每个色标颜色绑到对应角色的变量（主色常用在渐变里）
         var anyStop = false;
         var stops = p.gradientStops.map(function (st) {
-          var v2 = resolveColor(role, figmaRgbToHex(st.color));
+          var v2 = resolveColor(role, figmaRgbToHex(st.color), (st.color && typeof st.color.a === 'number' ? st.color.a : 1));
           if (v2) { try { anyStop = true; return { position: st.position, color: st.color, boundVariables: { color: figma.variables.createVariableAlias(v2) } }; } catch (e) {} }
           return { position: st.position, color: st.color };
         });
