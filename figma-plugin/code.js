@@ -1789,12 +1789,20 @@ function rebuildHueFamily(hue) {
 // 明暗判定：用「面积最大的填充」（页面背景天然占面积最大），而不是出现次数——
 // 深色 UI 里浅色文本出现最频繁，按次数会误判成浅色。
 function rebuildDetectTheme(obs) {
+  // 主题看「背景」：只算非文字、非渐变色标的填充，且按「面积 × 不透明度」加权——
+  // 否则大面积半透明白蒙层、或满屏白色文字会把暗底误判成亮底。
   var area = {}, fills = obs.fills || [];
-  for (var i = 0; i < fills.length; i++) area[fills[i].hex] = (area[fills[i].hex] || 0) + (fills[i].area || 0);
+  function isBg(f) { return f && f.nodeType !== 'TEXT' && !f.fromGradient; }
+  for (var i = 0; i < fills.length; i++) {
+    var f = fills[i]; if (!isBg(f)) continue;
+    var op = (f.opacity == null ? 1 : f.opacity);
+    area[f.hex] = (area[f.hex] || 0) + (f.area || 0) * op;
+  }
   var best = null, ba = -1;
   for (var h in area) { if (area[h] > ba) { ba = area[h]; best = h; } }
-  if (!best || ba <= 0) {                       // 没有面积信息时退回按次数
-    var t = auditTally(fills.map(function (f) { return f.hex; }));
+  if (!best || ba <= 0) {                       // 没有面积信息时退回按次数（仍优先背景填充）
+    var bgFills = fills.filter(isBg);
+    var t = auditTally((bgFills.length ? bgFills : fills).map(function (f) { return f.hex; }));
     best = t.length ? t[0].value : '#FFFFFF';
   }
   return rebuildRgbToHsl(best).l < 50 ? 'dark' : 'light';
