@@ -2058,11 +2058,12 @@ async function bindReverseVariables(plan) {
     var vr = resolveColor(role, figmaRgbToHex(p.color), (typeof p.opacity === 'number' ? p.opacity : 1));
     if (!vr) return p; // 没有同色同透明度的变量就不绑，保留原 paint（含原本的透明度）——保真优先
     try {
-      var np = figma.variables.setBoundVariableForPaint(p, 'color', vr);
-      // Figma 绑定颜色变量后会忽略 paint.opacity（透明度已写进变量的 RGBA），置 1 避免二次变暗
-      var out = { type: 'SOLID', color: np.color || p.color, visible: p.visible !== false, boundVariables: np.boundVariables, opacity: 1 };
-      if (p.blendMode) out.blendMode = p.blendMode;
-      return out;
+      // 造一个干净的 opacity=1 源 paint 交给 Figma 绑定，直接返回它「亲建」的绑定 paint：
+      // 这样变量引用一定生效（不再手搓对象导致绑定丢失）；透明度由变量 RGBA 的 alpha 提供，
+      // opacity=1 不会二次变暗。
+      var src = { type: 'SOLID', color: { r: p.color.r, g: p.color.g, b: p.color.b }, opacity: 1, visible: true };
+      if (p.blendMode) src.blendMode = p.blendMode;
+      return figma.variables.setBoundVariableForPaint(src, 'color', vr);
     } catch (e) { return p; }
   }
   function bindPaints(node, prop, counter, role) {
