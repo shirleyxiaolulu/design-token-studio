@@ -1806,8 +1806,8 @@ function rebuildContextColors(obs) {
   var fills = obs.fills || [], strokes = obs.strokes || [], map = {};
   // 颜色身份 = hex + 不透明度：白@5% 与 白@100% 是不同的色（半透明绑定后靠变量自带 alpha 还原）
   function rec(hex, op) { var key = hex + '@' + op; if (!map[key]) map[key] = { hex: hex, opacity: op, textArea: 0, bgArea: 0, strokeCount: 0 }; return map[key]; }
-  fills.forEach(function (f) { var m = rec(f.hex, rebuildOpacity(f.opacity)); if (f.nodeType === 'TEXT') m.textArea += (f.area || 1); else m.bgArea += (f.area || 1); });
-  strokes.forEach(function (s) { rec(s.hex, rebuildOpacity(s.opacity)).strokeCount++; });
+  fills.forEach(function (f) { var m = rec(f.hex, rebuildOpacity(f.opacity)); if (f.fromGradient) m.fromGradient = true; if (f.nodeType === 'TEXT') m.textArea += (f.area || 1); else m.bgArea += (f.area || 1); });
+  strokes.forEach(function (s) { var m = rec(s.hex, rebuildOpacity(s.opacity)); if (s.fromGradient) m.fromGradient = true; m.strokeCount++; });
   var all = Object.keys(map).map(function (k) { return map[k]; });
   return {
     text: all.filter(function (m) { return m.textArea > 0; }).sort(function (a, b) { return b.textArea - a.textArea; }),
@@ -1852,8 +1852,9 @@ function rebuildToData(plan) {
   // 绑定时必须有同 alpha 的变量可命中，被 slice 切掉就会让图层绑不上变量（只剩裸色值）。
   function ctxKept(list, n) {
     var dd = rebuildDedupeColors(list, 1.0);
-    return dd.filter(function (m) { return rebuildOpacity(m.opacity) >= 1; }).slice(0, n)
-      .concat(dd.filter(function (m) { return rebuildOpacity(m.opacity) < 1; }));
+    // 不透明且非渐变色：取前 N 个拿角色名。半透明色 + 渐变色标色：全部保留（绑定必须有同色变量）。
+    return dd.filter(function (m) { return rebuildOpacity(m.opacity) >= 1 && !m.fromGradient; }).slice(0, n)
+      .concat(dd.filter(function (m) { return rebuildOpacity(m.opacity) < 1 || m.fromGradient; }));
   }
   var bgN = ['page', 'surface', 'elevated', 'overlay'];
   ctxKept(ctx.bg, 4).forEach(function (m, i) { addC('color.bg.' + (bgN[i] || ('s' + i)), m.hex, 'semantic', '背景 · 实际大面积填充', m.opacity); });
@@ -1893,14 +1894,33 @@ function harvestSelection(nodes, maxNodes) {
       }
     }
   }
+  // 渐变：把每个色标的颜色也纳入采集（否则渐变里的色没有对应变量、色标只能保留裸色绑不上）。
+  // 标记 fromGradient，后续保证它一定生成基础色变量（不被上下文 slice 切掉）。
+  function pushGradient(arr, paints, extra) {
+    if (!Array.isArray(paints)) return;
+    for (var i = 0; i < paints.length; i++) {
+      var p = paints[i];
+      if (!p || p.visible === false || typeof p.type !== 'string' || p.type.indexOf('GRADIENT_') !== 0 || !Array.isArray(p.gradientStops)) continue;
+      var pop = (p.opacity == null ? 1 : p.opacity), n = p.gradientStops.length || 1;
+      for (var s = 0; s < n; s++) {
+        var st = p.gradientStops[s];
+        if (!st || !st.color) continue;
+        var o = { hex: figmaRgbToHex(st.color), opacity: ((st.color.a == null ? 1 : st.color.a) * pop), fromGradient: true };
+        if (extra) for (var k in extra) o[k] = extra[k];
+        if (typeof o.area === 'number') o.area = o.area / n; // 多色标分摊面积，避免重复计面积
+        arr.push(o);
+      }
+    }
+  }
   function visit(node) {
     if (obs.nodeCount >= maxNodes) { obs.truncated = true; return; }
     obs.nodeCount++;
     if ('fills' in node && node.fills !== figma.mixed) {
       var area = (typeof node.width === 'number' && typeof node.height === 'number') ? node.width * node.height : 0;
       pushSolid(obs.fills, node.fills, { nodeType: node.type, area: area });
+      pushGradient(obs.fills, node.fills, { nodeType: node.type, area: area });
     }
-    if ('strokes' in node) pushSolid(obs.strokes, node.strokes, { weight: (typeof node.strokeWeight === 'number' ? node.strokeWeight : null) });
+    if ('strokes' in node) { pushSolid(obs.strokes, node.strokes, { weight: (typeof node.strokeWeight === 'number' ? node.strokeWeight : null) }); pushGradient(obs.strokes, node.strokes, { weight: (typeof node.strokeWeight === 'number' ? node.strokeWeight : null) }); }
     if (node.type === 'TEXT') {
       try {
         if (node.fontSize !== figma.mixed && node.fontName !== figma.mixed) {
