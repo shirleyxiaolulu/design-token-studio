@@ -1735,7 +1735,7 @@ function rebuildShadow(obs) {
 function buildRebuildPlan(obs, opts) {
   opts = opts || {};
   // 保真：颜色按 ΔE 做肉眼无差的合并（固定 2.5），字号/圆角/间距保留实际值不收敛。
-  var colorDelta = opts.colorDelta != null ? opts.colorDelta : 2.5;
+  var colorDelta = opts.colorDelta != null ? opts.colorDelta : 1.0; // 只合并肉眼无差(ΔE<1)，保留可区分的近似色（如两档深背景）
   var colors = rebuildColorSystem(obs, { colorDelta: colorDelta, chromaNeutral: opts.chromaNeutral });
   var type = rebuildTypeScale(obs);
   var radius = rebuildRadius(obs);
@@ -1846,11 +1846,11 @@ function rebuildToData(plan) {
   Object.keys(C.semantic).forEach(function (k) { addC('color.function.' + (fname[k] || k), C.semantic[k].hex, 'semantic', fusage[k] || ''); });
   C.accents.forEach(function (t, i) { addC('color.auxiliary.' + (i + 1), t.hex, 'semantic', '辅助 / 强调'); });
   var bgN = ['page', 'surface', 'elevated', 'overlay'];
-  rebuildDedupeColors(ctx.bg, 2.5).slice(0, 4).forEach(function (m, i) { addC('color.bg.' + (bgN[i] || ('s' + i)), m.hex, 'semantic', '背景 · 实际大面积填充'); });
+  rebuildDedupeColors(ctx.bg, 1.0).slice(0, 4).forEach(function (m, i) { addC('color.bg.' + (bgN[i] || ('s' + i)), m.hex, 'semantic', '背景 · 实际大面积填充'); });
   var txN = ['primary', 'secondary', 'tertiary', 'disabled', 'placeholder'];
-  rebuildDedupeColors(ctx.text, 2.5).slice(0, 5).forEach(function (m, i) { addC('color.text.' + (txN[i] || ('t' + i)), m.hex, 'semantic', '文本 · 实际用在文字'); });
+  rebuildDedupeColors(ctx.text, 1.0).slice(0, 5).forEach(function (m, i) { addC('color.text.' + (txN[i] || ('t' + i)), m.hex, 'semantic', '文本 · 实际用在文字'); });
   var bdN = ['default', 'subtle', 'strong'];
-  rebuildDedupeColors(ctx.border, 2.5).slice(0, 3).forEach(function (m, i) { addC('color.border.' + (bdN[i] || ('b' + i)), m.hex, 'semantic', '边框 · 实际用作描边'); });
+  rebuildDedupeColors(ctx.border, 1.0).slice(0, 3).forEach(function (m, i) { addC('color.border.' + (bdN[i] || ('b' + i)), m.hex, 'semantic', '边框 · 实际用作描边'); });
 
   // 尺寸（plan 已规整为整数）
   plan.type.roles.forEach(function (r) { addD('font.size.' + r.role, r.size, { role: r.role.charAt(0).toUpperCase() + r.role.slice(1), weight: 400, lineHeight: Math.round(r.size * 1.5) }); });
@@ -1975,7 +1975,7 @@ async function aliasReverseSemantics(data) {
     var sv = byName[t.figmaName]; if (!sv) return;
     var best = null, bd = Infinity;
     for (var i = 0; i < prims.length; i++) { var d = auditDeltaE(t.light, prims[i].hex); if (d < bd) { bd = d; best = prims[i]; } }
-    if (best && bd < 3 && best.v.id !== sv.id) {
+    if (best && bd < 1.5 && best.v.id !== sv.id) {
       try { var md = modesByCol[sv.variableCollectionId], a = figma.variables.createVariableAlias(best.v); sv.setValueForMode(md.light, a); sv.setValueForMode(md.dark, a); aliased++; } catch (e) {}
     }
   });
@@ -2020,10 +2020,11 @@ async function bindReverseVariables(plan) {
   function nearestIn(list, hex, maxD) { var best = null, bd = Infinity; for (var i = 0; i < list.length; i++) { var d = auditDeltaE(hex, list[i].hex); if (d < bd) { bd = d; best = list[i].v; } } return (best && bd <= maxD) ? best : null; }
   // 角色优先绑语义色，基础色兜底（语义色就是真实检测色，命中 ΔE≈0）
   function resolveColor(role, hex) {
-    if (role === 'border') return nearestIn(borderVars, hex, 3) || nearestIn(primVars, hex, Infinity);
-    if (role === 'text') return nearestIn(textVars, hex, 3) || nearestIn(brandVars, hex, 3) || nearestIn(primVars, hex, Infinity);
+    // 语义色匹配收紧到 ΔE<2（只有(近)同色才归到该角色），否则兜底到「精确同值」的基础色——避免大面积色被吸到别的色
+    if (role === 'border') return nearestIn(borderVars, hex, 2) || nearestIn(primVars, hex, Infinity);
+    if (role === 'text') return nearestIn(textVars, hex, 2) || nearestIn(brandVars, hex, 2) || nearestIn(primVars, hex, Infinity);
     // fill（含图标/形状）：品牌/状态色 → 背景 → 文本(图标常复用文本灰) → 兜底基础色
-    return nearestIn(brandVars, hex, 3) || nearestIn(bgVars, hex, 3) || nearestIn(textVars, hex, 3) || nearestIn(primVars, hex, Infinity);
+    return nearestIn(brandVars, hex, 2) || nearestIn(bgVars, hex, 2) || nearestIn(textVars, hex, 2) || nearestIn(primVars, hex, Infinity);
   }
   function nearestNum(arr, val) { var best = null, bd = Infinity; for (var i = 0; i < arr.length; i++) { var d = Math.abs(arr[i].val - val); if (d < bd) { bd = d; best = arr[i].v; } } return best; }
 
