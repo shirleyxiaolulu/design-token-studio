@@ -1848,12 +1848,19 @@ function rebuildToData(plan) {
   var fusage = { success: '成功', warning: '警告', error: '危险 / 错误', info: '信息' };
   Object.keys(C.semantic).forEach(function (k) { addC('color.function.' + (fname[k] || k), C.semantic[k].hex, 'semantic', fusage[k] || ''); });
   C.accents.forEach(function (t, i) { addC('color.auxiliary.' + (i + 1), t.hex, 'semantic', '辅助 / 强调'); });
+  // 不透明色取前 N 个给语义角色名；半透明色「全部保留」——它们是设计里真实存在的独立色，
+  // 绑定时必须有同 alpha 的变量可命中，被 slice 切掉就会让图层绑不上变量（只剩裸色值）。
+  function ctxKept(list, n) {
+    var dd = rebuildDedupeColors(list, 1.0);
+    return dd.filter(function (m) { return rebuildOpacity(m.opacity) >= 1; }).slice(0, n)
+      .concat(dd.filter(function (m) { return rebuildOpacity(m.opacity) < 1; }));
+  }
   var bgN = ['page', 'surface', 'elevated', 'overlay'];
-  rebuildDedupeColors(ctx.bg, 1.0).slice(0, 4).forEach(function (m, i) { addC('color.bg.' + (bgN[i] || ('s' + i)), m.hex, 'semantic', '背景 · 实际大面积填充', m.opacity); });
+  ctxKept(ctx.bg, 4).forEach(function (m, i) { addC('color.bg.' + (bgN[i] || ('s' + i)), m.hex, 'semantic', '背景 · 实际大面积填充', m.opacity); });
   var txN = ['primary', 'secondary', 'tertiary', 'disabled', 'placeholder'];
-  rebuildDedupeColors(ctx.text, 1.0).slice(0, 5).forEach(function (m, i) { addC('color.text.' + (txN[i] || ('t' + i)), m.hex, 'semantic', '文本 · 实际用在文字', m.opacity); });
+  ctxKept(ctx.text, 5).forEach(function (m, i) { addC('color.text.' + (txN[i] || ('t' + i)), m.hex, 'semantic', '文本 · 实际用在文字', m.opacity); });
   var bdN = ['default', 'subtle', 'strong'];
-  rebuildDedupeColors(ctx.border, 1.0).slice(0, 3).forEach(function (m, i) { addC('color.border.' + (bdN[i] || ('b' + i)), m.hex, 'semantic', '边框 · 实际用作描边', m.opacity); });
+  ctxKept(ctx.border, 3).forEach(function (m, i) { addC('color.border.' + (bdN[i] || ('b' + i)), m.hex, 'semantic', '边框 · 实际用作描边', m.opacity); });
 
   // 尺寸（plan 已规整为整数）
   plan.type.roles.forEach(function (r) { addD('font.size.' + r.role, r.size, { role: r.role.charAt(0).toUpperCase() + r.role.slice(1), weight: 400, lineHeight: Math.round(r.size * 1.5) }); });
