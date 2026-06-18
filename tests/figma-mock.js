@@ -86,18 +86,21 @@ function setup() {
   global.__html__ = '<x>';
   global.figma = figma;
 
+  function rawValue(v, modeName) {
+    var col = COLS.find(function (c) { return c.id === v.variableCollectionId; });
+    var mode = col && (modeName ? col.modes.find(function (m) { return m.name === modeName; }) : col.modes[0]);
+    return mode ? v.valuesByMode[mode.modeId] : undefined;
+  }
   function varValue(name, modeName) {
-    for (var id in _vid) {
-      if (_vid[id].name === name) {
-        var col = COLS.find(function (c) { return c.id === _vid[id].variableCollectionId; });
-        var mode = col && (modeName ? col.modes.find(function (m) { return m.name === modeName; }) : col.modes[0]);
-        return mode ? _vid[id].valuesByMode[mode.modeId] : undefined;
-      }
-    }
-    return undefined;
+    var v = varByName(name); if (!v) return undefined;
+    var val = rawValue(v, modeName), guard = 0;
+    while (val && val.type === 'VARIABLE_ALIAS' && _vid[val.id] && guard++ < 16) val = rawValue(_vid[val.id], modeName); // 跟随别名链解析到真值
+    return val;
   }
   function varByName(name) { for (var id in _vid) { if (_vid[id].name === name) return _vid[id]; } return null; }
 
-  return { figma: figma, N: N, solid: solid, grad: grad, rgb: rgb, MIXED: MIXED, COLS: COLS, PAGES: PAGES, varValue: varValue, varByName: varByName };
+  function varRaw(name) { var v = varByName(name); return v ? rawValue(v) : undefined; } // 不跟随别名，看原始值（判断是否为 alias）
+  function varById(id) { return _vid[id] || null; }
+  return { figma: figma, N: N, solid: solid, grad: grad, rgb: rgb, MIXED: MIXED, COLS: COLS, PAGES: PAGES, varValue: varValue, varRaw: varRaw, varByName: varByName, varById: varById };
 }
 module.exports = { setup: setup };

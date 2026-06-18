@@ -68,6 +68,16 @@ test('不透明文字仍绑到 text 变量、opacity=1', async () => {
   eq(txt.opacity, 1, 'opacity=1');
 });
 
+test('两层模型：半透明语义色别名引用半透明基础色（palette *-alpha）', async () => {
+  fresh(); const root = await bind(darkBusyPage());
+  const semName = ref(root.children[5].fills[0]); // 白@5% 填充绑到的 bg 语义色
+  const raw = M.varRaw(semName);
+  assert(raw && raw.type === 'VARIABLE_ALIAS', '半透明语义色应是别名(两层联动), got ' + JSON.stringify(raw));
+  const prim = M.varById(raw.id);
+  assert(prim && prim.name.indexOf('color/palette/') === 0 && prim.name.indexOf('-alpha') >= 0, '应别名到半透明 palette 基础色, got ' + (prim && prim.name));
+  near(M.varValue(semName).a, 0.05, '解析后 alpha=0.05');
+});
+
 test('返回的绑定 paint 是只读冻结对象（代码不得依赖其可变性）', async () => {
   fresh(); const root = await bind(darkBusyPage());
   const fill = root.children[5].fills[0];

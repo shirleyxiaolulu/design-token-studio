@@ -1844,6 +1844,14 @@ function rebuildToData(plan) {
   function toFam(hex) { var f = rebuildHueFamily(rebuildHueDeg(hex)); famN[f] = famN[f] || 0; addC('color.palette.' + f + '.' + famN[f], hex, 'primitive'); famN[f]++; }
   Object.keys(C.semantic).forEach(function (k) { toFam(C.semantic[k].hex); });
   C.accents.forEach(function (t) { toFam(t.hex); });
+  // 半透明色也进基础色（两层模型：半透明语义色再别名引用它）。归到 palette 段、命名带 -alpha，不污染背景色栏。
+  function alphaFam(hex) { var c = hexToFigmaRgb(hex) || { r: 0, g: 0, b: 0 }; if (c.r > 0.92 && c.g > 0.92 && c.b > 0.92) return 'white'; if (c.r < 0.08 && c.g < 0.08 && c.b < 0.08) return 'black'; return rebuildHueFamily(rebuildHueDeg(hex)); }
+  rebuildDedupeColors([].concat(ctx.bg || [], ctx.text || [], ctx.border || []), 1.0).forEach(function (m) {
+    var op = rebuildOpacity(m.opacity); if (op >= 1) return;
+    var nn = Math.round(op * 100), base = 'color.palette.' + alphaFam(m.hex) + '-alpha.' + nn, key = base, n = 2;
+    while (colorTokens[key] && colorTokens[key].light !== m.hex) { key = base + '_' + n; n++; }
+    addC(key, m.hex, 'primitive', '半透明 ' + nn + '%', op);
+  });
 
   // 语义色 semantic：角色名 + 真实颜色
   // 品牌色：每个主色阶都给一个语义角色，避免多余主色阶绑回基础色
@@ -2005,27 +2013,40 @@ async function aliasReverseSemantics(data) {
   }
   function fn(k) { return k.replace(/\./g, '/'); }
   var prims = [];
-  Object.keys(data.colorTokens).forEach(function (k) { if (k.indexOf('color.palette.') !== 0) return; var v = byName[fn(k)]; if (v) prims.push({ hex: data.colorTokens[k].light, v: v }); });
+  Object.keys(data.colorTokens).forEach(function (k) { if (k.indexOf('color.palette.') !== 0) return; var v = byName[fn(k)]; if (v) prims.push({ hex: data.colorTokens[k].light, v: v, alpha: (data.colorTokens[k].alpha == null ? 1 : data.colorTokens[k].alpha) }); });
   if (!prims.length) return 0;
+  // 半透明基础色：syncVariables 建的初值是不透明的，这里写入带 alpha 的 RGBA 真值
+  Object.keys(data.colorTokens).forEach(function (k) {
+    if (k.indexOf('color.palette.') !== 0) return;
+    var tp = data.colorTokens[k]; if (tp.alpha == null || tp.alpha >= 1) return;
+    var pv = byName[fn(k)]; if (!pv) return;
+    try { var mdp = modesByCol[pv.variableCollectionId];
+      var lp = hexToFigmaRgb(tp.light) || { r: 0, g: 0, b: 0 }; lp.a = tp.alpha;
+      var dp = hexToFigmaRgb(tp.dark) || { r: 0, g: 0, b: 0 }; dp.a = tp.alpha;
+      pv.setValueForMode(mdp.light, lp); pv.setValueForMode(mdp.dark, dp);
+    } catch (e) {}
+  });
   var aliased = 0;
   Object.keys(data.colorTokens).forEach(function (k) {
     var t = data.colorTokens[k];
     if (t.tier !== 'semantic') return;
     var sv = byName[t.figmaName]; if (!sv) return;
-    // 半透明语义色：直接写入带 alpha 的 RGBA 值，不别名到不透明基础色（否则又把透明度丢了）
+    var mdA = modesByCol[sv.variableCollectionId];
+    // 半透明语义色：别名到「同色同透明度」的半透明基础色（两层联动）；找不到才直接写 RGBA 兜底
     if (t.alpha != null && t.alpha < 1) {
+      var bestT = null, bdT = Infinity;
+      for (var j = 0; j < prims.length; j++) { if (Math.abs(prims[j].alpha - t.alpha) > 0.02) continue; var dj = auditDeltaE(t.light, prims[j].hex); if (dj < bdT) { bdT = dj; bestT = prims[j]; } }
       try {
-        var mdA = modesByCol[sv.variableCollectionId];
-        var lr = hexToFigmaRgb(t.light) || { r: 0, g: 0, b: 0 }; lr.a = t.alpha;
-        var dr = hexToFigmaRgb(t.dark) || { r: 0, g: 0, b: 0 }; dr.a = t.alpha;
-        sv.setValueForMode(mdA.light, lr); sv.setValueForMode(mdA.dark, dr);
+        if (bestT && bdT < 1.5 && bestT.v.id !== sv.id) { var al = figma.variables.createVariableAlias(bestT.v); sv.setValueForMode(mdA.light, al); sv.setValueForMode(mdA.dark, al); aliased++; }
+        else { var lr = hexToFigmaRgb(t.light) || { r: 0, g: 0, b: 0 }; lr.a = t.alpha; var dr = hexToFigmaRgb(t.dark) || { r: 0, g: 0, b: 0 }; dr.a = t.alpha; sv.setValueForMode(mdA.light, lr); sv.setValueForMode(mdA.dark, dr); }
       } catch (e) {}
       return;
     }
+    // 不透明语义色：只别名到「不透明」基础色（不要吸到半透明基础色）
     var best = null, bd = Infinity;
-    for (var i = 0; i < prims.length; i++) { var d = auditDeltaE(t.light, prims[i].hex); if (d < bd) { bd = d; best = prims[i]; } }
+    for (var i = 0; i < prims.length; i++) { if (prims[i].alpha < 1) continue; var d = auditDeltaE(t.light, prims[i].hex); if (d < bd) { bd = d; best = prims[i]; } }
     if (best && bd < 1.5 && best.v.id !== sv.id) {
-      try { var md = modesByCol[sv.variableCollectionId], a = figma.variables.createVariableAlias(best.v); sv.setValueForMode(md.light, a); sv.setValueForMode(md.dark, a); aliased++; } catch (e) {}
+      try { var a = figma.variables.createVariableAlias(best.v); sv.setValueForMode(mdA.light, a); sv.setValueForMode(mdA.dark, a); aliased++; } catch (e) {}
     }
   });
   return aliased;
