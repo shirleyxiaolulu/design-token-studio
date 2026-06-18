@@ -1981,9 +1981,19 @@ async function bindReverseVariables(plan) {
     if (!Array.isArray(paints) || !paints.length) return;
     var changed = false;
     var next = paints.map(function (p) {
-      if (p && p.type === 'SOLID' && p.visible !== false) {
+      if (!p || p.visible === false) return p;
+      if (p.type === 'SOLID') {
         var vr = nearestColor(figmaRgbToHex(p.color));
         if (vr) { try { var np = figma.variables.setBoundVariableForPaint(p, 'color', vr); changed = true; return np; } catch (e) {} }
+      } else if (typeof p.type === 'string' && p.type.indexOf('GRADIENT_') === 0 && Array.isArray(p.gradientStops)) {
+        // 渐变：把每个色标颜色绑到最近的颜色变量（主色常用在渐变里）
+        var anyStop = false;
+        var stops = p.gradientStops.map(function (st) {
+          var v2 = nearestColor(figmaRgbToHex(st.color));
+          if (v2) { try { anyStop = true; return { position: st.position, color: st.color, boundVariables: { color: figma.variables.createVariableAlias(v2) } }; } catch (e) {} }
+          return { position: st.position, color: st.color };
+        });
+        if (anyStop) { var ng = Object.assign({}, p); ng.gradientStops = stops; changed = true; return ng; }
       }
       return p;
     });
