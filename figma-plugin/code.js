@@ -1852,9 +1852,10 @@ function rebuildToData(plan) {
   // 绑定时必须有同 alpha 的变量可命中，被 slice 切掉就会让图层绑不上变量（只剩裸色值）。
   function ctxKept(list, n) {
     var dd = rebuildDedupeColors(list, 1.0);
-    // 不透明且非渐变色：取前 N 个拿角色名。半透明色 + 渐变色标色：全部保留（绑定必须有同色变量）。
-    return dd.filter(function (m) { return rebuildOpacity(m.opacity) >= 1 && !m.fromGradient; }).slice(0, n)
-      .concat(dd.filter(function (m) { return rebuildOpacity(m.opacity) < 1 || m.fromGradient; }));
+    // 不透明色取前 N 个拿角色名；半透明色全部保留（它们是真实背景/描边、绑定必须有同色变量）。
+    // 渐变色标色不在这里强留——它们不是背景色，已由聚类变成 brand/palette 基础色可绑（避免污染预览背景色栏）。
+    return dd.filter(function (m) { return rebuildOpacity(m.opacity) >= 1; }).slice(0, n)
+      .concat(dd.filter(function (m) { return rebuildOpacity(m.opacity) < 1; }));
   }
   var bgN = ['page', 'surface', 'elevated', 'overlay'];
   ctxKept(ctx.bg, 4).forEach(function (m, i) { addC('color.bg.' + (bgN[i] || ('s' + i)), m.hex, 'semantic', '背景 · 实际大面积填充', m.opacity); });
