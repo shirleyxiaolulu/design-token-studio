@@ -2062,7 +2062,7 @@ async function bindReverseVariables(plan) {
   Object.keys(data.dimTokens).forEach(function (k) {
     var t = data.dimTokens[k], vr = byName[t.figmaName];
     if (!vr || typeof t.value !== 'number') return;
-    if (k.indexOf('radius.') === 0) radiusVars.push({ val: t.value, v: vr });
+    if (k.indexOf('radius.') === 0) radiusVars.push({ val: t.value, v: vr, isFull: (k === 'radius.full') });
     else if (k.indexOf('space.') === 0) spaceVars.push({ val: t.value, v: vr });
     else if (k.indexOf('font.size.') === 0) fontVars.push({ val: t.value, v: vr });
   });
@@ -2135,7 +2135,12 @@ async function bindReverseVariables(plan) {
     if (node.type !== 'TEXT' && 'fills' in node && node.fills !== figma.mixed) bindPaints(node, 'fills', 'fills', 'fill');
     if ('strokes' in node) bindPaints(node, 'strokes', 'strokes', 'border');
     if (radiusVars.length && 'cornerRadius' in node && node.cornerRadius !== figma.mixed && typeof node.cornerRadius === 'number' && node.cornerRadius > 0) {
-      var rv = nearestNum(radiusVars, node.cornerRadius), ok = false;
+      // 大圆角(≥100)统一绑 radius.full（rebuildRadius 把 ≥100 收成一个 full、值取最大），
+      // 否则按数值最近——避免 150 这种「胶囊」被吸到数值更近的小圆角刻度。
+      var rv;
+      if (node.cornerRadius >= 100) { var fv = null; for (var ri = 0; ri < radiusVars.length; ri++) if (radiusVars[ri].isFull) fv = radiusVars[ri].v; rv = fv || nearestNum(radiusVars, node.cornerRadius); }
+      else rv = nearestNum(radiusVars.filter(function (e) { return !e.isFull; }), node.cornerRadius) || nearestNum(radiusVars, node.cornerRadius);
+      var ok = false;
       ['topLeftRadius', 'topRightRadius', 'bottomLeftRadius', 'bottomRightRadius'].forEach(function (f) { if (bindNum(node, f, rv)) ok = true; });
       if (ok) bound.radius++;
     }

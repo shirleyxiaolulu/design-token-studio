@@ -103,6 +103,19 @@ test('角色路由：背景填充→bg、描边→border、文字→text', async
   assert((ref(page.fills[0]) || '').indexOf('color/bg') === 0, '页面暗底应绑 bg 角色, got ' + ref(page.fills[0]));
 });
 
+test('大圆角(≥100)绑 radius.full，不被数值最近的小圆角刻度吸走', async () => {
+  fresh(); const { N, solid } = M;
+  const small = []; for (let i = 0; i < 4; i++) small.push(N({ type: 'FRAME', width: 200, height: 100, y: i * 110, characters: '', fills: [solid('#222222')], strokes: [], cornerRadius: 16 }));
+  const pill = N({ type: 'FRAME', width: 300, height: 60, y: 900, characters: '', fills: [solid('#262626')], strokes: [], cornerRadius: 999 });
+  const mid = N({ type: 'FRAME', width: 300, height: 120, y: 1000, characters: '', fills: [solid('#2A2A2A')], strokes: [], cornerRadius: 150 });
+  const page = N({ type: 'FRAME', width: 1440, height: 1400, characters: '', fills: [solid('#1A1A1A')], strokes: [], children: small.concat([pill, mid]) });
+  const root = await bind(page);
+  const midV = root.children[5]._bound.topLeftRadius;       // 150（胶囊）
+  const smallV = root.children[0]._bound.topLeftRadius;     // 16（小圆角）
+  eq(midV && midV.name, 'radius/full', '150 应绑 radius.full');
+  eq(smallV && smallV.name, 'radius/sm', '16 应绑 radius.sm');
+});
+
 test('主题检测：暗底+满屏半透明白蒙层+白字 → dark；白底深字 → light', async () => {
   fresh();
   const darkObs = { fills: [
