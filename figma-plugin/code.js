@@ -1900,6 +1900,18 @@ function harvestSelection(nodes, maxNodes) {
           }
         }
       } catch (e) { /* 跳过无法读取的文本 */ }
+      // 多色文本：fills 为 mixed 时按字符分段采集每段的文字颜色（否则会整段漏掉）
+      if (node.fills === figma.mixed) {
+        try {
+          var tArea = (typeof node.width === 'number' && typeof node.height === 'number') ? node.width * node.height : 0;
+          var tChars = (typeof node.characters === 'string') ? node.characters.length : 0;
+          var fsegs = node.getStyledTextSegments(['fills']);
+          for (var fsi = 0; fsi < fsegs.length; fsi++) {
+            var segChars = fsegs[fsi].characters ? fsegs[fsi].characters.length : 0;
+            pushSolid(obs.fills, fsegs[fsi].fills, { nodeType: 'TEXT', area: (tChars > 0 ? tArea * (segChars / tChars) : 0) });
+          }
+        } catch (e) { /* 跳过无法读取的分段填充 */ }
+      }
     }
     if ('cornerRadius' in node) {
       if (node.cornerRadius !== figma.mixed) {
@@ -1976,6 +1988,7 @@ async function bindReverseVariables(plan) {
   for (var s = 0; s < sel.length; s++) { try { var cl = sel[s].clone(); page.appendChild(cl); clones.push(cl); } catch (e) {} }
 
   var bound = { fills: 0, strokes: 0, radius: 0, spacing: 0, font: 0 };
+  var mixedText = [];
   function bindPaints(node, prop, counter) {
     var paints = node[prop];
     if (!Array.isArray(paints) || !paints.length) return;
@@ -2016,9 +2029,27 @@ async function bindReverseVariables(plan) {
     if (node.type === 'TEXT' && fontVars.length && node.fontSize !== figma.mixed && typeof node.fontSize === 'number') {
       if (bindNum(node, 'fontSize', nearestNum(fontVars, node.fontSize))) bound.font++;
     }
+    if (node.type === 'TEXT' && node.fills === figma.mixed) mixedText.push(node); // 多色文本：留到后面按段绑定
     if ('children' in node) { for (var i = 0; i < node.children.length; i++) visit(node.children[i]); }
   }
   for (var c2 = 0; c2 < clones.length; c2++) visit(clones[c2]);
+  // 多色文本：按字符分段绑定每段颜色（需先加载该段字体；setRangeFills 才能写）
+  for (var mt = 0; mt < mixedText.length; mt++) {
+    var tn = mixedText[mt];
+    try {
+      var fontSegs = tn.getStyledTextSegments(['fontName']);
+      for (var fi2 = 0; fi2 < fontSegs.length; fi2++) { try { await figma.loadFontAsync(fontSegs[fi2].fontName); } catch (e) {} }
+      var fillSegs = tn.getStyledTextSegments(['fills']);
+      for (var si = 0; si < fillSegs.length; si++) {
+        var seg = fillSegs[si];
+        var nf = (seg.fills || []).map(function (p) {
+          if (p && p.type === 'SOLID' && p.visible !== false) { var vr = nearestColor(figmaRgbToHex(p.color)); if (vr) { try { return figma.variables.setBoundVariableForPaint(p, 'color', vr); } catch (e) {} } }
+          return p;
+        });
+        try { tn.setRangeFills(seg.start, seg.end, nf); bound.fills++; } catch (e) {}
+      }
+    } catch (e) { /* 跳过无法绑定的多色文本 */ }
+  }
   figma.currentPage = page;
   try { figma.currentPage.selection = clones; figma.viewport.scrollAndZoomIntoView(clones); } catch (e) {}
   return bound;
