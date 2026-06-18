@@ -2089,13 +2089,16 @@ async function bindReverseVariables(plan) {
   for (var s = 0; s < sel.length; s++) { try { var cl = sel[s].clone(); page.appendChild(cl); clones.push(cl); } catch (e) {} }
 
   var bound = { fills: 0, strokes: 0, radius: 0, spacing: 0, font: 0 };
+  // 没绑上 / 没处理的，做个小结回报，让「保真范围」透明：
+  // image=图片/视频填充、unmatched=找不到同色变量的纯色、effect=带特效的节点(已原样保留，未建样式)
+  var skipped = { image: 0, unmatched: 0, effect: 0 };
   var textNodes = [];
   // 绑定一个纯色 paint 到对应角色变量，并「保留原本的不透明度」（如 20% 白描边不会变实白）
   function bindSolid(p, role) {
     if (!p || p.type !== 'SOLID' || p.visible === false) return p;
     // 按「色相 + 不透明度」找变量：半透明色只命中带相同 alpha 的语义变量（绑定后透明度由变量自带）
     var vr = resolveColor(role, figmaRgbToHex(p.color), (typeof p.opacity === 'number' ? p.opacity : 1));
-    if (!vr) return p; // 没有同色同透明度的变量就不绑，保留原 paint（含原本的透明度）——保真优先
+    if (!vr) { skipped.unmatched++; return p; } // 没有同色同透明度的变量就不绑，保留原 paint（含原本的透明度）——保真优先
     try {
       // 造一个干净的 opacity=1 源 paint 交给 Figma 绑定，直接返回它「亲建」的绑定 paint：
       // 这样变量引用一定生效（不再手搓对象导致绑定丢失）；透明度由变量 RGBA 的 alpha 提供，
@@ -2124,6 +2127,8 @@ async function bindReverseVariables(plan) {
           return { position: st.position, color: st.color };
         });
         if (anyStop) { var ng = Object.assign({}, p); ng.gradientStops = stops; changed = true; return ng; }
+      } else if (p.type === 'IMAGE' || p.type === 'VIDEO') {
+        skipped.image++; // 图片/视频填充不绑色变量，原样保留
       }
       return p;
     });
@@ -2131,6 +2136,7 @@ async function bindReverseVariables(plan) {
   }
   function bindNum(node, field, vr) { if (!vr) return; try { node.setBoundVariable(field, vr); return true; } catch (e) { return false; } }
   function visit(node) {
+    if (Array.isArray(node.effects) && node.effects.some(function (e) { return e && e.visible !== false; })) skipped.effect++; // 阴影/模糊：原样保留，不建效果样式
     // 文本填充统一留到后面「先加载字体再绑」，否则 Figma 不刷新渲染（点了才出现）
     if (node.type !== 'TEXT' && 'fills' in node && node.fills !== figma.mixed) bindPaints(node, 'fills', 'fills', 'fill');
     if ('strokes' in node) bindPaints(node, 'strokes', 'strokes', 'border');
@@ -2178,6 +2184,7 @@ async function bindReverseVariables(plan) {
   }
   figma.currentPage = page;
   try { figma.currentPage.selection = clones; figma.viewport.scrollAndZoomIntoView(clones); } catch (e) {}
+  bound.skipped = skipped;
   return bound;
 }
 
@@ -2308,9 +2315,15 @@ figma.ui.onmessage = async (msg) => {
       var rbgPlan = lastRebuildPlan || buildRebuildPlan(harvestSelection(rbgSel, 20000));
       figma.ui.postMessage({ type: 'progress', message: '正在复制副本并绑定变量...' });
       var b = await bindReverseVariables(rbgPlan);
+      var sk = b.skipped || { image: 0, unmatched: 0, effect: 0 };
+      var skParts = [];
+      if (sk.unmatched) skParts.push('无同色变量 ' + sk.unmatched);
+      if (sk.image) skParts.push('图片/视频填充 ' + sk.image);
+      if (sk.effect) skParts.push('特效节点 ' + sk.effect + '(已保留)');
+      var skMsg = skParts.length ? '；跳过：' + skParts.join(' · ') : '';
       figma.ui.postMessage({
         type: 'result',
-        message: '已在新页面「反推规范 · 绑定副本」完成绑定：填充 ' + b.fills + ' · 描边 ' + b.strokes + ' · 圆角 ' + b.radius + ' · 间距 ' + b.spacing + ' · 字号 ' + b.font + '（原设计未改动）',
+        message: '已在新页面「反推规范 · 绑定副本」完成绑定：填充 ' + b.fills + ' · 描边 ' + b.strokes + ' · 圆角 ' + b.radius + ' · 间距 ' + b.spacing + ' · 字号 ' + b.font + skMsg + '（原设计未改动）',
       });
     }
   } catch (err) {

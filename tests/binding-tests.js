@@ -26,6 +26,7 @@ function ref(p) { return (p && p.boundVariables && p.boundVariables.color && p.b
 function hex(c) { function h(x) { return ('0' + Math.round(x * 255).toString(16)).slice(-2); } return ('#' + h(c.r) + h(c.g) + h(c.b)).toUpperCase(); }
 function boundCopyRoot() { return M.PAGES[M.PAGES.length - 1].children[0]; }
 async function bind(root) { M.figma.currentPage.selection = [root]; await bindReverseVariables(buildRebuildPlan(harvestSelection([root], 20000))); return boundCopyRoot(); }
+async function bindResult(root) { M.figma.currentPage.selection = [root]; return bindReverseVariables(buildRebuildPlan(harvestSelection([root], 20000))); }
 
 // --- async harness ---------------------------------------------------------
 let passed = 0, failed = 0; const tests = [];
@@ -127,6 +128,18 @@ test('主题检测：暗底+满屏半透明白蒙层+白字 → dark；白底深
   eq(rebuildDetectTheme(darkObs), 'dark', '暗底应判 dark');
   const lightObs = { fills: [ { hex: '#FFFFFF', opacity: 1, nodeType: 'FRAME', area: 1440 * 3000 }, { hex: '#111111', opacity: 1, nodeType: 'TEXT', area: 300 * 40 } ], strokes: [] };
   eq(rebuildDetectTheme(lightObs), 'light', '白底应判 light');
+});
+
+test('绑定小结：统计图片填充 / 特效节点 / 绑定计数', async () => {
+  fresh(); const { N, solid } = M;
+  const imageNode = N({ type: 'FRAME', width: 400, height: 200, y: 0, characters: '', fills: [{ type: 'IMAGE', visible: true, scaleMode: 'FILL', imageHash: 'abc' }], strokes: [] });
+  const shadowCard = N({ type: 'FRAME', width: 300, height: 120, y: 220, characters: '', fills: [solid('#222222')], strokes: [], effects: [{ type: 'DROP_SHADOW', visible: true, radius: 20, color: { r: 0, g: 0, b: 0, a: 0.4 }, offset: { x: 0, y: 4 } }] });
+  const page = N({ type: 'FRAME', width: 1440, height: 800, characters: '', fills: [solid('#1A1A1A')], strokes: [], children: [imageNode, shadowCard] });
+  const b = await bindResult(page);
+  assert(b.skipped, '应返回 skipped 小结');
+  eq(b.skipped.image, 1, '应统计到 1 个图片填充');
+  assert(b.skipped.effect >= 1, '应统计到带特效的节点');
+  assert(typeof b.fills === 'number', 'bound.fills 仍为数值');
 });
 
 // --- run -------------------------------------------------------------------
