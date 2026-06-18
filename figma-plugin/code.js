@@ -1744,7 +1744,8 @@ function buildRebuildPlan(obs, opts) {
   var mapping = [].concat(colors.mapping, type.mapping, radius.mapping, spacing.mapping, shadow.mapping);
   var tokenCount = colors.neutral.length + colors.primary.length + Object.keys(colors.semantic).length + colors.accents.length
     + type.roles.length + radius.scale.length + spacing.scale.length + shadow.scale.length;
-  return { theme: rebuildDetectTheme(obs), context: rebuildContextColors(obs), colors: colors, type: type, radius: radius, spacing: spacing, shadow: shadow, mapping: mapping, tokenCount: tokenCount };
+  var detected = rebuildDetectTheme(obs);
+  return { theme: detected, detectedTheme: detected, context: rebuildContextColors(obs), colors: colors, type: type, radius: radius, spacing: spacing, shadow: shadow, mapping: mapping, tokenCount: tokenCount };
 }
 function rebuildSetDeep(obj, dotted, val) {
   var parts = dotted.split('.'), cur = obj;
@@ -1999,6 +2000,8 @@ function harvestSelection(nodes, maxNodes) {
 // 反推 · 阶段②衍生：缓存上次重建结果，供预览/变量库/绑定复用。
 // 预览/变量库/绑定都走 rebuildToData(plan)（真实检测色 + 角色语义层），口径统一。
 var lastRebuildPlan = null;
+// 主题覆盖：UI 选「浅色/深色」时覆盖自动检测；选「自动」(或未传)时回到检测值（不残留上次覆盖）。
+function applyReverseTheme(plan, t) { if (plan) plan.theme = (t === 'light' || t === 'dark') ? t : (plan.detectedTheme || plan.theme); return plan; }
 
 // 让语义色变量「别名引用」最接近的基础色变量（两层联动）。在 syncVariables 之后调用。
 async function aliasReverseSemantics(data) {
@@ -2289,6 +2292,7 @@ figma.ui.onmessage = async (msg) => {
       figma.ui.resize(360, 720);
       var rbObs = harvestSelection(rbSel, 20000);
       var rbPlan = buildRebuildPlan(rbObs);
+      applyReverseTheme(rbPlan, msg.theme);
       lastRebuildPlan = rbPlan;
       figma.ui.postMessage({ type: 'rebuild-result', plan: rbPlan, json: rebuildToJson(rbPlan) });
     }
@@ -2303,6 +2307,7 @@ figma.ui.onmessage = async (msg) => {
         }
         rpPlan = buildRebuildPlan(harvestSelection(rpSel, 20000));
       }
+      applyReverseTheme(rpPlan, msg.theme);
       figma.ui.postMessage({ type: 'progress', message: '正在生成规范预览页...' });
       // 翻译成正向数据 → 复用现有 generatePreview（不改动 web 端 JSON 的生成路径）
       await generatePreview(rebuildToData(rpPlan));
@@ -2317,6 +2322,7 @@ figma.ui.onmessage = async (msg) => {
       }
       figma.ui.postMessage({ type: 'progress', message: '正在用反推结果创建两层变量库...' });
       var rvPlan = lastRebuildPlan || buildRebuildPlan(harvestSelection(rvSel, 20000));
+      applyReverseTheme(rvPlan, msg.theme);
       var rvData = rebuildToData(rvPlan);
       // 复用现有 syncVariables 创建（与 web 端 JSON 同一条路径），再让语义色别名引用基础色
       var rvResult = await syncVariables(rvData);
@@ -2334,6 +2340,7 @@ figma.ui.onmessage = async (msg) => {
         return;
       }
       var rbgPlan = lastRebuildPlan || buildRebuildPlan(harvestSelection(rbgSel, 20000));
+      applyReverseTheme(rbgPlan, msg.theme);
       figma.ui.postMessage({ type: 'progress', message: '正在复制副本并绑定变量...' });
       var b = await bindReverseVariables(rbgPlan);
       var sk = b.skipped || { image: 0, unmatched: 0, effect: 0 };

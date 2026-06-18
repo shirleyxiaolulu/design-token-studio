@@ -86,6 +86,11 @@
     .tk { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 11px; }
     .tk-name { flex: 1; color: #444; font-family: 'SF Mono', monospace; }
     .tk-val { color: #999; font-family: 'SF Mono', monospace; }
+    .seg-btn { display: inline-block; padding: 4px 12px; font-size: 11px; border: 1px solid #d0d0d0; cursor: pointer; background: #fff; color: #444; user-select: none; }
+    .seg-btn.seg-on { background: #111; color: #fff; border-color: #111; }
+    .seg-btn:first-child { border-radius: 6px 0 0 6px; }
+    .seg-btn:last-child { border-radius: 0 6px 6px 0; }
+    .seg-btn + .seg-btn { border-left: none; }
   </style>
 </head>
 <body>
@@ -116,6 +121,10 @@
     <button class="btn btn-outline" id="auditBtn" style="margin-top:0;">① 扫描选中内容 · 生成审计</button>
     <div class="audit-result" id="auditResult"></div>
     <button class="btn btn-outline" id="rebuildBtn" style="margin-top:8px;">② 整理出设计 token（保真）</button>
+    <div style="margin-top:10px; display:flex; align-items:center; gap:8px;">
+      <span class="subtitle" style="margin:0;">预览/绑定主题</span>
+      <span class="seg-btn seg-on" id="themeAuto" data-theme="auto">自动</span><span class="seg-btn" id="themeLight" data-theme="light">浅色</span><span class="seg-btn" id="themeDark" data-theme="dark">深色</span>
+    </div>
     <div class="audit-result" id="rebuildResult"></div>
   </div>
 
@@ -289,12 +298,22 @@
       parent.postMessage({ pluginMessage: { type: 'audit' } }, '*');
     });
 
+    // 2.0 反推 · 主题选择：自动(检测) / 浅色 / 深色。覆盖预览页配色 + 绑定主模式，避免误判。
+    var reverseTheme = 'auto';
+    ['themeAuto', 'themeLight', 'themeDark'].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.addEventListener('click', function () {
+        reverseTheme = el.getAttribute('data-theme');
+        ['themeAuto', 'themeLight', 'themeDark'].forEach(function (x) { document.getElementById(x).classList.toggle('seg-on', x === id); });
+      });
+    });
+
     // 2.0 反推 · 阶段②：整理出设计 token（保真）
     function runRebuild() {
       rebuildResult.className = 'audit-result';
       rebuildResult.innerHTML = '';
       showStatus('正在整理设计 token...', 'progress');
-      parent.postMessage({ pluginMessage: { type: 'rebuild' } }, '*');
+      parent.postMessage({ pluginMessage: { type: 'rebuild', theme: reverseTheme } }, '*');
     }
     rebuildBtn.addEventListener('click', runRebuild);
 
@@ -331,17 +350,17 @@
         var pb = document.getElementById('genReversePreviewBtn');
         if (pb) pb.addEventListener('click', function () {
           showStatus('正在生成规范预览页...', 'progress');
-          parent.postMessage({ pluginMessage: { type: 'reverse-preview' } }, '*');
+          parent.postMessage({ pluginMessage: { type: 'reverse-preview', theme: reverseTheme } }, '*');
         });
         var vb = document.getElementById('reverseSyncBtn');
         if (vb) vb.addEventListener('click', function () {
           showStatus('正在创建 Figma 变量库...', 'progress');
-          parent.postMessage({ pluginMessage: { type: 'reverse-sync' } }, '*');
+          parent.postMessage({ pluginMessage: { type: 'reverse-sync', theme: reverseTheme } }, '*');
         });
         var bb = document.getElementById('reverseBindBtn');
         if (bb) bb.addEventListener('click', function () {
           showStatus('正在复制副本并绑定变量...', 'progress');
-          parent.postMessage({ pluginMessage: { type: 'reverse-bind' } }, '*');
+          parent.postMessage({ pluginMessage: { type: 'reverse-bind', theme: reverseTheme } }, '*');
         });
       }
     };

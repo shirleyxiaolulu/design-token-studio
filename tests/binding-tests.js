@@ -152,6 +152,19 @@ test('绑定小结：统计图片填充 / 特效节点 / 绑定计数', async ()
   assert(typeof b.fills === 'number', 'bound.fills 仍为数值');
 });
 
+test('主题覆盖：手动指定浅/深，自动回到检测值，预览 chrome 跟随', async () => {
+  fresh();
+  const darkObs = { fills: [{ hex: '#1A1A1A', opacity: 1, nodeType: 'FRAME', area: 1440 * 3000 }], strokes: [], texts: [{ size: 14 }], radii: [8], spacings: [8], shadows: [] };
+  const plan = buildRebuildPlan(darkObs);
+  eq(plan.detectedTheme, 'dark', '自动检测为 dark');
+  applyReverseTheme(plan, 'light'); eq(plan.theme, 'light', '手动覆盖 light');
+  applyReverseTheme(plan, 'dark'); eq(plan.theme, 'dark', '手动覆盖 dark');
+  applyReverseTheme(plan, 'auto'); eq(plan.theme, 'dark', 'auto 回到检测值(不残留上次覆盖)');
+  applyReverseTheme(plan, undefined); eq(plan.theme, 'dark', '未传 theme 也回到检测值');
+  applyReverseTheme(plan, 'light');
+  eq(rebuildToData(plan).seed.defaultMode, 'light', '预览/绑定主模式跟随覆盖');
+});
+
 // --- run -------------------------------------------------------------------
 (async function () {
   for (const t of tests) {
