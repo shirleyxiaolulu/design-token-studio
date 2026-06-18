@@ -2040,13 +2040,16 @@ async function bindReverseVariables(plan) {
   // 颜色匹配同时看色相(ΔE)与不透明度：不透明度差 >0.04 视为不同色（白@5% 不会命中不透明白）
   function nearestIn(list, hex, alpha, maxD) { var best = null, bd = Infinity; for (var i = 0; i < list.length; i++) { if (Math.abs((list[i].a == null ? 1 : list[i].a) - alpha) > 0.04) continue; var d = auditDeltaE(hex, list[i].hex); if (d < bd) { bd = d; best = list[i].v; } } return (best && bd <= maxD) ? best : null; }
   // 角色优先绑语义色，基础色兜底（语义色就是真实检测色，命中 ΔE≈0）
-  function resolveColor(role, hex, alpha) {
+  function resolveColor(role, hex, alpha, strict) {
     if (alpha == null) alpha = 1;
-    // 语义色匹配收紧到 ΔE<2（只有(近)同色才归到该角色），否则兜底到「精确同值」的基础色——避免大面积色被吸到别的色
-    if (role === 'border') return nearestIn(borderVars, hex, alpha, 2) || nearestIn(primVars, hex, alpha, Infinity);
-    if (role === 'text') return nearestIn(textVars, hex, alpha, 2) || nearestIn(brandVars, hex, alpha, 2) || nearestIn(primVars, hex, alpha, Infinity);
+    // 语义色匹配收紧到 ΔE<2（只有(近)同色才归到该角色），否则兜底到「精确同值」的基础色——避免大面积色被吸到别的色。
+    // strict（渐变用）：所有阈值都收到 strict，且基础色不再无脑兜底——色标没有近似同色变量就保留原色，绝不绑到「最近但不同」的色。
+    var sd = (strict != null) ? strict : 2;
+    var pd = (strict != null) ? strict : Infinity;
+    if (role === 'border') return nearestIn(borderVars, hex, alpha, sd) || nearestIn(primVars, hex, alpha, pd);
+    if (role === 'text') return nearestIn(textVars, hex, alpha, sd) || nearestIn(brandVars, hex, alpha, sd) || nearestIn(primVars, hex, alpha, pd);
     // fill（含图标/形状）：品牌/状态色 → 背景 → 文本(图标常复用文本灰) → 兜底基础色
-    return nearestIn(brandVars, hex, alpha, 2) || nearestIn(bgVars, hex, alpha, 2) || nearestIn(textVars, hex, alpha, 2) || nearestIn(primVars, hex, alpha, Infinity);
+    return nearestIn(brandVars, hex, alpha, sd) || nearestIn(bgVars, hex, alpha, sd) || nearestIn(textVars, hex, alpha, sd) || nearestIn(primVars, hex, alpha, pd);
   }
   function nearestNum(arr, val) { var best = null, bd = Infinity; for (var i = 0; i < arr.length; i++) { var d = Math.abs(arr[i].val - val); if (d < bd) { bd = d; best = arr[i].v; } } return best; }
 
@@ -2083,10 +2086,11 @@ async function bindReverseVariables(plan) {
         var np = bindSolid(p, role);
         if (np !== p) { changed = true; return np; }
       } else if (typeof p.type === 'string' && p.type.indexOf('GRADIENT_') === 0 && Array.isArray(p.gradientStops)) {
-        // 渐变：把每个色标颜色绑到对应角色的变量（主色常用在渐变里）
+        // 渐变：色标只绑「近乎同色」的变量（strict 1.5）。没有近似同色变量就保留原色——
+        // 宁可不绑也不能把色标吸到最近但不同的色（否则橙色渐变会被绑成偏黄/发灰）。
         var anyStop = false;
         var stops = p.gradientStops.map(function (st) {
-          var v2 = resolveColor(role, figmaRgbToHex(st.color), (st.color && typeof st.color.a === 'number' ? st.color.a : 1));
+          var v2 = resolveColor(role, figmaRgbToHex(st.color), (st.color && typeof st.color.a === 'number' ? st.color.a : 1), 1.5);
           if (v2) { try { anyStop = true; return { position: st.position, color: st.color, boundVariables: { color: figma.variables.createVariableAlias(v2) } }; } catch (e) {} }
           return { position: st.position, color: st.color };
         });
