@@ -167,6 +167,14 @@ test('双模式：中性语义色对侧模式镜像明度(别名不同)、品牌
   assert(Object.keys(root._explicitModes).length > 0, '副本应锁定到检测主题的模式');
 });
 
+test('防堆积：重复绑定只保留最新的「绑定副本」页', async () => {
+  fresh();
+  await bind(darkBusyPage());
+  await bind(darkBusyPage());
+  const copies = M.PAGES.filter(function (p) { return p.type === 'PAGE' && p.name === '反推规范 · 绑定副本'; });
+  eq(copies.length, 1, '重复绑定后应只剩一个绑定副本页');
+});
+
 test('基础色单值：Primitives 收成单模式，语义色 Tokens 仍双模式', async () => {
   fresh(); const root = await bind(darkBusyPage());
   const prim = M.COLS.find(function (c) { return c.name === 'Primitives'; });

@@ -2132,6 +2132,10 @@ async function bindReverseVariables(plan) {
   }
   function nearestNum(arr, val) { var best = null, bd = Infinity; for (var i = 0; i < arr.length; i++) { var d = Math.abs(arr[i].val - val); if (d < bd) { bd = d; best = arr[i].v; } } return best; }
 
+  // 防堆积：先删掉上一次自动生成的「绑定副本」页（同名才删；用户重命名保留的不动）
+  try {
+    (figma.root.children || []).filter(function (p) { return p.type === 'PAGE' && p.name === '反推规范 · 绑定副本'; }).forEach(function (p) { try { p.remove(); } catch (e) {} });
+  } catch (e) {}
   // 复制选中画板到新页面，只在副本上绑定（sel 已在顶部取得）
   var page = figma.createPage();
   page.name = '反推规范 · 绑定副本';
@@ -2346,7 +2350,13 @@ figma.ui.onmessage = async (msg) => {
       applyReverseTheme(rpPlan, msg.theme);
       figma.ui.postMessage({ type: 'progress', message: '正在生成规范预览页...' });
       // 翻译成正向数据 → 复用现有 generatePreview（不改动 web 端 JSON 的生成路径）
-      await generatePreview(rebuildToData(rpPlan));
+      var rpData = rebuildToData(rpPlan);
+      // 防堆积：删掉上一次自动生成的反推预览框架（同名才删；不碰 web 的预览、也不碰用户重命名保留的）
+      try {
+        var rpFrameName = 'Token Preview / ' + rpData.name + ' / v' + rpData.version;
+        (figma.currentPage.children || []).filter(function (n) { return n.type === 'FRAME' && n.name === rpFrameName; }).forEach(function (n) { try { n.remove(); } catch (e) {} });
+      } catch (e) {}
+      await generatePreview(rpData);
       figma.ui.postMessage({ type: 'result', message: '规范预览页已生成（与网页端同款，未改动原设计）' });
     }
     else if (msg.type === 'reverse-bind') {
@@ -2372,6 +2382,12 @@ figma.ui.onmessage = async (msg) => {
       });
     }
   } catch (err) {
-    figma.ui.postMessage({ type: 'error', message: '错误: ' + (err.message || String(err)) + ' | stack: ' + (err.stack || '').slice(0, 200) });
+    try { console.error('[plugin]', err); } catch (e) {} // 完整堆栈进控制台
+    var REV = ['audit', 'rebuild', 'reverse-preview', 'reverse-bind'];
+    var isReverse = msg && REV.indexOf(msg.type) >= 0;
+    // 反推：给人话错误（堆栈见控制台）；web：保持原格式不变
+    var em = isReverse ? ('出错了：' + ((err && err.message) ? err.message : String(err)) + '（详细堆栈见控制台）')
+                       : ('错误: ' + (err.message || String(err)) + ' | stack: ' + (err.stack || '').slice(0, 200));
+    figma.ui.postMessage({ type: 'error', message: em });
   }
 };

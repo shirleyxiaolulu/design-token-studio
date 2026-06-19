@@ -17,7 +17,7 @@
  */
 function setup() {
   var idc = 0;
-  var COLS = [], _vid = {}, PAGES = [];
+  var COLS = [], _vid = {}, ROOT = { type: 'DOCUMENT', children: [] }, PAGES = ROOT.children;
 
   function rgb(hex) {
     var n = parseInt(hex.slice(1), 16);
@@ -49,6 +49,7 @@ function setup() {
       _explicitModes: {},
       setBoundVariable: function (field, v) { this._bound[field] = v; },
       setExplicitVariableModeForCollection: function (col, modeId) { this._explicitModes[col.id || col] = modeId; },
+      remove: function () { var i = ROOT.children.indexOf(this); if (i >= 0) ROOT.children.splice(i, 1); },
       setRangeFills: function (s, e, f) { this._ranges.push({ start: s, end: e, fills: f }); },
       getStyledTextSegments: function () { return this._segments || []; },
       clone: function () {
@@ -81,7 +82,8 @@ function setup() {
       },
       createVariableAlias: function (v) { return { type: 'VARIABLE_ALIAS', id: v.id, __name: v.name }; },
     },
-    createPage: function () { var pg = N({ type: 'PAGE', name: '' }); PAGES.push(pg); return pg; },
+    root: ROOT,
+    createPage: function () { var pg = N({ type: 'PAGE', name: '' }); ROOT.children.push(pg); return pg; },
     currentPage: { selection: [], appendChild: function () {} },
     viewport: { center: { x: 0, y: 0 }, scrollAndZoomIntoView: function () {} },
   };

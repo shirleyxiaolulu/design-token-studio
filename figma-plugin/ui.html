@@ -91,6 +91,9 @@
     .seg-btn:first-child { border-radius: 6px 0 0 6px; }
     .seg-btn:last-child { border-radius: 0 6px 6px 0; }
     .seg-btn + .seg-btn { border-left: none; }
+    .step-desc { font-size: 10px; color: #9a9a9a; margin: 3px 0 2px 2px; line-height: 1.4; }
+    .btn:disabled { opacity: .5; cursor: progress; }
+    .btn.step-done::after { content: ' ✓'; color: #16A34A; font-weight: 700; }
   </style>
 </head>
 <body>
@@ -117,10 +120,12 @@
 
   <div class="reverse-section">
     <div class="reverse-title">反推设计规范 <span class="reverse-badge">实验 · 2.0</span></div>
-    <p class="subtitle" style="margin-top:4px; margin-bottom:10px;">选中画板/图层 → 扫描已用样式，生成审计报告（阶段①，只读不改文件）</p>
+    <p class="subtitle" style="margin-top:4px; margin-bottom:10px;">选中画板/图层，按 ①→④ 走一遍：从现有设计反推出 token 并绑定（全程不改原设计）。</p>
     <button class="btn btn-outline" id="auditBtn" style="margin-top:0;">① 扫描选中内容 · 生成审计</button>
+    <div class="step-desc">只读扫描：统计选中内容用到的颜色 / 字号 / 圆角 / 间距 / 阴影，给一份审计报告。</div>
     <div class="audit-result" id="auditResult"></div>
     <button class="btn btn-outline" id="rebuildBtn" style="margin-top:8px;">② 整理出设计 token（保真）</button>
+    <div class="step-desc">把杂乱样式聚成干净的两层 token（基础色 + 语义色）草案，下面 ③④ 据此生成。</div>
     <div style="margin-top:10px; display:flex; align-items:center; gap:8px;">
       <span class="subtitle" style="margin:0;">预览/绑定主题</span>
       <span class="seg-btn seg-on" id="themeAuto" data-theme="auto">自动</span><span class="seg-btn" id="themeLight" data-theme="light">浅色</span><span class="seg-btn" id="themeDark" data-theme="dark">深色</span>
@@ -294,6 +299,7 @@
     auditBtn.addEventListener('click', () => {
       auditResult.className = 'audit-result';
       auditResult.innerHTML = '';
+      setReverseBusy(true); currentReverseStep = 'audit';
       showStatus('正在扫描选中内容...', 'progress');
       parent.postMessage({ pluginMessage: { type: 'audit' } }, '*');
     });
@@ -308,10 +314,17 @@
       });
     });
 
+    // 反推交互：异步时锁全部反推按钮（防双击重跑/重复建页），完成或出错再恢复
+    var REVERSE_BTN_IDS = ['auditBtn', 'rebuildBtn', 'genReversePreviewBtn', 'reverseBindBtn'];
+    var currentReverseStep = null;
+    function setReverseBusy(busy) { REVERSE_BTN_IDS.forEach(function (id) { var el = document.getElementById(id); if (el) el.disabled = busy; }); }
+    function markStepDone(id) { var el = document.getElementById(id); if (el) el.classList.add('step-done'); }
+
     // 2.0 反推 · 阶段②：整理出设计 token（保真）
     function runRebuild() {
       rebuildResult.className = 'audit-result';
       rebuildResult.innerHTML = '';
+      setReverseBusy(true); currentReverseStep = 'rebuild';
       showStatus('正在整理设计 token...', 'progress');
       parent.postMessage({ pluginMessage: { type: 'rebuild', theme: reverseTheme } }, '*');
     }
@@ -321,22 +334,30 @@
       const msg = event.data.pluginMessage;
       if (msg.type === 'result') {
         showStatus(`✅ ${msg.message}`, 'success');
-        syncBtn.disabled = false;
-        generateBtn.disabled = false;
+        setReverseBusy(false);
+        syncBtn.disabled = !parsedData;       // 只在有合法 JSON 时才启用 web 按钮（反推结果不再误启用）
+        generateBtn.disabled = !parsedData;
+        if (currentReverseStep === 'preview') markStepDone('genReversePreviewBtn');
+        if (currentReverseStep === 'bind') markStepDone('reverseBindBtn');
+        currentReverseStep = null;
       } else if (msg.type === 'error') {
         showStatus(`❌ ${msg.message}`, 'error');
-        syncBtn.disabled = false;
-        generateBtn.disabled = false;
+        setReverseBusy(false);
+        syncBtn.disabled = !parsedData;
+        generateBtn.disabled = !parsedData;
+        currentReverseStep = null;
       } else if (msg.type === 'progress') {
         showStatus(`⏳ ${msg.message}`, 'progress');
       } else if (msg.type === 'audit-result') {
         auditResult.innerHTML = renderAudit(msg.report);
         auditResult.className = 'audit-result show';
+        setReverseBusy(false); markStepDone('auditBtn'); currentReverseStep = null;
         showStatus('✅ 审计完成（只读，未改动文件）', 'success');
       } else if (msg.type === 'rebuild-result') {
         rebuildJson = msg.json;
         rebuildResult.innerHTML = renderRebuild(msg.plan);
         rebuildResult.className = 'audit-result show';
+        setReverseBusy(false); markStepDone('rebuildBtn'); currentReverseStep = null;
         showStatus('✅ 已重建 ' + msg.plan.tokenCount + ' 个 token（草案，未改动文件）', 'success');
         var cb = document.getElementById('copyRebuildBtn');
         if (cb) cb.addEventListener('click', function () {
@@ -349,11 +370,13 @@
         });
         var pb = document.getElementById('genReversePreviewBtn');
         if (pb) pb.addEventListener('click', function () {
+          setReverseBusy(true); currentReverseStep = 'preview';
           showStatus('正在生成规范预览页...', 'progress');
           parent.postMessage({ pluginMessage: { type: 'reverse-preview', theme: reverseTheme } }, '*');
         });
         var bb = document.getElementById('reverseBindBtn');
         if (bb) bb.addEventListener('click', function () {
+          setReverseBusy(true); currentReverseStep = 'bind';
           showStatus('正在复制副本并绑定变量...', 'progress');
           parent.postMessage({ pluginMessage: { type: 'reverse-bind', theme: reverseTheme } }, '*');
         });
@@ -460,7 +483,9 @@
         }).join('') + '</div>');
       }
       h += '<button class="btn btn-primary" id="genReversePreviewBtn" style="margin-top:12px;">③ 生成规范预览页</button>';
+      h += '<div class="step-desc">新建一个与网页端同款的规范预览框架（不改原设计；可反复生成，只留最新一份）。</div>';
       h += '<button class="btn btn-outline" id="reverseBindBtn" style="margin-top:8px;">④ 复制副本并绑定变量（含建库）</button>';
+      h += '<div class="step-desc">复制选中画板到新页面 → 建好两层变量库 → 把副本图层绑上变量（原设计零改动；只留最新副本）。</div>';
       h += '<div class="scan-note" style="margin-top:4px;">④⑤ 用你的精确原值（颜色/字号零变化）；⑤ 复制到新页面再绑，原设计不动</div>';
       h += '<button class="btn btn-outline" id="copyRebuildBtn" style="margin-top:8px;">复制重建 JSON</button>';
       return h;
