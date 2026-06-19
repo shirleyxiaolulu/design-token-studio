@@ -19,6 +19,7 @@ const CODE = fs.readFileSync(path.resolve(__dirname, '../figma-plugin/code.js'),
 // then define all plugin functions as globals.
 let M = require('./figma-mock').setup();
 (0, eval)(CODE);
+const pluginOnMessage = M.figma.ui.onmessage; // 捕获 onmessage 处理器（闭包按调用时的 global.figma 解析，fresh 后仍可用）
 function fresh() { M = require('./figma-mock').setup(); } // reset figma + state between tests
 
 // --- helpers ---------------------------------------------------------------
@@ -197,6 +198,40 @@ test('主题覆盖：手动指定浅/深，自动回到检测值，预览 chrome
   applyReverseTheme(plan, undefined); eq(plan.theme, 'dark', '未传 theme 也回到检测值');
   applyReverseTheme(plan, 'light');
   eq(rebuildToData(plan).seed.defaultMode, 'light', '预览/绑定主模式跟随覆盖');
+});
+
+test('一键换主色(纯函数)：色相旋转到新主色、保留各档明度', async () => {
+  fresh();
+  const ramp = ['#FFD793', '#FFA900', '#FF6F00']; // 橙色阶
+  const target = '#3B82F6';                        // 目标蓝
+  const out = reverseRecolorRamp(ramp, target);
+  assert(out && out.length === 3, '返回同长度');
+  const tH = rcRgbToOklch(rcHexToRgb255(target)).H;
+  out.forEach(function (c, i) {
+    const o = rcRgbToOklch({ r: c.r * 255, g: c.g * 255, b: c.b * 255 });
+    const dh = Math.min(Math.abs(o.H - tH), 360 - Math.abs(o.H - tH));
+    assert(dh < 15, '第' + i + '档色相应接近蓝(差 ' + dh.toFixed(1) + '°)');
+    const oL = rcRgbToOklch(rcHexToRgb255(ramp[i])).L;
+    assert(Math.abs(o.L - oL) < 0.03, '第' + i + '档明度应保留');
+  });
+});
+
+test('一键换主色(handler)：palette/primary/* 的值被换到新主色色相', async () => {
+  fresh(); const { N, solid } = M;
+  const tags = []; for (let i = 0; i < 8; i++) tags.push(N({ type: 'FRAME', width: 120, height: 40, y: i * 50, characters: '', fills: [solid('#FF6B00')], strokes: [] }));
+  const page = N({ type: 'FRAME', width: 1440, height: 600, characters: '', fills: [solid('#1A1A1A')], strokes: [], children: tags });
+  await bind(page); // 建出 color/palette/primary/*
+  await pluginOnMessage({ type: 'reverse-recolor', color: '#3B82F6' });
+  const tH = rcRgbToOklch(rcHexToRgb255('#3B82F6')).H;
+  const primNames = M.COLS.flatMap(function (c) { return c.variableIds.map(function (id) { return M.varById(id); }); })
+    .filter(Boolean).map(function (v) { return v.name; }).filter(function (n) { return n.indexOf('color/palette/primary/') === 0; });
+  assert(primNames.length > 0, '应有主色变量');
+  primNames.forEach(function (n) {
+    const val = M.varValue(n);
+    const o = rcRgbToOklch({ r: val.r * 255, g: val.g * 255, b: val.b * 255 });
+    const dh = Math.min(Math.abs(o.H - tH), 360 - Math.abs(o.H - tH));
+    assert(dh < 15, n + ' 换主色后应是蓝色相(差 ' + dh.toFixed(1) + '°)');
+  });
 });
 
 // --- run -------------------------------------------------------------------

@@ -316,7 +316,7 @@
     });
 
     // 反推交互：异步时锁全部反推按钮（防双击重跑/重复建页），完成或出错再恢复
-    var REVERSE_BTN_IDS = ['auditBtn', 'rebuildBtn', 'genReversePreviewBtn', 'reverseBindBtn'];
+    var REVERSE_BTN_IDS = ['auditBtn', 'rebuildBtn', 'genReversePreviewBtn', 'reverseBindBtn', 'recolorBtn'];
     var currentReverseStep = null;
     function setReverseBusy(busy) { REVERSE_BTN_IDS.forEach(function (id) { var el = document.getElementById(id); if (el) el.disabled = busy; }); }
     function markStepDone(id) { var el = document.getElementById(id); if (el) el.classList.add('step-done'); }
@@ -380,6 +380,22 @@
           setReverseBusy(true); currentReverseStep = 'bind';
           showStatus('正在复制副本并绑定变量...', 'progress');
           parent.postMessage({ pluginMessage: { type: 'reverse-bind', theme: reverseTheme } }, '*');
+        });
+        // 一键换主色：色板与 hex 输入双向同步；点按钮 → 发新主色，重算 palette/primary/*
+        var rcPicker = document.getElementById('recolorPicker');
+        var rcHex = document.getElementById('recolorHex');
+        if (rcPicker && rcHex) {
+          rcHex.value = rcPicker.value.toUpperCase();
+          rcPicker.addEventListener('input', function () { rcHex.value = rcPicker.value.toUpperCase(); });
+          rcHex.addEventListener('input', function () { if (/^#[0-9a-fA-F]{6}$/.test(rcHex.value)) rcPicker.value = rcHex.value; });
+        }
+        var rcBtn = document.getElementById('recolorBtn');
+        if (rcBtn) rcBtn.addEventListener('click', function () {
+          var hex = (rcHex && rcHex.value || '').trim();
+          if (!/^#[0-9a-fA-F]{6}$/.test(hex)) { showStatus('❌ 请输入有效主色，如 #3B82F6', 'error'); return; }
+          setReverseBusy(true); currentReverseStep = 'recolor';
+          showStatus('正在换主色...', 'progress');
+          parent.postMessage({ pluginMessage: { type: 'reverse-recolor', color: hex } }, '*');
         });
       }
     };
@@ -487,6 +503,12 @@
       h += '<div class="step-desc">新建一个与网页端同款的规范预览框架（不改原设计；可反复生成，只留最新一份）。</div>';
       h += '<button class="btn btn-outline" id="reverseBindBtn" style="margin-top:8px;">④ 复制副本并绑定变量（含建库）</button>';
       h += '<div class="step-desc">复制选中画板到新页面 → 建好两层变量库 → 把副本图层绑上变量（原设计零改动；只留最新副本）。</div>';
+      h += '<div style="margin-top:12px; display:flex; gap:6px; align-items:center;">';
+      h += '<input type="color" id="recolorPicker" value="#3B82F6" style="width:34px; height:32px; padding:0; border:1px solid #d0d0d0; border-radius:6px; background:#fff; cursor:pointer; flex:0 0 auto;" />';
+      h += '<input type="text" id="recolorHex" placeholder="#3B82F6" maxlength="7" style="flex:1; min-width:0; padding:7px 10px; border:1px solid #d0d0d0; border-radius:6px; font:12px \'SF Mono\',monospace; color:#444;" />';
+      h += '<button class="btn btn-outline" id="recolorBtn" style="margin:0; width:auto; flex:0 0 auto; padding:7px 14px;">🎨 换主色</button>';
+      h += '</div>';
+      h += '<div class="step-desc">一键换主色：输入新主色 → 按 OKLCH 重算 palette/primary/* 并覆盖；绑了品牌色的图层全部跟着换（需先跑过 ④；可反复换）。</div>';
       h += '<div class="scan-note" style="margin-top:4px;">④⑤ 用你的精确原值（颜色/字号零变化）；⑤ 复制到新页面再绑，原设计不动</div>';
       h += '<button class="btn btn-outline" id="copyRebuildBtn" style="margin-top:8px;">复制重建 JSON</button>';
       return h;

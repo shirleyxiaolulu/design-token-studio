@@ -2002,6 +2002,43 @@ function harvestSelection(nodes, maxNodes) {
 var lastRebuildPlan = null;
 // 主题覆盖：UI 选「浅色/深色」时覆盖自动检测；选「自动」(或未传)时回到检测值（不残留上次覆盖）。
 function applyReverseTheme(plan, t) { if (plan) plan.theme = (t === 'light' || t === 'dark') ? t : (plan.detectedTheme || plan.theme); return plan; }
+// === 一键换主色：OKLCH 引擎（移植自 tokens.js，纯函数；可在 Node 单测） ===
+function rcHexToRgb255(hex) { var c = hexToFigmaRgb(hex); return c ? { r: Math.round(c.r * 255), g: Math.round(c.g * 255), b: Math.round(c.b * 255) } : null; }
+function rcClamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function rcSrgbToLinear(c) { return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
+function rcLinearToSrgb(c) { return c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055; }
+function rcRgbToOklch(rgb) {
+  var lr = rcSrgbToLinear(rgb.r / 255), lg = rcSrgbToLinear(rgb.g / 255), lb = rcSrgbToLinear(rgb.b / 255);
+  var l = 0.4122214708 * lr + 0.5363325363 * lg + 0.0514459929 * lb;
+  var m = 0.2119034982 * lr + 0.6806995451 * lg + 0.1073969566 * lb;
+  var s = 0.0883024619 * lr + 0.2817188376 * lg + 0.6299787005 * lb;
+  var l_ = Math.cbrt(l), m_ = Math.cbrt(m), s_ = Math.cbrt(s);
+  var L = 0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_;
+  var a = 1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_;
+  var bb = 0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086757660 * s_;
+  var H = Math.atan2(bb, a) * 180 / Math.PI; if (H < 0) H += 360;
+  return { L: L, C: Math.sqrt(a * a + bb * bb), H: H };
+}
+function rcOklchToLinRgb(L, C, H) {
+  var hr = H * Math.PI / 180, a = C * Math.cos(hr), b = C * Math.sin(hr);
+  var l_ = L + 0.3963377774 * a + 0.2158037573 * b, m_ = L - 0.1055613458 * a - 0.0638541728 * b, s_ = L - 0.0894841775 * a - 1.2914855480 * b;
+  var l = l_ * l_ * l_, m = m_ * m_ * m_, s = s_ * s_ * s_;
+  return { r: 4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s, g: -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s, b: -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s };
+}
+function rcOklchToRgb01(L, C, H) { // 返回 0-1 的 {r,g,b}，超 sRGB 色域时二分降 chroma 保 L+H
+  function inGamut(v) { return v.r >= -1e-4 && v.r <= 1.0001 && v.g >= -1e-4 && v.g <= 1.0001 && v.b >= -1e-4 && v.b <= 1.0001; }
+  var lin = rcOklchToLinRgb(L, C, H);
+  if (!inGamut(lin)) { var lo = 0, hi = C; for (var i = 0; i < 22; i++) { var mid = (lo + hi) / 2; if (inGamut(rcOklchToLinRgb(L, mid, H))) lo = mid; else hi = mid; } lin = rcOklchToLinRgb(L, lo, H); }
+  return { r: rcClamp(rcLinearToSrgb(rcClamp(lin.r, 0, 1)), 0, 1), g: rcClamp(rcLinearToSrgb(rcClamp(lin.g, 0, 1)), 0, 1), b: rcClamp(rcLinearToSrgb(rcClamp(lin.b, 0, 1)), 0, 1) };
+}
+// 换主色：保留每档的明度，旋转到新主色的色相、按新主色饱和度整体缩放。返回 0-1 的 {r,g,b} 数组。
+function reverseRecolorRamp(shadeHexes, newHex) {
+  var nin = rcHexToRgb255(newHex); if (!nin) return null;
+  var no = rcRgbToOklch(nin), maxC = 0;
+  shadeHexes.forEach(function (h) { var r = rcHexToRgb255(h); if (r) { var c = rcRgbToOklch(r).C; if (c > maxC) maxC = c; } });
+  var scale = maxC > 0.001 ? rcClamp(no.C / maxC, 0.25, 3) : 1;
+  return shadeHexes.map(function (h) { var r = rcHexToRgb255(h); if (!r) return null; var o = rcRgbToOklch(r); return rcOklchToRgb01(o.L, o.C * scale, no.H); });
+}
 // 反推专用：把 Primitives 集合收成单模式（基础色是固定值、不该有明暗两栏）。仅在反推流程「最后一步」调用——
 // syncVariables 每次会补回 Dark 模式，所以这里在 sync 之后移除。删 Dark 不丢信息（基础色 Light=Dark）。语义色(Tokens)保持双模式。
 function collapsePrimitivesMode(cols) {
@@ -2381,9 +2418,37 @@ figma.ui.onmessage = async (msg) => {
         message: '两层变量库已建 + 新页面「反推规范 · 绑定副本」完成绑定：填充 ' + b.fills + ' · 描边 ' + b.strokes + ' · 圆角 ' + b.radius + ' · 间距 ' + b.spacing + ' · 字号 ' + b.font + skMsg + '（原设计未改动）',
       });
     }
+    else if (msg.type === 'reverse-recolor') {
+      // 一键换主色：用新主色重算 palette/primary/* 的值（保各档明度、旋转色相）。品牌语义色别名引用它 → 全设计跟随。
+      var newColor = msg.color;
+      if (!hexToFigmaRgb(newColor)) { figma.ui.postMessage({ type: 'error', message: '请输入有效的颜色，如 #3B82F6' }); return; }
+      var rcCols = await figma.variables.getLocalVariableCollectionsAsync();
+      var rcColById = {}, primaryVars = [];
+      for (var rci = 0; rci < rcCols.length; rci++) {
+        rcColById[rcCols[rci].id] = rcCols[rci];
+        for (var rcv = 0; rcv < rcCols[rci].variableIds.length; rcv++) {
+          var pv2 = await figma.variables.getVariableByIdAsync(rcCols[rci].variableIds[rcv]);
+          if (pv2 && pv2.name.indexOf('color/palette/primary/') === 0) primaryVars.push(pv2);
+        }
+      }
+      if (!primaryVars.length) { figma.ui.postMessage({ type: 'error', message: '没找到主色变量 color/palette/primary/*，请先跑 ④ 复制副本并绑定变量' }); return; }
+      primaryVars.sort(function (a, b2) { return a.name.localeCompare(b2.name); });
+      var curHexes = primaryVars.map(function (v) { var val = Object.values(v.valuesByMode)[0]; return val ? figmaRgbToHex(val) : '#000000'; });
+      var newVals = reverseRecolorRamp(curHexes, newColor);
+      if (!newVals) { figma.ui.postMessage({ type: 'error', message: '换主色失败：颜色解析错误' }); return; }
+      var changed = 0;
+      for (var pi = 0; pi < primaryVars.length; pi++) {
+        var rgb01 = newVals[pi]; if (!rgb01) continue;
+        var col2 = rcColById[primaryVars[pi].variableCollectionId];
+        var modes2 = (col2 && col2.modes) ? col2.modes : [];
+        for (var mi2 = 0; mi2 < modes2.length; mi2++) { try { primaryVars[pi].setValueForMode(modes2[mi2].modeId, { r: rgb01.r, g: rgb01.g, b: rgb01.b, a: 1 }); } catch (e) {} }
+        changed++;
+      }
+      figma.ui.postMessage({ type: 'result', message: '已换主色：更新主色阶 ' + changed + ' 档（绑了品牌色的图层已全部跟随）' });
+    }
   } catch (err) {
     try { console.error('[plugin]', err); } catch (e) {} // 完整堆栈进控制台
-    var REV = ['audit', 'rebuild', 'reverse-preview', 'reverse-bind'];
+    var REV = ['audit', 'rebuild', 'reverse-preview', 'reverse-bind', 'reverse-recolor'];
     var isReverse = msg && REV.indexOf(msg.type) >= 0;
     // 反推：给人话错误（堆栈见控制台）；web：保持原格式不变
     var em = isReverse ? ('出错了：' + ((err && err.message) ? err.message : String(err)) + '（详细堆栈见控制台）')

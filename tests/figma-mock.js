@@ -68,7 +68,7 @@ function setup() {
 
   var figma = {
     mixed: MIXED,
-    showUI: function () {}, ui: { postMessage: function () {}, set onmessage(v) {} },
+    showUI: function () {}, ui: { messages: [], postMessage: function (m) { this.messages.push(m); }, _onmessage: null, set onmessage(v) { this._onmessage = v; }, get onmessage() { return this._onmessage; } },
     notify: function () {},
     loadFontAsync: function () { return Promise.resolve(); },
     variables: {
