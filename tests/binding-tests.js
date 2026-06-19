@@ -200,20 +200,23 @@ test('主题覆盖：手动指定浅/深，自动回到检测值，预览 chrome
   eq(rebuildToData(plan).seed.defaultMode, 'light', '预览/绑定主模式跟随覆盖');
 });
 
-test('一键换主色(纯函数)：色相旋转到新主色、保留各档明度', async () => {
+test('一键换主色(纯函数)：以输入色为锚的标准色阶，输入色本身一定出现、全档同色相', async () => {
   fresh();
-  const ramp = ['#FFD793', '#FFA900', '#FF6F00']; // 橙色阶
-  const target = '#3B82F6';                        // 目标蓝
+  const ramp = ['#FFD793', '#FFBD00', '#E1BD83', '#FFB075', '#FFA900', '#F9A602', '#FA9A02', '#EC9758', '#FF6F00']; // 9 档橙
+  const target = '#F73BD4';                        // 目标玫红
   const out = reverseRecolorRamp(ramp, target);
-  assert(out && out.length === 3, '返回同长度');
-  const tH = rcRgbToOklch(rcHexToRgb255(target)).H;
+  assert(out && out.length === 9, '返回同长度(9)');
+  const tOk = rcRgbToOklch(rcHexToRgb255(target));
+  // 全档同色相（玫红）
   out.forEach(function (c, i) {
     const o = rcRgbToOklch({ r: c.r * 255, g: c.g * 255, b: c.b * 255 });
-    const dh = Math.min(Math.abs(o.H - tH), 360 - Math.abs(o.H - tH));
-    assert(dh < 15, '第' + i + '档色相应接近蓝(差 ' + dh.toFixed(1) + '°)');
-    const oL = rcRgbToOklch(rcHexToRgb255(ramp[i])).L;
-    assert(Math.abs(o.L - oL) < 0.03, '第' + i + '档明度应保留');
+    const dh = Math.min(Math.abs(o.H - tOk.H), 360 - Math.abs(o.H - tOk.H));
+    assert(dh < 12, '第' + i + '档色相应接近玫红(差 ' + dh.toFixed(1) + '°)');
   });
+  // 输入色 #F73BD4 本身应作为某一档出现（ΔE 很小）
+  function hx(c) { function h(x) { return ('0' + Math.round(x * 255).toString(16)).slice(-2); } return ('#' + h(c.r) + h(c.g) + h(c.b)).toUpperCase(); }
+  const hit = out.some(function (c) { return auditDeltaE(hx(c), target) < 3; });
+  assert(hit, '色阶里应包含输入主色 ' + target + '（最接近的: ' + out.map(hx).join(',') + '）');
 });
 
 test('一键换主色(handler)：palette/primary/* 的值被换到新主色色相', async () => {

@@ -2031,13 +2031,38 @@ function rcOklchToRgb01(L, C, H) { // 返回 0-1 的 {r,g,b}，超 sRGB 色域�
   if (!inGamut(lin)) { var lo = 0, hi = C; for (var i = 0; i < 22; i++) { var mid = (lo + hi) / 2; if (inGamut(rcOklchToLinRgb(L, mid, H))) lo = mid; else hi = mid; } lin = rcOklchToLinRgb(L, lo, H); }
   return { r: rcClamp(rcLinearToSrgb(rcClamp(lin.r, 0, 1)), 0, 1), g: rcClamp(rcLinearToSrgb(rcClamp(lin.g, 0, 1)), 0, 1), b: rcClamp(rcLinearToSrgb(rcClamp(lin.b, 0, 1)), 0, 1) };
 }
-// 换主色：保留每档的明度，旋转到新主色的色相、按新主色饱和度整体缩放。返回 0-1 的 {r,g,b} 数组。
+// 换主色色阶档位（移植自 tokens.js OKLCH 引擎）：第 5 档锚定输入色本身。
+var RC_OKLCH_L = [0.971, 0.936, 0.882, 0.808, 0.730, 0.648, 0.567, 0.482, 0.397, 0.318];
+var RC_OKLCH_C = [0.18, 0.34, 0.55, 0.75, 0.92, 1.00, 0.96, 0.86, 0.73, 0.60];
+// 以 anchorHex 为锚生成 n 档 OKLCH 色阶（沿 10 档 profile 均匀取样），返回 [{L, rgb01}]（亮→暗）。
+function rcBuildScaleN(anchorHex, n) {
+  var rgb = rcHexToRgb255(anchorHex); if (!rgb || n < 1) return null;
+  var o = rcRgbToOklch(rgb), Cbase = o.C / RC_OKLCH_C[5], Loff = o.L - RC_OKLCH_L[5], out = [];
+  for (var k = 0; k < n; k++) {
+    var t = (n === 1) ? 5 : (k * 9 / (n - 1)); // 0..9 上均匀取样
+    var lo = Math.floor(t), hi = Math.min(9, lo + 1), f = t - lo;
+    var L0 = RC_OKLCH_L[lo] + (RC_OKLCH_L[hi] - RC_OKLCH_L[lo]) * f;
+    var C0 = RC_OKLCH_C[lo] + (RC_OKLCH_C[hi] - RC_OKLCH_C[lo]) * f;
+    var blend = Math.max(0, 1 - Math.abs(t - 5) * 0.16);
+    var L = rcClamp(L0 + Loff * blend, 0.05, 0.99);
+    out.push({ L: L, rgb01: rcOklchToRgb01(L, Cbase * C0, o.H) });
+  }
+  return out;
+}
+// 换主色：生成同档数的均匀色阶（含输入色本身），按「现有档位的明度排名」对齐——亮档拿亮、暗档拿暗，
+// 不重复、不乱序。返回 0-1 的 {r,g,b} 数组（与 shadeHexes 同序）。
 function reverseRecolorRamp(shadeHexes, newHex) {
-  var nin = rcHexToRgb255(newHex); if (!nin) return null;
-  var no = rcRgbToOklch(nin), maxC = 0;
-  shadeHexes.forEach(function (h) { var r = rcHexToRgb255(h); if (r) { var c = rcRgbToOklch(r).C; if (c > maxC) maxC = c; } });
-  var scale = maxC > 0.001 ? rcClamp(no.C / maxC, 0.25, 3) : 1;
-  return shadeHexes.map(function (h) { var r = rcHexToRgb255(h); if (!r) return null; var o = rcRgbToOklch(r); return rcOklchToRgb01(o.L, o.C * scale, no.H); });
+  var n = shadeHexes.length; var ramp = rcBuildScaleN(newHex, n); if (!ramp) return null;
+  // 把最接近输入色明度的那一档替换成输入色本身，保证主色一定原样出现
+  var ninO = rcRgbToOklch(rcHexToRgb255(newHex)), bi = 0, bd = Infinity;
+  for (var i = 0; i < ramp.length; i++) { var d = Math.abs(ramp[i].L - ninO.L); if (d < bd) { bd = d; bi = i; } }
+  var ic = hexToFigmaRgb(newHex); if (ic) ramp[bi].rgb01 = { r: ic.r, g: ic.g, b: ic.b };
+  // 现有档位按明度从亮到暗排名，第 r 名拿 ramp[r]（ramp 已亮→暗）
+  var ranked = shadeHexes.map(function (h, idx) { var r = rcHexToRgb255(h); return { idx: idx, L: r ? rcRgbToOklch(r).L : 0 }; })
+    .sort(function (a, b) { return b.L - a.L; });
+  var result = new Array(n);
+  for (var k = 0; k < ranked.length; k++) result[ranked[k].idx] = ramp[k].rgb01;
+  return result;
 }
 // 反推专用：把 Primitives 集合收成单模式（基础色是固定值、不该有明暗两栏）。仅在反推流程「最后一步」调用——
 // syncVariables 每次会补回 Dark 模式，所以这里在 sync 之后移除。删 Dark 不丢信息（基础色 Light=Dark）。语义色(Tokens)保持双模式。
