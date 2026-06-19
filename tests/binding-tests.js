@@ -292,6 +292,31 @@ test('颜色变量作用域放开为 ALL_SCOPES（渐变色标选择器里可挑
   colorVars.forEach(function (v) { assert(v.scopes && v.scopes.indexOf('ALL_SCOPES') >= 0, v.name + ' 作用域应为 ALL_SCOPES, got ' + JSON.stringify(v.scopes)); });
 });
 
+test('彩色背景不被切掉：暗酒红 banner 绑到自己的色、不被吸成灰', async () => {
+  fresh(); const { N, solid } = M;
+  const grays = ['#1A1A1A', '#222222', '#262626', '#2A2A2A', '#303030', '#0E0E0E'].map(function (h, i) { return N({ type: 'FRAME', width: 1400, height: 200, y: i * 210, characters: '', fills: [solid(h)], strokes: [] }); });
+  const banner = N({ type: 'FRAME', width: 1200, height: 300, y: 1300, characters: '', fills: [solid('#4C1A31')], strokes: [], cornerRadius: 16 });
+  const page = N({ type: 'FRAME', width: 1440, height: 1800, characters: '', fills: [solid('#1A1A1A')], strokes: [], children: grays.concat([banner]) });
+  const root = await bind(page);
+  const v = ref(root.children[6].fills[0]);
+  assert(v, '酒红 banner 应绑到变量');
+  const val = M.varValue(v);
+  function hx(c) { function h(x) { return ('0' + Math.round(x * 255).toString(16)).slice(-2); } return ('#' + h(c.r) + h(c.g) + h(c.b)).toUpperCase(); }
+  const dE = auditDeltaE(hx(val), '#4C1A31');
+  assert(dE < 3, 'banner 应绑到酒红色(ΔE<3)，实际 ' + hx(val) + ' ΔE ' + dE.toFixed(1));
+});
+
+test('极小不透明度(0.01%)不被舍成 0：触发背景模糊的填充保留 alpha', async () => {
+  fresh(); const { N, solid } = M;
+  const blur = N({ type: 'FRAME', width: 300, height: 60, y: 100, characters: '', fills: [solid('#000000', 0.0001)], strokes: [] });
+  const page = N({ type: 'FRAME', width: 1440, height: 400, characters: '', fills: [solid('#1A1A1A')], strokes: [], children: [blur] });
+  const root = await bind(page);
+  const v = ref(root.children[0].fills[0]);
+  assert(v, '0.01% 填充应绑到变量');
+  const val = M.varValue(v);
+  assert(val && val.a > 0 && val.a < 0.001, '变量 alpha 应保留极小值(>0, ~0.0001), got ' + (val && val.a));
+});
+
 // --- run -------------------------------------------------------------------
 (async function () {
   for (const t of tests) {

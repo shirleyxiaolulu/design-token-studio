@@ -1810,7 +1810,9 @@ function rebuildDetectTheme(obs) {
 }
 // 按「用途上下文」识别语义角色（全部用真实检测色）：
 // 背景 = 大面积容器填充（按面积，最大 = 页面）；文本 = 用在文字图层的色；边框 = 描边色。
-function rebuildOpacity(v) { return (v == null ? 1 : Math.round(v * 100) / 100); }
+// 不透明度保留 4 位小数：清掉浮点噪声但「不舍掉极小值」——0.01%(=0.0001) 这种触发背景模糊的填充不能被舍成 0。
+// （「消小数点」是针对尺寸 px 的规则，不套用到不透明度；反推场景要尽量还原。）
+function rebuildOpacity(v) { return (v == null ? 1 : Math.round(v * 10000) / 10000); }
 function rebuildContextColors(obs) {
   var fills = obs.fills || [], strokes = obs.strokes || [], map = {};
   // 颜色身份 = hex + 不透明度：白@5% 与 白@100% 是不同的色（半透明绑定后靠变量自带 alpha 还原）
@@ -1869,10 +1871,11 @@ function rebuildToData(plan) {
   // 绑定时必须有同 alpha 的变量可命中，被 slice 切掉就会让图层绑不上变量（只剩裸色值）。
   function ctxKept(list, n) {
     var dd = rebuildDedupeColors(list, 1.0);
-    // 不透明色取前 N 个拿角色名；半透明色全部保留（它们是真实背景/描边、绑定必须有同色变量）。
-    // 渐变色标色不在这里强留——它们不是背景色，已由聚类变成 brand/palette 基础色可绑（避免污染预览背景色栏）。
-    return dd.filter(function (m) { return rebuildOpacity(m.opacity) >= 1; }).slice(0, n)
-      .concat(dd.filter(function (m) { return rebuildOpacity(m.opacity) < 1; }));
+    // 不透明的「中性色(灰)」取前 N 个拿角色名（暗灰彼此相近、可合并）；半透明色 + 不透明的「彩色」全部保留——
+    // 彩色背景(如品牌色 banner #4C1A31)是独特色，被切掉就会绑到最近的灰、明显错色。
+    var neutralOpaque = dd.filter(function (m) { return rebuildOpacity(m.opacity) >= 1 && auditIsNeutral(m.hex, 10); }).slice(0, n);
+    var keepRest = dd.filter(function (m) { return rebuildOpacity(m.opacity) < 1 || !auditIsNeutral(m.hex, 10); });
+    return neutralOpaque.concat(keepRest);
   }
   var bgN = ['page', 'surface', 'elevated', 'overlay'];
   ctxKept(ctx.bg, 4).forEach(function (m, i) { addC('color.bg.' + (bgN[i] || ('s' + i)), m.hex, 'semantic', '背景 · 实际大面积填充', m.opacity); });
