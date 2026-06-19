@@ -2169,7 +2169,7 @@ async function bindReverseVariables(plan) {
     else if (k.indexOf('color.border.') === 0) borderVars.push(e);
     else if (k.indexOf('color.text.') === 0) textVars.push(e);
     else if (k.indexOf('color.bg.') === 0) bgVars.push(e);
-    else brandVars.push(e); // brand / function / auxiliary
+    else { e.isFunction = (k.indexOf('color.function.') === 0); brandVars.push(e); } // brand / function / auxiliary
   });
   Object.keys(data.dimTokens).forEach(function (k) {
     var t = data.dimTokens[k], vr = byName[t.figmaName];
@@ -2181,16 +2181,18 @@ async function bindReverseVariables(plan) {
   // 颜色匹配同时看色相(ΔE)与不透明度：不透明度差 >0.04 视为不同色（白@5% 不会命中不透明白）
   function nearestIn(list, hex, alpha, maxD) { var best = null, bd = Infinity; for (var i = 0; i < list.length; i++) { if (Math.abs((list[i].a == null ? 1 : list[i].a) - alpha) > 0.04) continue; var d = auditDeltaE(hex, list[i].hex); if (d < bd) { bd = d; best = list[i].v; } } return (best && bd <= maxD) ? best : null; }
   // 角色优先绑语义色，基础色兜底（语义色就是真实检测色，命中 ΔE≈0）
-  function resolveColor(role, hex, alpha, strict) {
+  function resolveColor(role, hex, alpha, strict, forGradient) {
     if (alpha == null) alpha = 1;
     // 语义色匹配收紧到 ΔE<2（只有(近)同色才归到该角色），否则兜底到「精确同值」的基础色——避免大面积色被吸到别的色。
     // strict（渐变用）：所有阈值都收到 strict，且基础色不再无脑兜底——色标没有近似同色变量就保留原色，绝不绑到「最近但不同」的色。
     var sd = (strict != null) ? strict : 2;
     var pd = (strict != null) ? strict : Infinity;
+    // 渐变色标避开功能色：渐变几乎不是「警告/成功渐变」，优先绑品牌/主色，避免品牌橙渐变被绑到同色相的 function/warning。
+    var bv = forGradient ? brandVars.filter(function (e) { return !e.isFunction; }) : brandVars;
     if (role === 'border') return nearestIn(borderVars, hex, alpha, sd) || nearestIn(primVars, hex, alpha, pd);
-    if (role === 'text') return nearestIn(textVars, hex, alpha, sd) || nearestIn(brandVars, hex, alpha, sd) || nearestIn(primVars, hex, alpha, pd);
+    if (role === 'text') return nearestIn(textVars, hex, alpha, sd) || nearestIn(bv, hex, alpha, sd) || nearestIn(primVars, hex, alpha, pd);
     // fill（含图标/形状）：品牌/状态色 → 背景 → 文本(图标常复用文本灰) → 兜底基础色
-    return nearestIn(brandVars, hex, alpha, sd) || nearestIn(bgVars, hex, alpha, sd) || nearestIn(textVars, hex, alpha, sd) || nearestIn(primVars, hex, alpha, pd);
+    return nearestIn(bv, hex, alpha, sd) || nearestIn(bgVars, hex, alpha, sd) || nearestIn(textVars, hex, alpha, sd) || nearestIn(primVars, hex, alpha, pd);
   }
   function nearestNum(arr, val) { var best = null, bd = Infinity; for (var i = 0; i < arr.length; i++) { var d = Math.abs(arr[i].val - val); if (d < bd) { bd = d; best = arr[i].v; } } return best; }
 
@@ -2204,7 +2206,7 @@ async function bindReverseVariables(plan) {
   var clones = [];
   for (var s = 0; s < sel.length; s++) { try { var cl = sel[s].clone(); page.appendChild(cl); clones.push(cl); } catch (e) {} }
 
-  var bound = { fills: 0, strokes: 0, radius: 0, spacing: 0, font: 0 };
+  var bound = { fills: 0, strokes: 0, radius: 0, spacing: 0, font: 0, styles: 0 };
   // 没绑上 / 没处理的，做个小结回报，让「保真范围」透明：
   // image=图片/视频填充、unmatched=找不到同色变量的纯色、effect=带特效的节点(已原样保留，未建样式)
   var skipped = { image: 0, unmatched: 0, effect: 0 };
@@ -2224,9 +2226,9 @@ async function bindReverseVariables(plan) {
       return figma.variables.setBoundVariableForPaint(src, 'color', vr);
     } catch (e) { return p; }
   }
-  function bindPaints(node, prop, counter, role) {
-    var paints = node[prop];
-    if (!Array.isArray(paints) || !paints.length) return;
+  // 把一组 paint 绑到变量，返回 {next, changed}（图层填充/描边、paint 样式共用）
+  function mapPaints(paints, role) {
+    if (!Array.isArray(paints) || !paints.length) return { next: paints, changed: false };
     var changed = false;
     var next = paints.map(function (p) {
       if (!p || p.visible === false) return p;
@@ -2234,11 +2236,10 @@ async function bindReverseVariables(plan) {
         var np = bindSolid(p, role);
         if (np !== p) { changed = true; return np; }
       } else if (typeof p.type === 'string' && p.type.indexOf('GRADIENT_') === 0 && Array.isArray(p.gradientStops)) {
-        // 渐变：色标只绑「近乎同色」的变量（strict 1.5）。没有近似同色变量就保留原色——
-        // 宁可不绑也不能把色标吸到最近但不同的色（否则橙色渐变会被绑成偏黄/发灰）。
+        // 渐变：色标只绑「近乎同色」的变量（strict 1.5）、且避开功能色（forGradient）。没有近似同色就保留原色。
         var anyStop = false;
         var stops = p.gradientStops.map(function (st) {
-          var v2 = resolveColor(role, figmaRgbToHex(st.color), (st.color && typeof st.color.a === 'number' ? st.color.a : 1), 1.5);
+          var v2 = resolveColor(role, figmaRgbToHex(st.color), (st.color && typeof st.color.a === 'number' ? st.color.a : 1), 1.5, true);
           if (v2) { try { anyStop = true; return { position: st.position, color: st.color, boundVariables: { color: figma.variables.createVariableAlias(v2) } }; } catch (e) {} }
           return { position: st.position, color: st.color };
         });
@@ -2248,7 +2249,25 @@ async function bindReverseVariables(plan) {
       }
       return p;
     });
-    if (changed) { try { node[prop] = next; bound[counter]++; } catch (e) {} }
+    return { next: next, changed: changed };
+  }
+  // 用了 paint 样式的图层不在此绑（留给样式统一绑，避免脱离样式 + 让所有用该样式的图层都跟随换色）
+  function usesStyle(node, prop) { var sid = node[prop === 'strokes' ? 'strokeStyleId' : 'fillStyleId']; return typeof sid === 'string' && sid.length > 0; }
+  function bindPaints(node, prop, counter, role) {
+    if (usesStyle(node, prop)) return;
+    var r = mapPaints(node[prop], role);
+    if (r.changed) { try { node[prop] = r.next; bound[counter]++; } catch (e) {} }
+  }
+  // 绑定本文件的 paint 样式（solid + 渐变）：样式色标绑到变量 → 所有用该样式的图层（含副本）跟随换主色。
+  async function bindPaintStyles() {
+    try {
+      var styles = await figma.getLocalPaintStylesAsync();
+      for (var si = 0; si < styles.length; si++) {
+        var st = styles[si];
+        var r = mapPaints(st.paints, 'fill');
+        if (r.changed) { try { st.paints = r.next; bound.styles = (bound.styles || 0) + 1; } catch (e) {} }
+      }
+    } catch (e) {}
   }
   function bindNum(node, field, vr) { if (!vr) return; try { node.setBoundVariable(field, vr); return true; } catch (e) { return false; } }
   function visit(node) {
@@ -2298,6 +2317,7 @@ async function bindReverseVariables(plan) {
       }
     } catch (e) { /* 跳过无法绑定的文本 */ }
   }
+  await bindPaintStyles(); // 绑定 paint 样式（渐变/纯色样式 → 变量，全局生效、可跟随换主色）
   collapsePrimitivesMode(cols); // 基础色收成单值（在显式模式之前，这样 Primitives 已无 Dark、下面会自动跳过它）
   // 把副本锁定到「检测到的主题」那一模式渲染——这样即使集合默认模式不是它，副本仍显示原始主题（保真）。
   try {
@@ -2440,7 +2460,7 @@ figma.ui.onmessage = async (msg) => {
       var skMsg = skParts.length ? '；跳过：' + skParts.join(' · ') : '';
       figma.ui.postMessage({
         type: 'result',
-        message: '两层变量库已建 + 新页面「反推规范 · 绑定副本」完成绑定：填充 ' + b.fills + ' · 描边 ' + b.strokes + ' · 圆角 ' + b.radius + ' · 间距 ' + b.spacing + ' · 字号 ' + b.font + skMsg + '（原设计未改动）',
+        message: '两层变量库已建 + 新页面「反推规范 · 绑定副本」完成绑定：填充 ' + b.fills + ' · 描边 ' + b.strokes + ' · 圆角 ' + b.radius + ' · 间距 ' + b.spacing + ' · 字号 ' + b.font + (b.styles ? ' · 样式 ' + b.styles : '') + skMsg + '（原设计未改动）',
       });
     }
     else if (msg.type === 'reverse-recolor') {

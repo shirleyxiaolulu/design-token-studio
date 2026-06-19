@@ -237,6 +237,19 @@ test('一键换主色(handler)：palette/primary/* 的值被换到新主色色�
   });
 });
 
+test('绑定 paint 样式：样式渐变色标绑变量；用样式的图层不再本地绑(留给样式跟随换主色)', async () => {
+  fresh(); const { N, solid, grad, mkPaintStyle } = M;
+  const tags = []; for (let i = 0; i < 8; i++) tags.push(N({ type: 'FRAME', width: 120, height: 40, y: i * 50, characters: '', fills: [solid('#FF6B00')], strokes: [] }));
+  const style = mkPaintStyle('brand-grad', [grad('#FF6B00', '#FF6B00')]);
+  const styledBtn = N({ type: 'FRAME', width: 300, height: 80, y: 500, characters: '', fills: [grad('#FF6B00', '#FF6B00')], fillStyleId: style.id, strokes: [] });
+  const page = N({ type: 'FRAME', width: 1440, height: 700, characters: '', fills: [solid('#1A1A1A')], strokes: [], children: tags.concat([styledBtn]) });
+  await bind(page);
+  const sg = M.PAINT_STYLES[0].paints[0];
+  assert(sg.gradientStops[0].boundVariables && sg.gradientStops[0].boundVariables.color, '样式里的渐变色标应绑到变量');
+  const clBtn = boundCopyRoot().children[8];
+  assert(!(clBtn.fills[0].gradientStops[0] && clBtn.fills[0].gradientStops[0].boundVariables), '用样式的图层不应本地绑定（留给样式）');
+});
+
 // --- run -------------------------------------------------------------------
 (async function () {
   for (const t of tests) {

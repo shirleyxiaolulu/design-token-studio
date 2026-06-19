@@ -17,7 +17,7 @@
  */
 function setup() {
   var idc = 0;
-  var COLS = [], _vid = {}, ROOT = { type: 'DOCUMENT', children: [] }, PAGES = ROOT.children;
+  var COLS = [], _vid = {}, ROOT = { type: 'DOCUMENT', children: [] }, PAGES = ROOT.children, PAINT_STYLES = [];
 
   function rgb(hex) {
     var n = parseInt(hex.slice(1), 16);
@@ -71,6 +71,7 @@ function setup() {
     showUI: function () {}, ui: { messages: [], postMessage: function (m) { this.messages.push(m); }, _onmessage: null, set onmessage(v) { this._onmessage = v; }, get onmessage() { return this._onmessage; } },
     notify: function () {},
     loadFontAsync: function () { return Promise.resolve(); },
+    getLocalPaintStylesAsync: function () { return Promise.resolve(PAINT_STYLES); },
     variables: {
       getLocalVariableCollectionsAsync: function () { return Promise.resolve(COLS); },
       getVariableByIdAsync: function (id) { return Promise.resolve(_vid[id] || null); },
@@ -104,8 +105,9 @@ function setup() {
   }
   function varByName(name) { for (var id in _vid) { if (_vid[id].name === name) return _vid[id]; } return null; }
 
+  function mkPaintStyle(name, paints) { var st = { id: 'ps-' + (idc++), name: name, paints: paints }; PAINT_STYLES.push(st); return st; }
   function varRaw(name, modeName) { var v = varByName(name); return v ? rawValue(v, modeName) : undefined; } // 不跟随别名，看原始值（判断是否为 alias）
   function varById(id) { return _vid[id] || null; }
-  return { figma: figma, N: N, solid: solid, grad: grad, rgb: rgb, MIXED: MIXED, COLS: COLS, PAGES: PAGES, varValue: varValue, varRaw: varRaw, varByName: varByName, varById: varById };
+  return { figma: figma, N: N, solid: solid, grad: grad, rgb: rgb, MIXED: MIXED, COLS: COLS, PAGES: PAGES, PAINT_STYLES: PAINT_STYLES, mkPaintStyle: mkPaintStyle, varValue: varValue, varRaw: varRaw, varByName: varByName, varById: varById };
 }
 module.exports = { setup: setup };
