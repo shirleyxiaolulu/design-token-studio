@@ -250,6 +250,24 @@ test('绑定 paint 样式：样式渐变色标绑变量；用样式的图层不�
   assert(!(clBtn.fills[0].gradientStops[0] && clBtn.fills[0].gradientStops[0].boundVariables), '用样式的图层不应本地绑定（留给样式）');
 });
 
+test('换主色：散落到其它色族的同色相品牌色跟随；功能色引用的基础色不变', async () => {
+  fresh();
+  const prim = M.figma.variables.createVariableCollection('Primitives');
+  prim.renameMode(prim.modes[0].modeId, 'Light'); const pm = prim.modes[0].modeId;
+  function mkc(name, hex) { const v = M.figma.variables.createVariable(name, prim); const c = M.rgb(hex); v.setValueForMode(pm, { r: c.r, g: c.g, b: c.b, a: 1 }); return v; }
+  ['#FFD8A0', '#FFA900', '#FF6F00'].forEach((h, i) => mkc('color/palette/primary/' + i, h));
+  const red = mkc('color/palette/red/1', '#FF6B00');     // 散落的品牌橙（red 族）
+  const warnPrim = mkc('color/palette/orange/0', '#F5A623'); // 功能色(警告)引用的基础色 → 受保护
+  const tok = M.figma.variables.createVariableCollection('Tokens'); tok.renameMode(tok.modes[0].modeId, 'Light');
+  const warnSem = M.figma.variables.createVariable('color/function/warning', tok);
+  warnSem.setValueForMode(tok.modes[0].modeId, M.figma.variables.createVariableAlias(warnPrim));
+  await pluginOnMessage({ type: 'reverse-recolor', color: '#3B82F6' }); // 换蓝
+  const tH = rcRgbToOklch(rcHexToRgb255('#3B82F6')).H;
+  function hueDist(v) { const val = Object.values(v.valuesByMode)[0]; const o = rcRgbToOklch({ r: val.r * 255, g: val.g * 255, b: val.b * 255 }); return Math.min(Math.abs(o.H - tH), 360 - Math.abs(o.H - tH)); }
+  assert(hueDist(red) < 15, '散落的品牌橙 palette/red/1 应跟随换成蓝, 差 ' + hueDist(red).toFixed(1) + '°');
+  assert(hueDist(warnPrim) > 40, '功能色引用的基础色应保持橙(不变), 差 ' + hueDist(warnPrim).toFixed(1) + '°');
+});
+
 // --- run -------------------------------------------------------------------
 (async function () {
   for (const t of tests) {

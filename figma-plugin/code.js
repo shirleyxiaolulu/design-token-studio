@@ -2464,32 +2464,44 @@ figma.ui.onmessage = async (msg) => {
       });
     }
     else if (msg.type === 'reverse-recolor') {
-      // 一键换主色：用新主色重算 palette/primary/* 的值（保各档明度、旋转色相）。品牌语义色别名引用它 → 全设计跟随。
+      // 一键换主色：① 主色阶用新主色重算 ② 散落到其它色族的「同色相品牌色」也旋到新主色，③ 功能色(success/warning/danger/info)保护不变。
       var newColor = msg.color;
       if (!hexToFigmaRgb(newColor)) { figma.ui.postMessage({ type: 'error', message: '请输入有效的颜色，如 #3B82F6' }); return; }
       var rcCols = await figma.variables.getLocalVariableCollectionsAsync();
-      var rcColById = {}, primaryVars = [];
+      var rcColById = {}, allVars = [];
       for (var rci = 0; rci < rcCols.length; rci++) {
         rcColById[rcCols[rci].id] = rcCols[rci];
-        for (var rcv = 0; rcv < rcCols[rci].variableIds.length; rcv++) {
-          var pv2 = await figma.variables.getVariableByIdAsync(rcCols[rci].variableIds[rcv]);
-          if (pv2 && pv2.name.indexOf('color/palette/primary/') === 0) primaryVars.push(pv2);
-        }
+        for (var rcv = 0; rcv < rcCols[rci].variableIds.length; rcv++) { var v0 = await figma.variables.getVariableByIdAsync(rcCols[rci].variableIds[rcv]); if (v0) allVars.push(v0); }
       }
+      var primaryVars = allVars.filter(function (v) { return v.name.indexOf('color/palette/primary/') === 0; }).sort(function (a, b2) { return a.name.localeCompare(b2.name); });
       if (!primaryVars.length) { figma.ui.postMessage({ type: 'error', message: '没找到主色变量 color/palette/primary/*，请先跑 ④ 复制副本并绑定变量' }); return; }
-      primaryVars.sort(function (a, b2) { return a.name.localeCompare(b2.name); });
-      var curHexes = primaryVars.map(function (v) { var val = Object.values(v.valuesByMode)[0]; return val ? figmaRgbToHex(val) : '#000000'; });
-      var newVals = reverseRecolorRamp(curHexes, newColor);
+      function rcCurHex(v) { var val = Object.values(v.valuesByMode)[0]; return (val && typeof val.r === 'number') ? figmaRgbToHex(val) : null; }
+      function rcSetAll(v, rgb01) { var col = rcColById[v.variableCollectionId], ms = (col && col.modes) ? col.modes : []; for (var mm = 0; mm < ms.length; mm++) { try { v.setValueForMode(ms[mm].modeId, { r: rgb01.r, g: rgb01.g, b: rgb01.b, a: 1 }); } catch (e) {} } }
+      // 老主色色相（重算前，取主色阶里最鲜艳一档）
+      var oldBrandHue = null, maxChroma = -1;
+      primaryVars.forEach(function (v) { var h = rcCurHex(v); if (h) { var o = rcRgbToOklch(rcHexToRgb255(h)); if (o.C > maxChroma) { maxChroma = o.C; oldBrandHue = o.H; } } });
+      // 功能色语义引用到的基础色 id（保护：不被换主色波及）
+      var funcIds = {};
+      allVars.forEach(function (v) { if (v.name.indexOf('color/function/') === 0) Object.keys(v.valuesByMode).forEach(function (m) { var val = v.valuesByMode[m]; if (val && val.type === 'VARIABLE_ALIAS') funcIds[val.id] = true; }); });
+      // ① 主色阶：以输入色为锚的标准色阶
+      var newVals = reverseRecolorRamp(primaryVars.map(function (v) { return rcCurHex(v) || '#000000'; }), newColor);
       if (!newVals) { figma.ui.postMessage({ type: 'error', message: '换主色失败：颜色解析错误' }); return; }
       var changed = 0;
-      for (var pi = 0; pi < primaryVars.length; pi++) {
-        var rgb01 = newVals[pi]; if (!rgb01) continue;
-        var col2 = rcColById[primaryVars[pi].variableCollectionId];
-        var modes2 = (col2 && col2.modes) ? col2.modes : [];
-        for (var mi2 = 0; mi2 < modes2.length; mi2++) { try { primaryVars[pi].setValueForMode(modes2[mi2].modeId, { r: rgb01.r, g: rgb01.g, b: rgb01.b, a: 1 }); } catch (e) {} }
-        changed++;
+      primaryVars.forEach(function (v, i) { if (newVals[i]) { rcSetAll(v, newVals[i]); changed++; } });
+      // ② 其它「同老主色色相」的基础色（被聚类散到 red/orange 等族的品牌色）：旋到新主色色相、保各自明度/饱和
+      var newHue = rcRgbToOklch(rcHexToRgb255(newColor)).H, extra = 0;
+      if (oldBrandHue != null) {
+        allVars.forEach(function (v) {
+          if (v.name.indexOf('color/palette/') !== 0 || v.name.indexOf('color/palette/primary/') === 0 || v.name.indexOf('color/palette/gray') === 0) return;
+          if (funcIds[v.id]) return; // 功能色引用到的基础色：保护
+          var h = rcCurHex(v); if (!h) return;
+          var o = rcRgbToOklch(rcHexToRgb255(h)); if (o.C < 0.04) return; // 近灰跳过
+          var dh = Math.min(Math.abs(o.H - oldBrandHue), 360 - Math.abs(o.H - oldBrandHue));
+          if (dh > 30) return; // 非品牌色相，保留
+          rcSetAll(v, rcOklchToRgb01(o.L, o.C, newHue)); extra++;
+        });
       }
-      figma.ui.postMessage({ type: 'result', message: '已换主色：更新主色阶 ' + changed + ' 档（绑了品牌色的图层已全部跟随）' });
+      figma.ui.postMessage({ type: 'result', message: '已换主色：主色阶 ' + changed + ' 档 + 同色相品牌色 ' + extra + ' 个（功能色 success/warning/danger/info 保持不变）' });
     }
   } catch (err) {
     try { console.error('[plugin]', err); } catch (e) {} // 完整堆栈进控制台
