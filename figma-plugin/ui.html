@@ -352,11 +352,6 @@
           showStatus('正在生成规范预览页...', 'progress');
           parent.postMessage({ pluginMessage: { type: 'reverse-preview', theme: reverseTheme } }, '*');
         });
-        var vb = document.getElementById('reverseSyncBtn');
-        if (vb) vb.addEventListener('click', function () {
-          showStatus('正在创建 Figma 变量库...', 'progress');
-          parent.postMessage({ pluginMessage: { type: 'reverse-sync', theme: reverseTheme } }, '*');
-        });
         var bb = document.getElementById('reverseBindBtn');
         if (bb) bb.addEventListener('click', function () {
           showStatus('正在复制副本并绑定变量...', 'progress');
@@ -465,8 +460,7 @@
         }).join('') + '</div>');
       }
       h += '<button class="btn btn-primary" id="genReversePreviewBtn" style="margin-top:12px;">③ 生成规范预览页</button>';
-      h += '<button class="btn btn-outline" id="reverseSyncBtn" style="margin-top:8px;">④ 创建 Figma 变量库</button>';
-      h += '<button class="btn btn-outline" id="reverseBindBtn" style="margin-top:8px;">⑤ 复制副本并绑定变量</button>';
+      h += '<button class="btn btn-outline" id="reverseBindBtn" style="margin-top:8px;">④ 复制副本并绑定变量（含建库）</button>';
       h += '<div class="scan-note" style="margin-top:4px;">④⑤ 用你的精确原值（颜色/字号零变化）；⑤ 复制到新页面再绑，原设计不动</div>';
       h += '<button class="btn btn-outline" id="copyRebuildBtn" style="margin-top:8px;">复制重建 JSON</button>';
       return h;

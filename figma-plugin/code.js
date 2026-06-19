@@ -2349,29 +2349,8 @@ figma.ui.onmessage = async (msg) => {
       await generatePreview(rebuildToData(rpPlan));
       figma.ui.postMessage({ type: 'result', message: '规范预览页已生成（与网页端同款，未改动原设计）' });
     }
-    else if (msg.type === 'reverse-sync') {
-      // 2.0 反推 · 阶段③前半：创建「保真」变量库（精确原色/原值，绑定后设计零变化；只新增变量，不动图层）
-      var rvSel = figma.currentPage.selection;
-      if (!rvSel || rvSel.length === 0) {
-        figma.ui.postMessage({ type: 'error', message: '请先选中画板再创建变量库' });
-        return;
-      }
-      figma.ui.postMessage({ type: 'progress', message: '正在用反推结果创建两层变量库...' });
-      var rvPlan = lastRebuildPlan || buildRebuildPlan(harvestSelection(rvSel, 20000));
-      applyReverseTheme(rvPlan, msg.theme);
-      var rvData = rebuildToData(rvPlan);
-      // 复用现有 syncVariables 创建（与 web 端 JSON 同一条路径），再让语义色别名引用基础色
-      var rvResult = await syncVariables(rvData);
-      var rvAliased = await aliasReverseSemantics(rvData);
-      collapsePrimitivesMode(await figma.variables.getLocalVariableCollectionsAsync()); // 基础色收成单值
-
-      figma.ui.postMessage({
-        type: 'result',
-        message: '两层变量库已创建：新建 ' + rvResult.created + ' · 更新 ' + rvResult.updated + ' · 语义色引用基础色 ' + rvAliased + ' 个（基础色=真实检测色，语义色按用途；仅新增变量，未改图层）',
-      });
-    }
     else if (msg.type === 'reverse-bind') {
-      // 2.0 反推 · 阶段③后半：复制选中画板到新页面 → 在副本上绑定反推变量（原设计零风险）
+      // 2.0 反推 · 阶段③：先创建两层变量库（bindReverseVariables 内部 syncVariables+别名+收单值），再复制副本绑定（原设计零风险）
       var rbgSel = figma.currentPage.selection;
       if (!rbgSel || rbgSel.length === 0) {
         figma.ui.postMessage({ type: 'error', message: '请先选中要绑定的画板/图层' });
@@ -2389,7 +2368,7 @@ figma.ui.onmessage = async (msg) => {
       var skMsg = skParts.length ? '；跳过：' + skParts.join(' · ') : '';
       figma.ui.postMessage({
         type: 'result',
-        message: '已在新页面「反推规范 · 绑定副本」完成绑定：填充 ' + b.fills + ' · 描边 ' + b.strokes + ' · 圆角 ' + b.radius + ' · 间距 ' + b.spacing + ' · 字号 ' + b.font + skMsg + '（原设计未改动）',
+        message: '两层变量库已建 + 新页面「反推规范 · 绑定副本」完成绑定：填充 ' + b.fills + ' · 描边 ' + b.strokes + ' · 圆角 ' + b.radius + ' · 间距 ' + b.spacing + ' · 字号 ' + b.font + skMsg + '（原设计未改动）',
       });
     }
   } catch (err) {
