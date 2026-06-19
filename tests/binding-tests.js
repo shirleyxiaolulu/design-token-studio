@@ -284,6 +284,14 @@ test('本地渐变提升成共享样式：相同渐变的多个图层共用一�
   assert(a.fillStyleId && a.fillStyleId === b.fillStyleId && a.fillStyleId === styles[0].id, '两个图层应应用同一个样式');
 });
 
+test('颜色变量作用域放开为 ALL_SCOPES（渐变色标选择器里可挑到全部颜色）', async () => {
+  fresh(); await bind(darkBusyPage());
+  const colorVars = M.COLS.flatMap(function (c) { return c.variableIds.map(function (id) { return M.varById(id); }); })
+    .filter(Boolean).filter(function (v) { return v.name.indexOf('color/') === 0; });
+  assert(colorVars.length > 0, '应有颜色变量');
+  colorVars.forEach(function (v) { assert(v.scopes && v.scopes.indexOf('ALL_SCOPES') >= 0, v.name + ' 作用域应为 ALL_SCOPES, got ' + JSON.stringify(v.scopes)); });
+});
+
 // --- run -------------------------------------------------------------------
 (async function () {
   for (const t of tests) {

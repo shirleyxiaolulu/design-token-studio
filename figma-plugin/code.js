@@ -2155,7 +2155,11 @@ async function bindReverseVariables(plan) {
   for (var ci = 0; ci < cols.length; ci++) {
     for (var vi = 0; vi < cols[ci].variableIds.length; vi++) {
       var v = await figma.variables.getVariableByIdAsync(cols[ci].variableIds[vi]);
-      if (v) byName[v.name] = v;
+      if (v) {
+        byName[v.name] = v;
+        // 放开颜色变量作用域，确保在所有选择器（含渐变色标）里都能挑到——否则 ALL_FILLS 在渐变色标处被过滤掉、只显示当前一个
+        if (v.name.indexOf('color/') === 0) { try { v.scopes = ['ALL_SCOPES']; } catch (e) {} }
+      }
     }
   }
   var theme = plan.theme || 'light';
