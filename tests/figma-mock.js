@@ -49,6 +49,7 @@ function setup() {
       _explicitModes: {},
       setBoundVariable: function (field, v) { this._bound[field] = v; },
       setExplicitVariableModeForCollection: function (col, modeId) { this._explicitModes[col.id || col] = modeId; },
+      setFillStyleIdAsync: function (id) { this.fillStyleId = id; return Promise.resolve(); },
       remove: function () { var i = ROOT.children.indexOf(this); if (i >= 0) ROOT.children.splice(i, 1); },
       setRangeFills: function (s, e, f) { this._ranges.push({ start: s, end: e, fills: f }); },
       getStyledTextSegments: function () { return this._segments || []; },
@@ -72,6 +73,7 @@ function setup() {
     notify: function () {},
     loadFontAsync: function () { return Promise.resolve(); },
     getLocalPaintStylesAsync: function () { return Promise.resolve(PAINT_STYLES); },
+    createPaintStyle: function () { var st = { id: 'ps-' + (idc++), name: '', paints: [] }; PAINT_STYLES.push(st); return st; },
     variables: {
       getLocalVariableCollectionsAsync: function () { return Promise.resolve(COLS); },
       getVariableByIdAsync: function (id) { return Promise.resolve(_vid[id] || null); },

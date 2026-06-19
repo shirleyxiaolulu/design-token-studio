@@ -2269,11 +2269,38 @@ async function bindReverseVariables(plan) {
       }
     } catch (e) {}
   }
+  // 本地渐变 → 提升成共享样式：相同渐变的图层共用一个样式、样式色标绑变量、图层应用样式。
+  // 这样「改一处样式（或换主色）全局生效」，不必逐个图层改绑定。
+  var gradGroups = {};
+  function isGradientPaint(p) { return p && p.visible !== false && typeof p.type === 'string' && p.type.indexOf('GRADIENT_') === 0 && Array.isArray(p.gradientStops); }
+  function gradSig(p) {
+    try {
+      var stops = p.gradientStops.map(function (s) { return Math.round((s.position || 0) * 1000) + ':' + figmaRgbToHex(s.color) + '@' + Math.round((s.color && s.color.a != null ? s.color.a : 1) * 100); }).join(',');
+      return p.type + '|' + stops + '|' + JSON.stringify(p.gradientTransform || []);
+    } catch (e) { return null; }
+  }
+  function collectGradient(node) { var p = node.fills[0], sig = gradSig(p); if (!sig) { bindPaints(node, 'fills', 'fills', 'fill'); return; } (gradGroups[sig] = gradGroups[sig] || { paint: p, nodes: [] }).nodes.push(node); }
+  async function promoteGradientsToStyles() {
+    var keys = Object.keys(gradGroups);
+    for (var i = 0; i < keys.length; i++) {
+      var g = gradGroups[keys[i]], r = mapPaints([g.paint], 'fill'), style;
+      try { style = figma.createPaintStyle(); style.name = '反推渐变/' + (i + 1); style.paints = r.next; } catch (e) { continue; }
+      for (var n = 0; n < g.nodes.length; n++) {
+        var nd = g.nodes[n];
+        try { if (typeof nd.setFillStyleIdAsync === 'function') await nd.setFillStyleIdAsync(style.id); else nd.fillStyleId = style.id; } catch (e) {}
+      }
+      bound.styles = (bound.styles || 0) + 1;
+    }
+  }
   function bindNum(node, field, vr) { if (!vr) return; try { node.setBoundVariable(field, vr); return true; } catch (e) { return false; } }
   function visit(node) {
     if (Array.isArray(node.effects) && node.effects.some(function (e) { return e && e.visible !== false; })) skipped.effect++; // 阴影/模糊：原样保留，不建效果样式
     // 文本填充统一留到后面「先加载字体再绑」，否则 Figma 不刷新渲染（点了才出现）
-    if (node.type !== 'TEXT' && 'fills' in node && node.fills !== figma.mixed) bindPaints(node, 'fills', 'fills', 'fill');
+    if (node.type !== 'TEXT' && 'fills' in node && node.fills !== figma.mixed) {
+      // 单一渐变填充 → 收集后提升成共享样式（改一处全局生效）；其余（纯色/多 paint）照常本地绑。
+      if (!usesStyle(node, 'fills') && Array.isArray(node.fills) && node.fills.length === 1 && isGradientPaint(node.fills[0])) collectGradient(node);
+      else bindPaints(node, 'fills', 'fills', 'fill');
+    }
     if ('strokes' in node) bindPaints(node, 'strokes', 'strokes', 'border');
     if (radiusVars.length && 'cornerRadius' in node && node.cornerRadius !== figma.mixed && typeof node.cornerRadius === 'number' && node.cornerRadius > 0) {
       // 大圆角(≥100)统一绑 radius.full（rebuildRadius 把 ≥100 收成一个 full、值取最大），
@@ -2317,7 +2344,8 @@ async function bindReverseVariables(plan) {
       }
     } catch (e) { /* 跳过无法绑定的文本 */ }
   }
-  await bindPaintStyles(); // 绑定 paint 样式（渐变/纯色样式 → 变量，全局生效、可跟随换主色）
+  await bindPaintStyles(); // 绑定文件已有的 paint 样式（渐变/纯色样式 → 变量，全局生效、可跟随换主色）
+  await promoteGradientsToStyles(); // 本地渐变提升成共享样式（图层应用样式 → 改一处全局生效）
   collapsePrimitivesMode(cols); // 基础色收成单值（在显式模式之前，这样 Primitives 已无 Dark、下面会自动跳过它）
   // 把副本锁定到「检测到的主题」那一模式渲染——这样即使集合默认模式不是它，副本仍显示原始主题（保真）。
   try {

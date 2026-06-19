@@ -91,11 +91,14 @@ test('渐变：同色色标绑各自变量、颜色不变；无近似色标保�
   const btn = N({ type: 'FRAME', width: 1200, height: 90, y: 2100, characters: '', fills: [grad('#FFA559', '#FF6B00')], strokes: [], cornerRadius: 16 });
   const page = N({ type: 'FRAME', width: 1440, height: 2400, characters: '', fills: [solid('#1A1A1A')], strokes: [], children: tags.concat([btn]) });
   const root = await bind(page);
-  const g = root.children[8].fills[0];
+  const ps = M.PAINT_STYLES.find(function (s) { return s.name.indexOf('反推渐变/') === 0; });
+  assert(ps, '本地渐变应提升成共享样式');
+  const g = ps.paints[0];
   assert(ref(g.gradientStops[0]), '浅橙色标应绑上(已纳入采集)');
   assert(ref(g.gradientStops[1]), '深橙色标应绑上');
   eq(hex(g.gradientStops[0].color), '#FFA559', '浅橙原色不变');
   eq(hex(g.gradientStops[1].color), '#FF6B00', '深橙原色不变');
+  eq(root.children[8].fillStyleId, ps.id, '渐变图层应应用该样式');
 });
 
 test('渐变：非品牌蓝紫色标也能经聚类绑上、颜色不变', async () => {
@@ -103,8 +106,8 @@ test('渐变：非品牌蓝紫色标也能经聚类绑上、颜色不变', async
   const tags = []; for (let i = 0; i < 8; i++) tags.push(N({ type: 'FRAME', width: 120, height: 40, y: i * 50, characters: '', fills: [solid('#FF6B00')], strokes: [] }));
   const btn = N({ type: 'FRAME', width: 1200, height: 90, y: 2100, characters: '', fills: [grad('#3B82F6', '#A855F7')], strokes: [], cornerRadius: 16 });
   const page = N({ type: 'FRAME', width: 1440, height: 2400, characters: '', fills: [solid('#1A1A1A')], strokes: [], children: tags.concat([btn]) });
-  const root = await bind(page);
-  const g = root.children[8].fills[0];
+  await bind(page);
+  const g = M.PAINT_STYLES.find(function (s) { return s.name.indexOf('反推渐变/') === 0; }).paints[0];
   assert(ref(g.gradientStops[0]) && ref(g.gradientStops[1]), '蓝、紫色标都应绑上');
   eq(hex(g.gradientStops[1].color), '#A855F7', '紫色原色不变');
 });
@@ -266,6 +269,19 @@ test('换主色：散落到其它色族的同色相品牌色跟随；功能色�
   function hueDist(v) { const val = Object.values(v.valuesByMode)[0]; const o = rcRgbToOklch({ r: val.r * 255, g: val.g * 255, b: val.b * 255 }); return Math.min(Math.abs(o.H - tH), 360 - Math.abs(o.H - tH)); }
   assert(hueDist(red) < 15, '散落的品牌橙 palette/red/1 应跟随换成蓝, 差 ' + hueDist(red).toFixed(1) + '°');
   assert(hueDist(warnPrim) > 40, '功能色引用的基础色应保持橙(不变), 差 ' + hueDist(warnPrim).toFixed(1) + '°');
+});
+
+test('本地渐变提升成共享样式：相同渐变的多个图层共用一个样式', async () => {
+  fresh(); const { N, solid, grad } = M;
+  const tags = []; for (let i = 0; i < 8; i++) tags.push(N({ type: 'FRAME', width: 120, height: 40, y: i * 50, characters: '', fills: [solid('#FF6B00')], strokes: [] }));
+  const btnA = N({ type: 'FRAME', width: 400, height: 80, y: 500, characters: '', fills: [grad('#FFA559', '#FF6B00')], strokes: [] });
+  const btnB = N({ type: 'FRAME', width: 400, height: 80, y: 600, characters: '', fills: [grad('#FFA559', '#FF6B00')], strokes: [] }); // 同款渐变
+  const page = N({ type: 'FRAME', width: 1440, height: 800, characters: '', fills: [solid('#1A1A1A')], strokes: [], children: tags.concat([btnA, btnB]) });
+  const root = await bind(page);
+  const styles = M.PAINT_STYLES.filter(function (s) { return s.name.indexOf('反推渐变/') === 0; });
+  eq(styles.length, 1, '相同渐变应只建一个共享样式');
+  const a = root.children[8], b = root.children[9];
+  assert(a.fillStyleId && a.fillStyleId === b.fillStyleId && a.fillStyleId === styles[0].id, '两个图层应应用同一个样式');
 });
 
 // --- run -------------------------------------------------------------------
