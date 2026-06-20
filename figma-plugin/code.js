@@ -1,6 +1,7 @@
 // Design System v2 — Figma Plugin
 // 功能 1: 同步变量（从 Web 端 JSON 更新 Figma Variables）
 // 功能 2: 生成预览页（基于 JSON 数据创建可视化文档）
+// 对照实验(2026-06-20)：本行为无害注释，零功能，仅用于验证「改动 code.js 后能否正常加载」。
 
 figma.showUI(__html__, { width: 360, height: 640 });
 
