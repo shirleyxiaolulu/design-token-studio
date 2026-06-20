@@ -4,6 +4,10 @@
 
 figma.showUI(__html__, { width: 360, height: 640 });
 
+// 反推门控：把当前画布选区数量实时推给 UI，让 ①②④（都需要选区）在「有选区」时才可点。
+function rcPostSelection() { try { figma.ui.postMessage({ type: 'selection', count: (figma.currentPage.selection || []).length }); } catch (e) {} }
+if (typeof figma.on === 'function') figma.on('selectionchange', rcPostSelection);
+
 // =============================================
 // Helpers
 // =============================================
@@ -2426,6 +2430,7 @@ async function bindReverseVariables(plan) {
 var rcPreviewCache = null;
 figma.ui.onmessage = async (msg) => {
   try {
+    if (msg.type === 'ui-ready') { rcPostSelection(); return; } // UI 加载完→回推初始选区状态
     if (msg.type === 'sync') {
       // Diagnostic: check what data we received
       var colorCount = Object.keys(msg.data.colorTokens || {}).length;

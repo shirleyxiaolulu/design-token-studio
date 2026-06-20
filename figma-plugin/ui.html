@@ -121,9 +121,9 @@
 
   <div class="reverse-section">
     <div class="reverse-title">反推设计规范 <span class="reverse-badge">实验 · 2.0</span></div>
-    <button class="btn btn-outline" id="auditBtn" style="margin-top:8px;">① 扫描选中内容 · 生成审计</button>
+    <button class="btn btn-outline" id="auditBtn" style="margin-top:8px;" disabled>① 扫描选中内容 · 生成审计</button>
     <div class="audit-result" id="auditResult"></div>
-    <button class="btn btn-outline" id="rebuildBtn" style="margin-top:8px;">② 整理出设计 token（保真）</button>
+    <button class="btn btn-outline" id="rebuildBtn" style="margin-top:8px;" disabled>② 整理出设计 token（保真）</button>
     <div style="margin-top:10px; display:flex; align-items:center; gap:8px;">
       <span class="subtitle" style="margin:0;">预览/绑定主题</span>
       <span class="seg-group"><span class="seg-btn seg-on" id="themeAuto" data-theme="auto">自动</span><span class="seg-btn" id="themeLight" data-theme="light">浅色</span><span class="seg-btn" id="themeDark" data-theme="dark">深色</span></span>
@@ -135,7 +135,7 @@
       <div style="margin-top:8px; display:flex; gap:6px; align-items:center;">
         <input type="color" id="recolorPicker" value="#3B82F6" style="width:34px; height:32px; padding:0; border:1px solid #d0d0d0; border-radius:6px; background:#fff; cursor:pointer; flex:0 0 auto;" />
         <input type="text" id="recolorHex" placeholder="#3B82F6" maxlength="7" style="flex:1; min-width:0; padding:7px 10px; border:1px solid #d0d0d0; border-radius:6px; font:12px 'SF Mono',monospace; color:#444;" />
-        <button class="btn btn-outline" id="recolorBtn" style="margin:0; width:auto; flex:0 0 auto; padding:7px 14px;">换主色</button>
+        <button class="btn btn-outline" id="recolorBtn" style="margin:0; width:auto; flex:0 0 auto; padding:7px 14px;" disabled>换主色</button>
       </div>
       <div id="recolorPreview" style="margin-top:10px; display:none;">
         <div style="display:flex; align-items:center; font-size:10px; color:#6533E8; font-weight:500;">
@@ -346,6 +346,8 @@
       var box = document.getElementById('recolorPreview'), hint = document.getElementById('recolorHint');
       var sw = document.getElementById('recolorSwatches'), ba = document.getElementById('recolorBeforeAfter');
       if (!box || !sw) return;
+      reverseState.paletteExists = !!(msg.hexes && msg.hexes.length); // 有主色变量才放开「换主色」
+      applyReverseGating();
       if (!msg.hexes || !msg.hexes.length) { box.style.display = 'none'; if (hint) hint.style.display = 'block'; return; }
       if (hint) hint.style.display = 'none';
       box.style.display = 'block';
@@ -379,11 +381,21 @@
       });
       requestRecolorPreview(); // 进面板先试一次：已建库则直接出预览，未建库则显示「先跑④」提示
     })();
+    parent.postMessage({ pluginMessage: { type: 'ui-ready' } }, '*'); // 请插件回推初始选区状态，驱动 ①②④ 门控
 
     // 反推交互：异步时锁全部反推按钮（防双击重跑/重复建页），完成或出错再恢复
     var REVERSE_BTN_IDS = ['auditBtn', 'rebuildBtn', 'genReversePreviewBtn', 'reverseBindBtn', 'recolorBtn'];
     var currentReverseStep = null;
-    function setReverseBusy(busy) { REVERSE_BTN_IDS.forEach(function (id) { var el = document.getElementById(id); if (el) el.disabled = busy; }); }
+    // 步骤门控状态：①②④ 需要画布选区；换主色需要已有主色变量(已建库)。状态变化时按门控刷新可点性。
+    var reverseState = { hasSelection: false, paletteExists: false };
+    function gateBtn(id, ok, why) { var el = document.getElementById(id); if (!el) return; el.disabled = !ok; if (ok) el.removeAttribute('title'); else el.title = why; }
+    function applyReverseGating() {
+      gateBtn('auditBtn', reverseState.hasSelection, '请先在画布选中要扫描的画板/图层');
+      gateBtn('rebuildBtn', reverseState.hasSelection, '请先在画布选中画板/图层');
+      gateBtn('reverseBindBtn', reverseState.hasSelection, '请先在画布选中要绑定的画板/图层');
+      gateBtn('recolorBtn', reverseState.paletteExists, '先跑 ④ 复制副本并绑定变量，生成主色变量后再换主色');
+    }
+    function setReverseBusy(busy) { REVERSE_BTN_IDS.forEach(function (id) { var el = document.getElementById(id); if (el) el.disabled = busy; }); if (!busy) applyReverseGating(); }
     function markStepDone(id) { var el = document.getElementById(id); if (el) el.classList.add('step-done'); }
 
     // 2.0 反推 · 阶段②：整理出设计 token（保真）
@@ -409,6 +421,9 @@
         currentReverseStep = null;
       } else if (msg.type === 'reverse-recolor-preview-result') {
         renderRecolorPreview(msg);
+      } else if (msg.type === 'selection') {
+        reverseState.hasSelection = (msg.count > 0);
+        applyReverseGating();
       } else if (msg.type === 'error') {
         showStatus(`❌ ${msg.message}`, 'error');
         setReverseBusy(false);
