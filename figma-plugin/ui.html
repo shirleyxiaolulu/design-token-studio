@@ -120,7 +120,7 @@
   <div class="divider"></div>
 
   <div class="reverse-section">
-    <div class="reverse-title">反推设计规范 <span class="reverse-badge">实验 · 2.0</span></div>
+    <div class="reverse-title" style="display:flex; align-items:center; gap:6px;">反推设计规范 <span class="reverse-badge">实验 · 2.0</span><button class="mini-btn" id="reverseResetBtn" style="margin-left:auto;" title="清空审计/重建结果与勾选，从 ① 重新开始（换主色独立保留）">重置</button></div>
     <button class="btn btn-outline" id="auditBtn" style="margin-top:8px;" disabled>① 扫描选中内容 · 生成审计</button>
     <div class="audit-result" id="auditResult"></div>
     <button class="btn btn-outline" id="rebuildBtn" style="margin-top:8px;" disabled>② 整理出设计 token（保真）</button>
@@ -407,6 +407,17 @@
       parent.postMessage({ pluginMessage: { type: 'rebuild', theme: reverseTheme } }, '*');
     }
     rebuildBtn.addEventListener('click', runRebuild);
+
+    // 反推「重置」：清空审计/重建结果 + 勾选 + 状态，回到初始（换主色是独立功能，保留不动）
+    var reverseResetBtn = document.getElementById('reverseResetBtn');
+    if (reverseResetBtn) reverseResetBtn.addEventListener('click', function () {
+      auditResult.innerHTML = ''; auditResult.className = 'audit-result';
+      rebuildResult.innerHTML = ''; rebuildResult.className = 'audit-result';   // 连带移除 ③④ 按钮
+      ['auditBtn', 'rebuildBtn'].forEach(function (id) { var e = document.getElementById(id); if (e) e.classList.remove('step-done'); });
+      rebuildJson = ''; currentReverseStep = null;
+      setReverseBusy(false);            // 按当前选区/palette 重新门控
+      showStatus('已重置反推面板，可重新从 ① 开始', '');
+    });
 
     window.onmessage = (event) => {
       const msg = event.data.pluginMessage;
