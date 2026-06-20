@@ -137,6 +137,16 @@
         <input type="text" id="recolorHex" placeholder="#3B82F6" maxlength="7" style="flex:1; min-width:0; padding:7px 10px; border:1px solid #d0d0d0; border-radius:6px; font:12px 'SF Mono',monospace; color:#444;" />
         <button class="btn btn-outline" id="recolorBtn" style="margin:0; width:auto; flex:0 0 auto; padding:7px 14px;">换主色</button>
       </div>
+      <div id="recolorPreview" style="margin-top:10px; display:none;">
+        <div style="display:flex; align-items:center; font-size:10px; color:#6533E8; font-weight:500;">
+          <span>实时预览 · 将生成的色阶</span>
+          <span id="recolorBeforeAfter" style="margin-left:auto; display:flex; align-items:center; gap:4px; color:#999;"></span>
+        </div>
+        <div id="recolorSwatches" style="display:flex; gap:3px; margin-top:6px;"></div>
+        <div style="display:flex; justify-content:space-between; margin-top:4px; font-size:10px; color:#bbb;"><span>浅 50</span><span style="color:#6533E8;">primary 主色</span><span>深 900</span></div>
+        <div style="margin-top:6px; font-size:10px; color:#aaa; line-height:1.5;">满意了再点「换主色」写入变量；点之前不改任何东西。</div>
+      </div>
+      <div id="recolorHint" style="margin-top:8px; font-size:10px; color:#bbb; display:none;">先跑 ④ 生成主色变量，这里会实时预览换主色效果。</div>
     </div>
   </div>
 
@@ -321,13 +331,44 @@
       });
     });
 
+    // 换主色「即时预览」：改色(防抖)→ 请插件只算不写、回传将生成的色阶；renderRecolorPreview 画色块。
+    var recolorPreviewTimer = null;
+    function requestRecolorPreview() {
+      var rcHex = document.getElementById('recolorHex');
+      var hex = (rcHex && rcHex.value || '').trim();
+      if (!/^#[0-9a-fA-F]{6}$/.test(hex)) return;
+      clearTimeout(recolorPreviewTimer);
+      recolorPreviewTimer = setTimeout(function () {
+        parent.postMessage({ pluginMessage: { type: 'reverse-recolor-preview', color: hex } }, '*');
+      }, 160);
+    }
+    function renderRecolorPreview(msg) {
+      var box = document.getElementById('recolorPreview'), hint = document.getElementById('recolorHint');
+      var sw = document.getElementById('recolorSwatches'), ba = document.getElementById('recolorBeforeAfter');
+      if (!box || !sw) return;
+      if (!msg.hexes || !msg.hexes.length) { box.style.display = 'none'; if (hint) hint.style.display = 'block'; return; }
+      if (hint) hint.style.display = 'none';
+      box.style.display = 'block';
+      sw.innerHTML = msg.hexes.map(function (h, i) {
+        if (!h) return '';
+        var main = (i === msg.mainIdx);
+        return '<div style="flex:1; height:28px; border-radius:3px; background:' + h + ';' + (main ? ' outline:2px solid #222; outline-offset:1px; position:relative; z-index:1;' : '') + '" title="' + h + (main ? ' · 主色' : '') + '"></div>';
+      }).join('');
+      if (ba) {
+        var nu = (msg.hexes[msg.mainIdx] || '').toUpperCase();
+        ba.innerHTML = msg.oldMain
+          ? '原 <span style="display:inline-block;width:11px;height:11px;border-radius:2px;border:1px solid #ddd;vertical-align:-1px;background:' + msg.oldMain + '"></span> → 新 <span style="display:inline-block;width:11px;height:11px;border-radius:2px;border:1px solid #ddd;vertical-align:-1px;background:' + nu + '"></span>'
+          : '';
+      }
+    }
+
     // 一键换主色（独立常驻区，无需重跑 ①–④）：色板与 hex 双向同步；点按钮 → 重算 palette/primary/*
     (function () {
       var rcPicker = document.getElementById('recolorPicker'), rcHex = document.getElementById('recolorHex'), rcBtn = document.getElementById('recolorBtn');
       if (rcPicker && rcHex) {
         rcHex.value = rcPicker.value.toUpperCase();
-        rcPicker.addEventListener('input', function () { rcHex.value = rcPicker.value.toUpperCase(); });
-        rcHex.addEventListener('input', function () { if (/^#[0-9a-fA-F]{6}$/.test(rcHex.value)) rcPicker.value = rcHex.value; });
+        rcPicker.addEventListener('input', function () { rcHex.value = rcPicker.value.toUpperCase(); requestRecolorPreview(); });
+        rcHex.addEventListener('input', function () { if (/^#[0-9a-fA-F]{6}$/.test(rcHex.value)) rcPicker.value = rcHex.value; requestRecolorPreview(); });
       }
       if (rcBtn) rcBtn.addEventListener('click', function () {
         var hex = (rcHex && rcHex.value || '').trim();
@@ -336,6 +377,7 @@
         showStatus('正在换主色...', 'progress');
         parent.postMessage({ pluginMessage: { type: 'reverse-recolor', color: hex } }, '*');
       });
+      requestRecolorPreview(); // 进面板先试一次：已建库则直接出预览，未建库则显示「先跑④」提示
     })();
 
     // 反推交互：异步时锁全部反推按钮（防双击重跑/重复建页），完成或出错再恢复
@@ -362,8 +404,11 @@
         syncBtn.disabled = !parsedData;       // 只在有合法 JSON 时才启用 web 按钮（反推结果不再误启用）
         generateBtn.disabled = !parsedData;
         if (currentReverseStep === 'preview') markStepDone('genReversePreviewBtn');
-        if (currentReverseStep === 'bind') markStepDone('reverseBindBtn');
+        if (currentReverseStep === 'bind') { markStepDone('reverseBindBtn'); requestRecolorPreview(); } // 建库后预览即可用
+        if (currentReverseStep === 'recolor') requestRecolorPreview(); // 换色后刷新基准
         currentReverseStep = null;
+      } else if (msg.type === 'reverse-recolor-preview-result') {
+        renderRecolorPreview(msg);
       } else if (msg.type === 'error') {
         showStatus(`❌ ${msg.message}`, 'error');
         setReverseBusy(false);

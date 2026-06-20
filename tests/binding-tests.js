@@ -425,6 +425,27 @@ test('① 发灰主色清出 primary：中段低饱和归 gray、不进 palette/
   assert(prim.some(h => auditDeltaE(h, '#C9A0FF') < 2), '浅紫淡彩应留在 primary(亮端豁免)');
 });
 
+test('换主色即时预览：只算不写、回传色阶、主色落锚档、palette 一个值都不改', async () => {
+  fresh();
+  const prim = M.figma.variables.createVariableCollection('Primitives');
+  prim.renameMode(prim.modes[0].modeId, 'Light'); const pm = prim.modes[0].modeId;
+  function mkc(name, h) { const v = M.figma.variables.createVariable(name, prim); const c = M.rgb(h); v.setValueForMode(pm, { r: c.r, g: c.g, b: c.b, a: 1 }); return v; }
+  const pv = ['#E9CCFF', '#945EFF', '#9514FF', '#7B00FF', '#2B124E'].map((h, i) => mkc('color/palette/primary/' + i, h));
+  const tok = M.figma.variables.createVariableCollection('Tokens'); tok.renameMode(tok.modes[0].modeId, 'Light');
+  const bp = M.figma.variables.createVariable('color/brand/primary', tok);
+  bp.setValueForMode(tok.modes[0].modeId, M.figma.variables.createVariableAlias(pv[2])); // 主色锚在 /2
+  const before = pv.map(v => JSON.stringify(Object.values(v.valuesByMode)[0]));
+  M.figma.ui.messages.length = 0;
+  await pluginOnMessage({ type: 'reverse-recolor-preview', color: '#FF24D7' });
+  const res = M.figma.ui.messages.find(m => m.type === 'reverse-recolor-preview-result');
+  assert(res && res.hexes && res.hexes.length === 5, '应回传 5 档预览色阶');
+  assert(res.mainIdx === 2, '主色档应=锚档 /2, got ' + res.mainIdx);
+  assert(auditDeltaE(res.hexes[res.mainIdx], '#FF24D7') < 3, '主色档应≈输入色, got ' + res.hexes[res.mainIdx]);
+  assert(auditDeltaE(res.oldMain, '#9514FF') < 3, 'oldMain 应=当前主色 #9514FF, got ' + res.oldMain);
+  const after = pv.map(v => JSON.stringify(Object.values(v.valuesByMode)[0]));
+  assert(before.join('|') === after.join('|'), '预览不应改动 palette 任何值（只算不写）');
+});
+
 // --- run -------------------------------------------------------------------
 (async function () {
   for (const t of tests) {
