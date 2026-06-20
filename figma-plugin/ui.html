@@ -120,14 +120,14 @@
   <div class="divider"></div>
 
   <div class="reverse-section">
-    <div class="reverse-title" style="display:flex; align-items:center; gap:6px;">反推设计规范 <span class="reverse-badge">实验 · 2.0</span><button class="mini-btn" id="reverseResetBtn" style="margin-left:auto;" title="清空审计/重建结果与勾选，从 ① 重新开始（换主色独立保留）">重置</button></div>
-    <div style="margin-top:8px; display:flex; align-items:center; gap:8px;">
-      <span class="subtitle" style="margin:0;">预览/绑定主题</span>
-      <span class="seg-group"><span class="seg-btn seg-on" id="themeAuto" data-theme="auto">自动</span><span class="seg-btn" id="themeLight" data-theme="light">浅色</span><span class="seg-btn" id="themeDark" data-theme="dark">深色</span></span>
-    </div>
+    <div class="reverse-title">反推设计规范 <span class="reverse-badge">实验 · 2.0</span></div>
     <button class="btn btn-outline" id="auditBtn" style="margin-top:8px;">① 扫描选中内容 · 生成审计</button>
     <div class="audit-result" id="auditResult"></div>
     <button class="btn btn-outline" id="rebuildBtn" style="margin-top:8px;">② 整理出设计 token（保真）</button>
+    <div style="margin-top:10px; display:flex; align-items:center; gap:8px;">
+      <span class="subtitle" style="margin:0;">预览/绑定主题</span>
+      <span class="seg-group"><span class="seg-btn seg-on" id="themeAuto" data-theme="auto">自动</span><span class="seg-btn" id="themeLight" data-theme="light">浅色</span><span class="seg-btn" id="themeDark" data-theme="dark">深色</span></span>
+    </div>
     <div class="audit-result" id="rebuildResult"></div>
 
     <div style="margin-top:14px; padding-top:12px; border-top:1px solid rgba(255,255,255,0.08);">
@@ -135,18 +135,8 @@
       <div style="margin-top:8px; display:flex; gap:6px; align-items:center;">
         <input type="color" id="recolorPicker" value="#3B82F6" style="width:34px; height:32px; padding:0; border:1px solid #d0d0d0; border-radius:6px; background:#fff; cursor:pointer; flex:0 0 auto;" />
         <input type="text" id="recolorHex" placeholder="#3B82F6" maxlength="7" style="flex:1; min-width:0; padding:7px 10px; border:1px solid #d0d0d0; border-radius:6px; font:12px 'SF Mono',monospace; color:#444;" />
-        <button class="btn btn-outline" id="recolorBtn" style="margin:0; width:auto; flex:0 0 auto; padding:7px 14px;" disabled>换主色</button>
+        <button class="btn btn-outline" id="recolorBtn" style="margin:0; width:auto; flex:0 0 auto; padding:7px 14px;">换主色</button>
       </div>
-      <div id="recolorPreview" style="margin-top:10px; display:none;">
-        <div style="display:flex; align-items:center; font-size:10px; color:#6533E8; font-weight:500;">
-          <span>实时预览 · 将生成的色阶</span>
-          <span id="recolorBeforeAfter" style="margin-left:auto; display:flex; align-items:center; gap:4px; color:#999;"></span>
-        </div>
-        <div id="recolorSwatches" style="display:flex; gap:3px; margin-top:6px;"></div>
-        <div style="display:flex; justify-content:space-between; margin-top:4px; font-size:10px; color:#bbb;"><span>浅 50</span><span style="color:#6533E8;">primary 主色</span><span>深 900</span></div>
-        <div style="margin-top:6px; font-size:10px; color:#aaa; line-height:1.5;">满意了再点「换主色」写入变量；点之前不改任何东西。</div>
-      </div>
-      <div id="recolorHint" style="margin-top:8px; font-size:10px; color:#bbb; display:none;">先跑 ④ 生成主色变量，这里会实时预览换主色效果。</div>
     </div>
   </div>
 
@@ -331,46 +321,13 @@
       });
     });
 
-    // 换主色「即时预览」：改色(防抖)→ 请插件只算不写、回传将生成的色阶；renderRecolorPreview 画色块。
-    var recolorPreviewTimer = null;
-    function requestRecolorPreview() {
-      var rcHex = document.getElementById('recolorHex');
-      var hex = (rcHex && rcHex.value || '').trim();
-      if (!/^#[0-9a-fA-F]{6}$/.test(hex)) return;
-      clearTimeout(recolorPreviewTimer);
-      recolorPreviewTimer = setTimeout(function () {
-        parent.postMessage({ pluginMessage: { type: 'reverse-recolor-preview', color: hex } }, '*');
-      }, 160);
-    }
-    function renderRecolorPreview(msg) {
-      var box = document.getElementById('recolorPreview'), hint = document.getElementById('recolorHint');
-      var sw = document.getElementById('recolorSwatches'), ba = document.getElementById('recolorBeforeAfter');
-      if (!box || !sw) return;
-      reverseState.paletteExists = !!(msg.hexes && msg.hexes.length); // 有主色变量才放开「换主色」
-      applyReverseGating();
-      if (!msg.hexes || !msg.hexes.length) { box.style.display = 'none'; if (hint) hint.style.display = 'block'; return; }
-      if (hint) hint.style.display = 'none';
-      box.style.display = 'block';
-      sw.innerHTML = msg.hexes.map(function (h, i) {
-        if (!h) return '';
-        var main = (i === msg.mainIdx);
-        return '<div style="flex:1; height:28px; border-radius:3px; background:' + h + ';' + (main ? ' outline:2px solid #222; outline-offset:1px; position:relative; z-index:1;' : '') + '" title="' + h + (main ? ' · 主色' : '') + '"></div>';
-      }).join('');
-      if (ba) {
-        var nu = (msg.hexes[msg.mainIdx] || '').toUpperCase();
-        ba.innerHTML = msg.oldMain
-          ? '原 <span style="display:inline-block;width:11px;height:11px;border-radius:2px;border:1px solid #ddd;vertical-align:-1px;background:' + msg.oldMain + '"></span> → 新 <span style="display:inline-block;width:11px;height:11px;border-radius:2px;border:1px solid #ddd;vertical-align:-1px;background:' + nu + '"></span>'
-          : '';
-      }
-    }
-
     // 一键换主色（独立常驻区，无需重跑 ①–④）：色板与 hex 双向同步；点按钮 → 重算 palette/primary/*
     (function () {
       var rcPicker = document.getElementById('recolorPicker'), rcHex = document.getElementById('recolorHex'), rcBtn = document.getElementById('recolorBtn');
       if (rcPicker && rcHex) {
         rcHex.value = rcPicker.value.toUpperCase();
-        rcPicker.addEventListener('input', function () { rcHex.value = rcPicker.value.toUpperCase(); requestRecolorPreview(); });
-        rcHex.addEventListener('input', function () { if (/^#[0-9a-fA-F]{6}$/.test(rcHex.value)) rcPicker.value = rcHex.value; requestRecolorPreview(); });
+        rcPicker.addEventListener('input', function () { rcHex.value = rcPicker.value.toUpperCase(); });
+        rcHex.addEventListener('input', function () { if (/^#[0-9a-fA-F]{6}$/.test(rcHex.value)) rcPicker.value = rcHex.value; });
       }
       if (rcBtn) rcBtn.addEventListener('click', function () {
         var hex = (rcHex && rcHex.value || '').trim();
@@ -379,19 +336,12 @@
         showStatus('正在换主色...', 'progress');
         parent.postMessage({ pluginMessage: { type: 'reverse-recolor', color: hex } }, '*');
       });
-      requestRecolorPreview(); // 进面板先试一次：已建库则直接出预览，未建库则显示「先跑④」提示
     })();
 
     // 反推交互：异步时锁全部反推按钮（防双击重跑/重复建页），完成或出错再恢复
     var REVERSE_BTN_IDS = ['auditBtn', 'rebuildBtn', 'genReversePreviewBtn', 'reverseBindBtn', 'recolorBtn'];
     var currentReverseStep = null;
-    // 门控：换主色需要已有主色变量(已建库)，由预览是否回有效色阶判定。①②④ 不门控——没选区时插件已有清晰报错。
-    var reverseState = { paletteExists: false };
-    function gateBtn(id, ok, why) { var el = document.getElementById(id); if (!el) return; el.disabled = !ok; if (ok) el.removeAttribute('title'); else el.title = why; }
-    function applyReverseGating() {
-      gateBtn('recolorBtn', reverseState.paletteExists, '先跑 ④ 复制副本并绑定变量，生成主色变量后再换主色');
-    }
-    function setReverseBusy(busy) { REVERSE_BTN_IDS.forEach(function (id) { var el = document.getElementById(id); if (el) el.disabled = busy; }); if (!busy) applyReverseGating(); }
+    function setReverseBusy(busy) { REVERSE_BTN_IDS.forEach(function (id) { var el = document.getElementById(id); if (el) el.disabled = busy; }); }
     function markStepDone(id) { var el = document.getElementById(id); if (el) el.classList.add('step-done'); }
 
     // 2.0 反推 · 阶段②：整理出设计 token（保真）
@@ -404,17 +354,6 @@
     }
     rebuildBtn.addEventListener('click', runRebuild);
 
-    // 反推「重置」：清空审计/重建结果 + 勾选 + 状态，回到初始（换主色是独立功能，保留不动）
-    var reverseResetBtn = document.getElementById('reverseResetBtn');
-    if (reverseResetBtn) reverseResetBtn.addEventListener('click', function () {
-      auditResult.innerHTML = ''; auditResult.className = 'audit-result';
-      rebuildResult.innerHTML = ''; rebuildResult.className = 'audit-result';   // 连带移除 ③④ 按钮
-      ['auditBtn', 'rebuildBtn'].forEach(function (id) { var e = document.getElementById(id); if (e) e.classList.remove('step-done'); });
-      rebuildJson = ''; currentReverseStep = null;
-      setReverseBusy(false);            // 按当前选区/palette 重新门控
-      showStatus('已重置反推面板，可重新从 ① 开始', '');
-    });
-
     window.onmessage = (event) => {
       const msg = event.data.pluginMessage;
       if (msg.type === 'result') {
@@ -423,17 +362,8 @@
         syncBtn.disabled = !parsedData;       // 只在有合法 JSON 时才启用 web 按钮（反推结果不再误启用）
         generateBtn.disabled = !parsedData;
         if (currentReverseStep === 'preview') markStepDone('genReversePreviewBtn');
-        if (currentReverseStep === 'bind') { markStepDone('reverseBindBtn'); requestRecolorPreview(); } // 建库后预览即可用
-        if (currentReverseStep === 'recolor') requestRecolorPreview(); // 换色后刷新基准
+        if (currentReverseStep === 'bind') markStepDone('reverseBindBtn');
         currentReverseStep = null;
-      } else if (msg.type === 'reverse-recolor-preview-result') {
-        renderRecolorPreview(msg);
-      } else if (msg.type === 'reverse-export-result') {
-        var rexOut = document.getElementById('rexOutput'), rexCp = document.getElementById('rexCopyBtn');
-        var label = msg.format === 'w3c' ? 'W3C Tokens' : msg.format === 'css' ? 'CSS' : 'Tailwind';
-        if (rexOut) { rexOut.value = msg.code; rexOut.style.display = 'block'; }
-        if (rexCp) { rexCp.style.display = 'block'; rexCp.textContent = '复制 ' + label; }
-        showStatus('已生成 ' + label + ' 代码，可复制', 'success');
       } else if (msg.type === 'error') {
         showStatus(`❌ ${msg.message}`, 'error');
         setReverseBusy(false);
@@ -461,18 +391,6 @@
           });
           cb.textContent = '已复制 ✓';
           setTimeout(function () { cb.textContent = '复制重建 JSON'; }, 1500);
-        });
-        var rexBtns = rebuildResult.querySelectorAll('.rex-btn');
-        for (var ri = 0; ri < rexBtns.length; ri++) {
-          rexBtns[ri].addEventListener('click', function () {
-            parent.postMessage({ pluginMessage: { type: 'reverse-export', format: this.getAttribute('data-fmt') } }, '*');
-          });
-        }
-        var rexCopy = document.getElementById('rexCopyBtn');
-        if (rexCopy) rexCopy.addEventListener('click', function () {
-          var out = document.getElementById('rexOutput'); if (!out) return;
-          (navigator.clipboard ? navigator.clipboard.writeText(out.value) : Promise.reject()).catch(function () { out.select(); document.execCommand('copy'); });
-          rexCopy.textContent = '已复制 ✓'; setTimeout(function () { rexCopy.textContent = '复制'; }, 1500);
         });
         var pb = document.getElementById('genReversePreviewBtn');
         if (pb) pb.addEventListener('click', function () {
@@ -591,16 +509,6 @@
       h += '<button class="btn btn-primary" id="genReversePreviewBtn" style="margin-top:12px;">③ 生成规范预览页</button>';
       h += '<button class="btn btn-outline" id="reverseBindBtn" style="margin-top:8px;">④ 复制副本并绑定变量（含建库）</button>';
       h += '<button class="btn btn-outline" id="copyRebuildBtn" style="margin-top:8px;">复制重建 JSON</button>';
-      h += '<div style="margin-top:12px; padding-top:10px; border-top:1px solid #eee;">';
-      h += '<div class="subtitle" style="margin:0 0 6px;">导出代码（直接给开发用）</div>';
-      h += '<div style="display:flex; gap:6px;">';
-      h += '<button class="mini-btn rex-btn" data-fmt="css" style="flex:1; height:28px;">CSS 变量</button>';
-      h += '<button class="mini-btn rex-btn" data-fmt="tailwind" style="flex:1; height:28px;">Tailwind</button>';
-      h += '<button class="mini-btn rex-btn" data-fmt="w3c" style="flex:1; height:28px;">W3C Tokens</button>';
-      h += '</div>';
-      h += '<textarea id="rexOutput" readonly style="display:none; width:100%; height:120px; box-sizing:border-box; margin-top:6px; border:1px solid #ddd; border-radius:6px; padding:8px; font:11px \'SF Mono\',monospace; color:#333; resize:vertical;"></textarea>';
-      h += '<button class="mini-btn" id="rexCopyBtn" style="display:none; margin-top:6px;">复制</button>';
-      h += '</div>';
       return h;
     }
 

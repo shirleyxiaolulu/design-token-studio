@@ -1936,58 +1936,6 @@ function rebuildToData(plan) {
   var theme = plan.theme || 'light';
   return { name: '反推设计规范', version: 'reverse', platform: 'app-web', seed: { localFont: 'pingfang', defaultMode: theme }, defaultMode: theme, colorTokens: colorTokens, dimTokens: dimTokens };
 }
-
-// === 反推 token → 代码格式导出（纯函数，直接给开发用）。输入 = rebuildToData 的结果 {colorTokens, dimTokens} ===
-function rexColorValue(t) { // 半透明出 rgba()，否则 hex
-  if (t.alpha != null && t.alpha < 1) {
-    var h = (t.light || '').replace('#', '');
-    if (h.length < 6) return t.light;
-    return 'rgba(' + parseInt(h.slice(0, 2), 16) + ', ' + parseInt(h.slice(2, 4), 16) + ', ' + parseInt(h.slice(4, 6), 16) + ', ' + (Math.round(t.alpha * 1000) / 1000) + ')';
-  }
-  return t.light;
-}
-function rexDimValue(t) { return (typeof t.value === 'number') ? (t.value + 'px') : String(t.value); }
-function rexSetDeep(obj, path, value) { // 按 slash 路径写嵌套对象；中间段已是叶子则跳过(防冲突)
-  var cur = obj;
-  for (var i = 0; i < path.length - 1; i++) {
-    var seg = path[i];
-    if (cur[seg] == null) cur[seg] = {};
-    else if (typeof cur[seg] !== 'object' || cur[seg].$value !== undefined) return false;
-    cur = cur[seg];
-  }
-  cur[path[path.length - 1]] = value; return true;
-}
-function exportReverseCss(data) { // :root { --color-brand-primary: #...; --radius-md: 8px; }
-  var lines = [':root {'];
-  Object.keys(data.colorTokens).forEach(function (k) { var t = data.colorTokens[k]; lines.push('  --' + t.figmaName.replace(/\//g, '-') + ': ' + rexColorValue(t) + ';'); });
-  Object.keys(data.dimTokens).forEach(function (k) { var t = data.dimTokens[k]; lines.push('  --' + t.figmaName.replace(/\//g, '-') + ': ' + rexDimValue(t) + ';'); });
-  lines.push('}');
-  return lines.join('\n');
-}
-function exportReverseTailwind(data) { // tailwind.config.js: theme.extend.{colors,borderRadius,spacing,fontSize}
-  var colors = {}, borderRadius = {}, spacing = {}, fontSize = {};
-  Object.keys(data.colorTokens).forEach(function (k) { var t = data.colorTokens[k], segs = t.figmaName.split('/'); if (segs[0] === 'color') rexSetDeep(colors, segs.slice(1), rexColorValue(t)); });
-  Object.keys(data.dimTokens).forEach(function (k) {
-    var t = data.dimTokens[k], segs = t.figmaName.split('/'), v = rexDimValue(t);
-    if (segs[0] === 'radius') borderRadius[segs.slice(1).join('-')] = v;
-    else if (segs[0] === 'space') spacing[segs.slice(1).join('-')] = v;
-    else if (segs[0] === 'font' && segs[1] === 'size') fontSize[segs.slice(2).join('-')] = v;
-  });
-  var extend = { colors: colors };
-  if (Object.keys(borderRadius).length) extend.borderRadius = borderRadius;
-  if (Object.keys(spacing).length) extend.spacing = spacing;
-  if (Object.keys(fontSize).length) extend.fontSize = fontSize;
-  return "/** @type {import('tailwindcss').Config} */\nmodule.exports = " + JSON.stringify({ theme: { extend: extend } }, null, 2) + '\n';
-}
-function exportReverseW3C(data) { // W3C Design Tokens：嵌套 + $type/$value
-  var root = {};
-  Object.keys(data.colorTokens).forEach(function (k) { var t = data.colorTokens[k]; rexSetDeep(root, t.figmaName.split('/'), { $type: 'color', $value: rexColorValue(t) }); });
-  Object.keys(data.dimTokens).forEach(function (k) { var t = data.dimTokens[k]; rexSetDeep(root, t.figmaName.split('/'), { $type: 'dimension', $value: rexDimValue(t) }); });
-  return JSON.stringify(root, null, 2);
-}
-function exportReverse(data, format) {
-  return format === 'css' ? exportReverseCss(data) : format === 'tailwind' ? exportReverseTailwind(data) : format === 'w3c' ? exportReverseW3C(data) : null;
-}
 // === REBUILD-CORE-END ===
 
 // 采集（需 Figma API）：递归遍历选中节点，抽取硬编码样式 → plain data
@@ -2473,9 +2421,6 @@ async function bindReverseVariables(plan) {
   return bound;
 }
 
-// 换主色「即时预览」缓存：首次预览读一遍 palette/primary 当前色 + 主色锚档，之后改色只在 JS 重算色阶（不再读 Figma），秒级响应。
-// 绑定(④重建 palette)或真正换主色(palette 值变)后失效、下次预览重读。
-var rcPreviewCache = null;
 figma.ui.onmessage = async (msg) => {
   try {
     if (msg.type === 'sync') {
@@ -2593,7 +2538,6 @@ figma.ui.onmessage = async (msg) => {
       var rbgPlan = lastRebuildPlan || buildRebuildPlan(harvestSelection(rbgSel, 20000));
       applyReverseTheme(rbgPlan, msg.theme);
       figma.ui.postMessage({ type: 'progress', message: '正在复制副本并绑定变量...' });
-      rcPreviewCache = null; // palette 将被重建，预览缓存失效
       var b = await bindReverseVariables(rbgPlan);
       var sk = b.skipped || { image: 0, unmatched: 0, effect: 0 };
       var skParts = [];
@@ -2660,34 +2604,7 @@ figma.ui.onmessage = async (msg) => {
           rcSetAll(v, rcOklchToRgb01(o.L, o.C, newHue)); extra++;
         });
       }
-      rcPreviewCache = null; // palette 值已变，预览缓存失效（下次预览重读基准色）
       figma.ui.postMessage({ type: 'result', message: '已换主色：主色阶 ' + changed + ' 档 + 同色相品牌色 ' + extra + ' 个（功能色 success/warning/danger/info 保持不变）' });
-    }
-    else if (msg.type === 'reverse-recolor-preview') {
-      // 换主色「即时预览」：只算不写——按输入色算出将生成的主色阶，回传给 UI 画色块。无效色/未建库时静默回 null。
-      if (!hexToFigmaRgb(msg.color)) { figma.ui.postMessage({ type: 'reverse-recolor-preview-result', hexes: null }); return; }
-      if (!rcPreviewCache) {
-        var pcCols = await figma.variables.getLocalVariableCollectionsAsync(), pcAll = [];
-        for (var pci = 0; pci < pcCols.length; pci++) for (var pcj = 0; pcj < pcCols[pci].variableIds.length; pcj++) { var pcv = await figma.variables.getVariableByIdAsync(pcCols[pci].variableIds[pcj]); if (pcv) pcAll.push(pcv); }
-        var pcPrim = pcAll.filter(function (v) { return v.name.indexOf('color/palette/primary/') === 0; }).sort(function (a, b) { return a.name.localeCompare(b.name); });
-        if (!pcPrim.length) { figma.ui.postMessage({ type: 'reverse-recolor-preview-result', hexes: null }); return; }
-        var pcHexes = pcPrim.map(function (v) { var val = Object.values(v.valuesByMode)[0]; return (val && typeof val.r === 'number') ? figmaRgbToHex(val) : '#000000'; });
-        var pcBrand = pcAll.find(function (v) { return v.name === 'color/brand/primary'; }), pcAnchor = null;
-        if (pcBrand) { var pcbv = Object.values(pcBrand.valuesByMode)[0]; if (pcbv && pcbv.type === 'VARIABLE_ALIAS') { var pcbt = pcAll.find(function (v) { return v.id === pcbv.id; }); if (pcbt) { var pcm = pcbt.name.match(/^color\/palette\/primary\/(\d+)$/); if (pcm) { var pidx2 = pcPrim.indexOf(pcbt); pcAnchor = pidx2 >= 0 ? pidx2 : (parseInt(pcm[1], 10) < pcPrim.length ? parseInt(pcm[1], 10) : null); } } } }
-        rcPreviewCache = { hexes: pcHexes, anchorRank: pcAnchor };
-      }
-      var pcRamp = reverseRecolorRamp(rcPreviewCache.hexes, msg.color, rcPreviewCache.anchorRank);
-      if (!pcRamp) { figma.ui.postMessage({ type: 'reverse-recolor-preview-result', hexes: null }); return; }
-      var pcMain = (rcPreviewCache.anchorRank != null && rcPreviewCache.anchorRank < pcRamp.length) ? rcPreviewCache.anchorRank : 0;
-      var pcOld = rcPreviewCache.hexes[pcMain] || null; // 当前主色（before）
-      figma.ui.postMessage({ type: 'reverse-recolor-preview-result', hexes: pcRamp.map(function (c) { return c ? figmaRgbToHex(c) : null; }), mainIdx: pcMain, oldMain: pcOld });
-    }
-    else if (msg.type === 'reverse-export') {
-      // 反推 token 导出为代码格式（CSS 变量 / Tailwind / W3C Tokens），直接给开发用
-      if (!lastRebuildPlan) { figma.ui.postMessage({ type: 'error', message: '请先跑 ② 整理出 token，再导出代码' }); return; }
-      var exCode = exportReverse(rebuildToData(lastRebuildPlan), msg.format);
-      if (exCode == null) { figma.ui.postMessage({ type: 'error', message: '未知导出格式：' + msg.format }); return; }
-      figma.ui.postMessage({ type: 'reverse-export-result', format: msg.format, code: exCode });
     }
   } catch (err) {
     try { console.error('[plugin]', err); } catch (e) {} // 完整堆栈进控制台
