@@ -1936,6 +1936,58 @@ function rebuildToData(plan) {
   var theme = plan.theme || 'light';
   return { name: '反推设计规范', version: 'reverse', platform: 'app-web', seed: { localFont: 'pingfang', defaultMode: theme }, defaultMode: theme, colorTokens: colorTokens, dimTokens: dimTokens };
 }
+
+// === 反推 token → 代码格式导出（纯函数，直接给开发用）。输入 = rebuildToData 的结果 {colorTokens, dimTokens} ===
+function rexColorValue(t) { // 半透明出 rgba()，否则 hex
+  if (t.alpha != null && t.alpha < 1) {
+    var h = (t.light || '').replace('#', '');
+    if (h.length < 6) return t.light;
+    return 'rgba(' + parseInt(h.slice(0, 2), 16) + ', ' + parseInt(h.slice(2, 4), 16) + ', ' + parseInt(h.slice(4, 6), 16) + ', ' + (Math.round(t.alpha * 1000) / 1000) + ')';
+  }
+  return t.light;
+}
+function rexDimValue(t) { return (typeof t.value === 'number') ? (t.value + 'px') : String(t.value); }
+function rexSetDeep(obj, path, value) { // 按 slash 路径写嵌套对象；中间段已是叶子则跳过(防冲突)
+  var cur = obj;
+  for (var i = 0; i < path.length - 1; i++) {
+    var seg = path[i];
+    if (cur[seg] == null) cur[seg] = {};
+    else if (typeof cur[seg] !== 'object' || cur[seg].$value !== undefined) return false;
+    cur = cur[seg];
+  }
+  cur[path[path.length - 1]] = value; return true;
+}
+function exportReverseCss(data) { // :root { --color-brand-primary: #...; --radius-md: 8px; }
+  var lines = [':root {'];
+  Object.keys(data.colorTokens).forEach(function (k) { var t = data.colorTokens[k]; lines.push('  --' + t.figmaName.replace(/\//g, '-') + ': ' + rexColorValue(t) + ';'); });
+  Object.keys(data.dimTokens).forEach(function (k) { var t = data.dimTokens[k]; lines.push('  --' + t.figmaName.replace(/\//g, '-') + ': ' + rexDimValue(t) + ';'); });
+  lines.push('}');
+  return lines.join('\n');
+}
+function exportReverseTailwind(data) { // tailwind.config.js: theme.extend.{colors,borderRadius,spacing,fontSize}
+  var colors = {}, borderRadius = {}, spacing = {}, fontSize = {};
+  Object.keys(data.colorTokens).forEach(function (k) { var t = data.colorTokens[k], segs = t.figmaName.split('/'); if (segs[0] === 'color') rexSetDeep(colors, segs.slice(1), rexColorValue(t)); });
+  Object.keys(data.dimTokens).forEach(function (k) {
+    var t = data.dimTokens[k], segs = t.figmaName.split('/'), v = rexDimValue(t);
+    if (segs[0] === 'radius') borderRadius[segs.slice(1).join('-')] = v;
+    else if (segs[0] === 'space') spacing[segs.slice(1).join('-')] = v;
+    else if (segs[0] === 'font' && segs[1] === 'size') fontSize[segs.slice(2).join('-')] = v;
+  });
+  var extend = { colors: colors };
+  if (Object.keys(borderRadius).length) extend.borderRadius = borderRadius;
+  if (Object.keys(spacing).length) extend.spacing = spacing;
+  if (Object.keys(fontSize).length) extend.fontSize = fontSize;
+  return "/** @type {import('tailwindcss').Config} */\nmodule.exports = " + JSON.stringify({ theme: { extend: extend } }, null, 2) + '\n';
+}
+function exportReverseW3C(data) { // W3C Design Tokens：嵌套 + $type/$value
+  var root = {};
+  Object.keys(data.colorTokens).forEach(function (k) { var t = data.colorTokens[k]; rexSetDeep(root, t.figmaName.split('/'), { $type: 'color', $value: rexColorValue(t) }); });
+  Object.keys(data.dimTokens).forEach(function (k) { var t = data.dimTokens[k]; rexSetDeep(root, t.figmaName.split('/'), { $type: 'dimension', $value: rexDimValue(t) }); });
+  return JSON.stringify(root, null, 2);
+}
+function exportReverse(data, format) {
+  return format === 'css' ? exportReverseCss(data) : format === 'tailwind' ? exportReverseTailwind(data) : format === 'w3c' ? exportReverseW3C(data) : null;
+}
 // === REBUILD-CORE-END ===
 
 // 采集（需 Figma API）：递归遍历选中节点，抽取硬编码样式 → plain data
@@ -2605,6 +2657,13 @@ figma.ui.onmessage = async (msg) => {
         });
       }
       figma.ui.postMessage({ type: 'result', message: '已换主色：主色阶 ' + changed + ' 档 + 同色相品牌色 ' + extra + ' 个（功能色 success/warning/danger/info 保持不变）' });
+    }
+    else if (msg.type === 'reverse-export') {
+      // 反推 token 导出为代码格式（CSS 变量 / Tailwind / W3C Tokens），直接给开发用。需先跑 ② 有 lastRebuildPlan。
+      if (!lastRebuildPlan) { figma.ui.postMessage({ type: 'error', message: '请先跑 ② 整理出 token，再导出代码' }); return; }
+      var exCode = exportReverse(rebuildToData(lastRebuildPlan), msg.format);
+      if (exCode == null) { figma.ui.postMessage({ type: 'error', message: '未知导出格式：' + msg.format }); return; }
+      figma.ui.postMessage({ type: 'reverse-export-result', format: msg.format, code: exCode });
     }
   } catch (err) {
     try { console.error('[plugin]', err); } catch (e) {} // 完整堆栈进控制台
