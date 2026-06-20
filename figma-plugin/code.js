@@ -1047,8 +1047,9 @@ async function generatePreview(data) {
       swatch.cornerRadius = 6;
       var swatchHex = IS_LIGHT ? row.light : row.dark;
       var swatchRgb = hexToFigmaRgb(swatchHex || row.light);
+      var rowAlpha = (row.alpha != null && row.alpha < 1) ? row.alpha : 1; // 半透明 token：色块按真实透明度渲染、色值附带百分比
       if (swatchRgb) {
-        swatch.fills = [{ type: 'SOLID', color: swatchRgb }];
+        swatch.fills = [{ type: 'SOLID', color: swatchRgb, opacity: rowAlpha }];
         // Bind variable if available
         var v = allVars[row.varName];
         if (v) {
@@ -1063,10 +1064,10 @@ async function generatePreview(data) {
 
       // Variable name — vertically centered in 52px row (52-11)/2 ≈ 18
       addText(rowFrame, 44, 18, row.name, 11, 'Regular', TEXT_BRIGHT);
-      // Light value
-      addText(rowFrame, 500, 18, row.light || '-', 11, 'Regular', TEXT_DIM);
-      // Dark value
-      addText(rowFrame, 660, 18, row.dark || '-', 11, 'Regular', TEXT_DIM);
+      // Light / Dark value（半透明 token 附带透明度百分比，区分「同色不同透明度」，不再看着像重复）
+      var pctSuffix = (row.alpha != null && row.alpha < 1) ? ('  ' + (Math.round(row.alpha * 10000) / 100) + '%') : '';
+      addText(rowFrame, 500, 18, (row.light || '-') + pctSuffix, 11, 'Regular', TEXT_DIM);
+      addText(rowFrame, 660, 18, (row.dark || '-') + pctSuffix, 11, 'Regular', TEXT_DIM);
       // Usage
       addText(rowFrame, 820, 18, row.usage || '', 11, 'Regular', TEXT_DIM);
 
@@ -1104,7 +1105,7 @@ async function generatePreview(data) {
     var rows = [];
     for (var ti = 0; ti < tokens.length; ti++) {
       var tEntry = tokens[ti];
-      rows.push({ name: tEntry[0], light: tEntry[1].light, dark: tEntry[1].dark, usage: tEntry[1].usage, varName: tEntry[1].figmaName });
+      rows.push({ name: tEntry[0], light: tEntry[1].light, dark: tEntry[1].dark, usage: tEntry[1].usage, varName: tEntry[1].figmaName, alpha: tEntry[1].alpha });
     }
 
     Y = await buildCategoryCard(frame, Y, group.title, group.subtitle, rows);
