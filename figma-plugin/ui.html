@@ -121,12 +121,9 @@
 
   <div class="reverse-section">
     <div class="reverse-title">反推设计规范 <span class="reverse-badge">实验 · 2.0</span></div>
-    <p class="subtitle" style="margin-top:4px; margin-bottom:10px;">选中画板/图层，按 ①→④ 走一遍：从现有设计反推出 token 并绑定（全程不改原设计）。</p>
-    <button class="btn btn-outline" id="auditBtn" style="margin-top:0;">① 扫描选中内容 · 生成审计</button>
-    <div class="step-desc">只读扫描：统计选中内容用到的颜色 / 字号 / 圆角 / 间距 / 阴影，给一份审计报告。</div>
+    <button class="btn btn-outline" id="auditBtn" style="margin-top:8px;">① 扫描选中内容 · 生成审计</button>
     <div class="audit-result" id="auditResult"></div>
     <button class="btn btn-outline" id="rebuildBtn" style="margin-top:8px;">② 整理出设计 token（保真）</button>
-    <div class="step-desc">把杂乱样式聚成干净的两层 token（基础色 + 语义色）草案，下面 ③④ 据此生成。</div>
     <div style="margin-top:10px; display:flex; align-items:center; gap:8px;">
       <span class="subtitle" style="margin:0;">预览/绑定主题</span>
       <span class="seg-group"><span class="seg-btn seg-on" id="themeAuto" data-theme="auto">自动</span><span class="seg-btn" id="themeLight" data-theme="light">浅色</span><span class="seg-btn" id="themeDark" data-theme="dark">深色</span></span>
@@ -134,13 +131,12 @@
     <div class="audit-result" id="rebuildResult"></div>
 
     <div style="margin-top:14px; padding-top:12px; border-top:1px solid rgba(255,255,255,0.08);">
-      <div class="reverse-title" style="font-size:12px;">🎨 一键换主色 <span class="subtitle" style="margin:0 0 0 6px;">（独立功能，跑过 ④ 后随时可换）</span></div>
+      <div class="reverse-title" style="font-size:12px;">🎨 一键换主色</div>
       <div style="margin-top:8px; display:flex; gap:6px; align-items:center;">
         <input type="color" id="recolorPicker" value="#3B82F6" style="width:34px; height:32px; padding:0; border:1px solid #d0d0d0; border-radius:6px; background:#fff; cursor:pointer; flex:0 0 auto;" />
         <input type="text" id="recolorHex" placeholder="#3B82F6" maxlength="7" style="flex:1; min-width:0; padding:7px 10px; border:1px solid #d0d0d0; border-radius:6px; font:12px 'SF Mono',monospace; color:#444;" />
         <button class="btn btn-outline" id="recolorBtn" style="margin:0; width:auto; flex:0 0 auto; padding:7px 14px;">换主色</button>
       </div>
-      <div class="step-desc">输入新主色 → 按 OKLCH 重算 palette/primary/*；绑了品牌色的图层全部跟着换。无需重跑 ①–④，可反复换。</div>
     </div>
   </div>
 
@@ -511,10 +507,7 @@
         }).join('') + '</div>');
       }
       h += '<button class="btn btn-primary" id="genReversePreviewBtn" style="margin-top:12px;">③ 生成规范预览页</button>';
-      h += '<div class="step-desc">新建一个与网页端同款的规范预览框架（不改原设计；可反复生成，只留最新一份）。</div>';
       h += '<button class="btn btn-outline" id="reverseBindBtn" style="margin-top:8px;">④ 复制副本并绑定变量（含建库）</button>';
-      h += '<div class="step-desc">复制选中画板到新页面 → 建好两层变量库 → 把副本图层绑上变量（原设计零改动；只留最新副本）。换主色见下方独立区。</div>';
-      h += '<div class="scan-note" style="margin-top:4px;">④ 用你的精确原值（颜色/字号零变化）；复制到新页面再绑，原设计不动</div>';
       h += '<button class="btn btn-outline" id="copyRebuildBtn" style="margin-top:8px;">复制重建 JSON</button>';
       return h;
     }
