@@ -1843,11 +1843,19 @@ function rebuildToData(plan) {
   function addD(key, value, extra) { var o = { figmaName: fn(key), tier: 'primitive', value: value, type: 'dimension', usage: '' }; if (extra) for (var k in extra) o[k] = extra[k]; dimTokens[key] = o; }
   var C = plan.colors, ctx = plan.context || { text: [], bg: [], border: [] };
 
-  // 主色阶按「明度浅→深」排序，下标即明度档位(0=最浅、N-1=最深)——这样品牌阶名 50-900 与明度严格对齐、换肤也好对齐。
-  var primSorted = C.primary.slice().sort(function (a, b) { return auditHexToLab(b.hex).L - auditHexToLab(a.hex).L; });
+  // ① 清「发灰」主色：中段明度若饱和度太低，其实是偏灰的中性色（被色相归进主色族），清出去归到 gray，
+  // 否则插在鲜艳主色中间让色阶看着乱。亮/暗端天然低饱和→豁免（保住浅紫淡彩、深色品牌阶）。
+  function rbMuddyBrand(hex) { var lab = auditHexToLab(hex); var minC = 30 * (1 - Math.abs(lab.L - 50) / 50); return auditChroma(hex) < minC; }
+  var primVivid = [], primMuddy = [];
+  C.primary.forEach(function (t) { (rbMuddyBrand(t.hex) ? primMuddy : primVivid).push(t); });
+  if (!primVivid.length) { primVivid = C.primary.slice(); primMuddy = []; } // 兜底：全被判灰则不清，保留原主色
+  function rbByLabLDesc(a, b) { return auditHexToLab(b.hex).L - auditHexToLab(a.hex).L; }
+  // 主色阶按「明度浅→深」排序，下标即明度档位(0=最浅、N-1=最深)——品牌阶名与明度严格对齐、换肤也好对齐。
+  var primSorted = primVivid.slice().sort(rbByLabLDesc);
+  var grayPool = C.neutral.concat(primMuddy).slice().sort(rbByLabLDesc); // 清出的发灰主色并入 gray，按明度排
   // 基础色 primitives：全部真实检测色（generatePreview 用 primary 大色块 + gray + 七色族）
   primSorted.forEach(function (t, i) { addC('color.palette.primary.' + i, t.hex, 'primitive'); });
-  C.neutral.forEach(function (t, i) { addC('color.palette.gray.' + i, t.hex, 'primitive'); });
+  grayPool.forEach(function (t, i) { addC('color.palette.gray.' + i, t.hex, 'primitive'); });
   var famN = {};
   function toFam(hex) { var f = rebuildHueFamily(rebuildHueDeg(hex)); famN[f] = famN[f] || 0; addC('color.palette.' + f + '.' + famN[f], hex, 'primitive'); famN[f]++; }
   Object.keys(C.semantic).forEach(function (k) { toFam(C.semantic[k].hex); });
@@ -1872,18 +1880,33 @@ function rebuildToData(plan) {
 
   // 语义色 semantic：角色名 + 真实颜色
   // 品牌色：每个主色阶都给一个语义角色，避免多余主色阶绑回基础色
-  if (C.primary.length) {
-    var pr = C.primary.slice().sort(function (a, b) { return (b.count * auditChroma(b.hex)) - (a.count * auditChroma(a.hex)); })[0];
-    // 品牌阶按明度浅→深用标准阶名 50-900；最鲜艳那档(主色)只命名为 primary、占住自己的明度档位、不再额外给数字阶(去重复)。
-    var STD = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900];
-    var nP = primSorted.length, usedStep = {};
+  if (primSorted.length) {
+    // ② 主色固定在「中心位」(primary≈500)：不论主色明度多少，比它浅的命名 50-400、比它深的命名 600-900。
+    // 这样每个稿、每次换肤，primary 都出现在同一位置（设计系统惯例），跨稿不再漂档。
+    var pr = primVivid.slice().sort(function (a, b) { return (b.count * auditChroma(b.hex)) - (a.count * auditChroma(a.hex)); })[0];
+    var nP = primSorted.length, R = 0;
+    for (var ri = 0; ri < nP; ri++) { if (primSorted[ri].hex === pr.hex) { R = ri; break; } }
+    var LOWER = [50, 100, 200, 300, 400], UPPER = [600, 700, 800, 900], usedL = {}, usedU = {};
+    function rbPickSlot(slots, ideal, used) {
+      if (!used[slots[ideal]]) return slots[ideal];
+      for (var off = 1; off < slots.length; off++) {
+        if (ideal + off < slots.length && !used[slots[ideal + off]]) return slots[ideal + off];
+        if (ideal - off >= 0 && !used[slots[ideal - off]]) return slots[ideal - off];
+      }
+      return null; // 档位用满：该色只留基础色、不给品牌语义（仍可被绑定命中）
+    }
     primSorted.forEach(function (t, r) {
-      var si = (nP <= 1) ? 5 : Math.round(r * (STD.length - 1) / (nP - 1));
-      while (usedStep[si] && si < STD.length - 1) si++;
-      while (usedStep[si] && si > 0) si--;
-      usedStep[si] = true;
-      if (t.hex === pr.hex) addC('color.brand.primary', t.hex, 'semantic', '主色 · 主操作');
-      else addC('color.brand.' + STD[si], t.hex, 'semantic', '品牌色 · ' + STD[si]);
+      if (r === R) { addC('color.brand.primary', t.hex, 'semantic', '主色 · 主操作'); return; }
+      var name = null;
+      if (r < R) { // 比主色浅 → 50-400（最浅=50、紧邻主色=400）
+        var idealL = (R <= 1) ? (LOWER.length - 1) : Math.round(r * (LOWER.length - 1) / (R - 1));
+        name = rbPickSlot(LOWER, idealL, usedL); if (name != null) usedL[name] = true;
+      } else { // 比主色深 → 600-900（紧邻主色=600、最深=900）
+        var d = r - R - 1, D = nP - R - 1;
+        var idealU = (D <= 1) ? 0 : Math.round(d * (UPPER.length - 1) / (D - 1));
+        name = rbPickSlot(UPPER, idealU, usedU); if (name != null) usedU[name] = true;
+      }
+      if (name != null) addC('color.brand.' + name, t.hex, 'semantic', '品牌色 · ' + name);
     });
   }
   var fname = { success: 'success', warning: 'warning', error: 'danger', info: 'info' };

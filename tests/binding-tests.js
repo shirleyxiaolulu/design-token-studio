@@ -377,7 +377,7 @@ test('换主色：主色锚在原主色档位(与原稿对齐、不漂移)、该
   for (let i = 1; i < ls.length; i++) assert(ls[i] <= ls[i - 1] + 1, '换肤后主色阶应明度浅→深单调, L=' + ls.map(function (x) { return x.toFixed(0); }).join(','));
 });
 
-test('品牌语义色按标准阶 50-900 命名、明度浅→深、阶号递增', async () => {
+test('品牌语义色：primary 固定在中心、浅阶<500 深阶>500、阶号随明度递增、无重复', async () => {
   fresh();
   const plan = {
     theme: 'dark', detectedTheme: 'dark',
@@ -391,14 +391,38 @@ test('品牌语义色按标准阶 50-900 命名、明度浅→深、阶号递增
   const steps = stepKeys.map(function (k) { return parseInt(k.replace('color.brand.', ''), 10); });
   for (let i = 1; i < Ls.length; i++) assert(Ls[i] <= Ls[i - 1] + 0.5, '阶应按明度浅→深, L=' + Ls.map(function (x) { return x.toFixed(0); }).join(','));
   for (let i = 1; i < steps.length; i++) assert(steps[i] > steps[i - 1], '阶号应随明度递增 50→900, got ' + steps.join(','));
-  steps.forEach(function (s) { assert([50, 100, 200, 300, 400, 500, 600, 700, 800, 900].indexOf(s) >= 0, '阶号应是标准阶, got ' + s); });
+  steps.forEach(function (s) { assert([50, 100, 200, 300, 400, 600, 700, 800, 900].indexOf(s) >= 0, '阶号应是标准阶(非500), got ' + s); });
   assert(data.colorTokens['color.brand.primary'], '应有 brand/primary 主色别名');
-  // primary 占住自己的明度档位、不再额外给数字阶——主色色值不应同时出现在某个数字阶(去重复)
+  // primary 占住中心、不再额外给数字阶——主色色值不应同时出现在某个数字阶(去重复)
   const primHex = data.colorTokens['color.brand.primary'].light;
   stepKeys.forEach(function (k) { assert(auditDeltaE(data.colorTokens[k].light, primHex) > 0.5, '主色不应再重复成数字阶 ' + k + '(' + data.colorTokens[k].light + ')'); });
-  // primary 的明度应落在数字阶序列中间(占住其档位)，不在最浅/最深端
+  // ② 中心锚定：阶号<500 都比 primary 浅、>500 都比 primary 深
   const pL = auditHexToLab(primHex).L;
-  assert(pL < Math.max.apply(null, Ls) && pL > Math.min.apply(null, Ls), 'primary 明度应落在阶序列内、占住中间档位');
+  stepKeys.forEach(function (k) {
+    const s = parseInt(k.replace('color.brand.', ''), 10), L = auditHexToLab(data.colorTokens[k].light).L;
+    if (s < 500) assert(L > pL - 0.5, '阶号<500(' + s + ') 应比 primary 浅');
+    if (s > 500) assert(L < pL + 0.5, '阶号>500(' + s + ') 应比 primary 深');
+  });
+});
+
+test('① 发灰主色清出 primary：中段低饱和归 gray、不进 palette/primary；亮/暗端淡彩保留', async () => {
+  fresh();
+  const plan = {
+    theme: 'light', detectedTheme: 'light',
+    colors: { primary: [
+      { hex: '#9514FF', count: 8 }, // 鲜艳主色 — 留
+      { hex: '#C9A0FF', count: 3 }, // 浅紫淡彩(亮端) — 留
+      { hex: '#695B77', count: 2 }, // 中段发灰(C=18) — 清出
+    ], neutral: [{ hex: '#888888', count: 5 }], semantic: {}, accents: [] },
+    context: { bg: [], text: [], border: [] }, type: { roles: [] }, radius: { scale: [] }, spacing: { scale: [] }, shadow: { scale: [] },
+  };
+  const data = rebuildToData(plan);
+  const prim = Object.keys(data.colorTokens).filter(k => /^color\.palette\.primary\./.test(k)).map(k => data.colorTokens[k].light);
+  const gray = Object.keys(data.colorTokens).filter(k => /^color\.palette\.gray\./.test(k)).map(k => data.colorTokens[k].light);
+  assert(!prim.some(h => auditDeltaE(h, '#695B77') < 2), '发灰的 695B77 不应在 primary 族');
+  assert(gray.some(h => auditDeltaE(h, '#695B77') < 2), '发灰的 695B77 应归到 gray 族(仍是基础色、可绑定)');
+  assert(prim.some(h => auditDeltaE(h, '#9514FF') < 2), '鲜艳主色应留在 primary');
+  assert(prim.some(h => auditDeltaE(h, '#C9A0FF') < 2), '浅紫淡彩应留在 primary(亮端豁免)');
 });
 
 // --- run -------------------------------------------------------------------
