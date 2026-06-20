@@ -373,19 +373,22 @@ test('换主色：brand/primary 跟到输入主色实际落的那一档', async 
   assert(auditDeltaE(hx(tv), '#FF24D7') < 3, 'brand/primary 应指向≈输入主色的那档, got ' + hx(tv) + ' (' + target.name + ')');
 });
 
-test('品牌语义色按「明度浅→深」排序，primary 不强排第一', async () => {
+test('品牌语义色按标准阶 50-900 命名、明度浅→深、阶号递增', async () => {
   fresh();
   const plan = {
     theme: 'dark', detectedTheme: 'dark',
-    colors: { primary: [{ hex: '#33A033', step: 500, count: 5 }, { hex: '#A0E0A0', step: 200, count: 2 }, { hex: '#0A3D0A', step: 900, count: 1 }, { hex: '#66CC66', step: 300, count: 1 }], neutral: [], semantic: {}, accents: [] },
+    colors: { primary: [{ hex: '#33A033', count: 5 }, { hex: '#A0E0A0', count: 2 }, { hex: '#0A3D0A', count: 1 }, { hex: '#66CC66', count: 1 }], neutral: [], semantic: {}, accents: [] },
     context: { bg: [], text: [], border: [] }, type: { roles: [] }, radius: { scale: [] }, spacing: { scale: [] }, shadow: { scale: [] },
   };
   const data = rebuildToData(plan);
-  const brandKeys = Object.keys(data.colorTokens).filter(function (k) { return k.indexOf('color.brand.') === 0; });
-  assert(brandKeys.length >= 3, '应有多个品牌档');
-  const Ls = brandKeys.map(function (k) { return auditHexToLab(data.colorTokens[k].light).L; });
-  for (let i = 1; i < Ls.length; i++) assert(Ls[i] <= Ls[i - 1] + 0.5, '品牌色应按明度浅→深排列, got ' + brandKeys.join(',') + ' L=' + Ls.map(function (x) { return x.toFixed(0); }).join(','));
-  assert(brandKeys[0] !== 'color.brand.primary' || Ls[0] >= Ls[Ls.length - 1], 'primary 不强排第一(按明度落位)');
+  const stepKeys = Object.keys(data.colorTokens).filter(function (k) { return /^color\.brand\.\d+$/.test(k); });
+  assert(stepKeys.length >= 3, '应有多个数字阶');
+  const Ls = stepKeys.map(function (k) { return auditHexToLab(data.colorTokens[k].light).L; });
+  const steps = stepKeys.map(function (k) { return parseInt(k.replace('color.brand.', ''), 10); });
+  for (let i = 1; i < Ls.length; i++) assert(Ls[i] <= Ls[i - 1] + 0.5, '阶应按明度浅→深, L=' + Ls.map(function (x) { return x.toFixed(0); }).join(','));
+  for (let i = 1; i < steps.length; i++) assert(steps[i] > steps[i - 1], '阶号应随明度递增 50→900, got ' + steps.join(','));
+  steps.forEach(function (s) { assert([50, 100, 200, 300, 400, 500, 600, 700, 800, 900].indexOf(s) >= 0, '阶号应是标准阶, got ' + s); });
+  assert(data.colorTokens['color.brand.primary'], '应有 brand/primary 主色别名');
 });
 
 // --- run -------------------------------------------------------------------

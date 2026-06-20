@@ -1872,11 +1872,19 @@ function rebuildToData(plan) {
   // 品牌色：每个主色阶都给一个语义角色，避免多余主色阶绑回基础色
   if (C.primary.length) {
     var pr = C.primary.slice().sort(function (a, b) { return (b.count * auditChroma(b.hex)) - (a.count * auditChroma(a.hex)); })[0];
-    // 收集所有品牌档后按「明度：浅→深」排序再创建（变量按创建顺序显示）。primary 也按自身明度落位，不强排第一。
-    var brandList = [{ key: 'color.brand.primary', hex: pr.hex, usage: '主色 · 主操作' }];
-    C.primary.forEach(function (t) { if (t.hex !== pr.hex) brandList.push({ key: 'color.brand.' + t.step, hex: t.hex, usage: '品牌色 · ' + t.step }); });
-    brandList.sort(function (a, b) { return auditHexToLab(b.hex).L - auditHexToLab(a.hex).L; });
-    brandList.forEach(function (e) { addC(e.key, e.hex, 'semantic', e.usage); });
+    // 按明度浅→深排序，标准阶名 50-900 按「明度档位」重新分配（不沿用旧档号——否则换肤后阶名与明度错位、用错色）。
+    // 阶号随明度递增：最浅=50、最深=900。primary 另作主色别名，放最后、不强排第一。
+    var STD = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900];
+    var sortedP = C.primary.slice().sort(function (a, b) { return auditHexToLab(b.hex).L - auditHexToLab(a.hex).L; });
+    var nP = sortedP.length, usedStep = {};
+    sortedP.forEach(function (t, r) {
+      var si = (nP <= 1) ? 5 : Math.round(r * (STD.length - 1) / (nP - 1));
+      while (usedStep[STD[si]] && si < STD.length - 1) si++;
+      while (usedStep[STD[si]] && si > 0) si--;
+      usedStep[STD[si]] = true;
+      addC('color.brand.' + STD[si], t.hex, 'semantic', '品牌色 · ' + STD[si]);
+    });
+    addC('color.brand.primary', pr.hex, 'semantic', '主色 · 主操作');
   }
   var fname = { success: 'success', warning: 'warning', error: 'danger', info: 'info' };
   var fusage = { success: '成功', warning: '警告', error: '危险 / 错误', info: '信息' };
