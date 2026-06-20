@@ -96,7 +96,9 @@ function setup() {
 
   function rawValue(v, modeName) {
     var col = COLS.find(function (c) { return c.id === v.variableCollectionId; });
-    var mode = col && (modeName ? col.modes.find(function (m) { return m.name === modeName; }) : col.modes[0]);
+    if (!col) return undefined;
+    // 真机：请求的模式在该变量集不存在(如单模式的 Primitives)时，解析到它的默认(首个)模式值
+    var mode = (modeName ? col.modes.find(function (m) { return m.name === modeName; }) : null) || col.modes[0];
     return mode ? v.valuesByMode[mode.modeId] : undefined;
   }
   function varValue(name, modeName) {
