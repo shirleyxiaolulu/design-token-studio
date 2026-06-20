@@ -343,6 +343,17 @@ test('成片半透明蒙层不撑大背景色：bg 语义≤4、不含白色、�
   assert(Object.keys(data.colorTokens).some(function (k) { return k.indexOf('color.palette.') === 0 && /-alpha/.test(k) && data.colorTokens[k].light.toUpperCase() === '#FFFFFF'; }), '白色蒙层应进 palette *-alpha');
 });
 
+test('悬空/外部样式引用：图层剥离并提升成本地样式，不保留指向库里没有的样式', async () => {
+  fresh(); const { N, solid, grad } = M;
+  const tags = []; for (let i = 0; i < 8; i++) tags.push(N({ type: 'FRAME', width: 120, height: 40, y: i * 50, characters: '', fills: [solid('#FF6B00')], strokes: [] }));
+  const btn = N({ type: 'FRAME', width: 300, height: 80, y: 500, characters: '', fills: [grad('#FFA559', '#FF6B00')], fillStyleId: 'DANGLING-STYLE-ID', strokes: [] }); // 指向不存在的本地样式
+  const page = N({ type: 'FRAME', width: 1440, height: 700, characters: '', fills: [solid('#1A1A1A')], strokes: [], children: tags.concat([btn]) });
+  const root = await bind(page);
+  const newStyle = M.PAINT_STYLES.find(function (s) { return s.name.indexOf('反推渐变/') === 0; });
+  assert(newStyle, '悬空样式的图层应被提升成本地共享样式');
+  eq(root.children[8].fillStyleId, newStyle.id, '图层应改引用本地新样式(不再是悬空 id)');
+});
+
 // --- run -------------------------------------------------------------------
 (async function () {
   for (const t of tests) {

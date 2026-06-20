@@ -2268,8 +2268,10 @@ async function bindReverseVariables(plan) {
     });
     return { next: next, changed: changed };
   }
-  // 用了 paint 样式的图层不在此绑（留给样式统一绑，避免脱离样式 + 让所有用该样式的图层都跟随换色）
-  function usesStyle(node, prop) { var sid = node[prop === 'strokes' ? 'strokeStyleId' : 'fillStyleId']; return typeof sid === 'string' && sid.length > 0; }
+  // 用了「本地」paint 样式的图层不在此绑（留给样式统一绑）。注意只认本地样式——
+  // 指向悬空/外部样式(库里没有，如 HTML→Figma 转换残留)的图层照旧剥离 + 本地绑/提升，避免副本留下指向不存在样式的引用。
+  var localStyleIds = {};
+  function usesStyle(node, prop) { var sid = node[prop === 'strokes' ? 'strokeStyleId' : 'fillStyleId']; return typeof sid === 'string' && sid.length > 0 && !!localStyleIds[sid]; }
   function bindPaints(node, prop, counter, role) {
     if (usesStyle(node, prop)) return;
     var r = mapPaints(node[prop], role);
@@ -2340,6 +2342,7 @@ async function bindReverseVariables(plan) {
     if (node.type === 'TEXT') textNodes.push(node); // 文本：留到后面（加载字体后）绑定填充
     if ('children' in node) { for (var i = 0; i < node.children.length; i++) visit(node.children[i]); }
   }
+  try { (await figma.getLocalPaintStylesAsync()).forEach(function (s) { localStyleIds[s.id] = true; }); } catch (e) {} // 本地样式 id 集合，供 usesStyle 判定（悬空/外部样式不算）
   for (var c2 = 0; c2 < clones.length; c2++) visit(clones[c2]);
   // 文本填充：先加载字体再绑（否则不刷新渲染）；多色文本按字符分段绑。颜色绑 text 角色、保留不透明度。
   for (var mt = 0; mt < textNodes.length; mt++) {
