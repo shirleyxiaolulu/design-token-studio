@@ -1855,6 +1855,15 @@ function rebuildToData(plan) {
     while (colorTokens[key] && colorTokens[key].light !== m.hex) { key = base + '_' + n; n++; }
     addC(key, m.hex, 'primitive', '半透明 ' + nn + '%', op);
   });
+  // 不透明「彩色」上下文色：保证每个都进基础色(palette)——否则被语义层 slice 切掉后会绑到最近的灰、明显错色(如酒红 #4C1A31→gray)。
+  // 灰不处理(灰阶已全)；放 palette 段，语义层(bg/border)仍只取前 N，预览不被撑大。
+  var primHexes = Object.keys(colorTokens).filter(function (k) { return k.indexOf('color.palette.') === 0; }).map(function (k) { return colorTokens[k].light; });
+  rebuildDedupeColors([].concat(ctx.bg || [], ctx.text || [], ctx.border || []), 1.0).forEach(function (m) {
+    if (rebuildOpacity(m.opacity) < 1 || auditIsNeutral(m.hex, 10)) return;
+    if (primHexes.some(function (h) { return auditDeltaE(h, m.hex) < 1.5; })) return; // 已有近似基础色
+    var f = rebuildHueFamily(rebuildHueDeg(m.hex)); famN[f] = famN[f] || 0;
+    addC('color.palette.' + f + '.' + famN[f], m.hex, 'primitive'); famN[f]++; primHexes.push(m.hex);
+  });
 
   // 语义色 semantic：角色名 + 真实颜色
   // 品牌色：每个主色阶都给一个语义角色，避免多余主色阶绑回基础色
@@ -1871,11 +1880,10 @@ function rebuildToData(plan) {
   // 绑定时必须有同 alpha 的变量可命中，被 slice 切掉就会让图层绑不上变量（只剩裸色值）。
   function ctxKept(list, n) {
     var dd = rebuildDedupeColors(list, 1.0);
-    // 不透明的「中性色(灰)」取前 N 个拿角色名（暗灰彼此相近、可合并）；半透明色 + 不透明的「彩色」全部保留——
-    // 彩色背景(如品牌色 banner #4C1A31)是独特色，被切掉就会绑到最近的灰、明显错色。
-    var neutralOpaque = dd.filter(function (m) { return rebuildOpacity(m.opacity) >= 1 && auditIsNeutral(m.hex, 10); }).slice(0, n);
-    var keepRest = dd.filter(function (m) { return rebuildOpacity(m.opacity) < 1 || !auditIsNeutral(m.hex, 10); });
-    return neutralOpaque.concat(keepRest);
+    // 语义层(预览要干净)：不透明色只取前 N 个拿角色名；半透明色全部保留（真实背景/描边、绑定需同色变量）。
+    // 彩色不在这里全留——它们改为进「基础色(palette)」层（见下方 ensureChromaticPrim），绑定靠基础色精确命中、不污染背景/边框语义栏。
+    return dd.filter(function (m) { return rebuildOpacity(m.opacity) >= 1; }).slice(0, n)
+      .concat(dd.filter(function (m) { return rebuildOpacity(m.opacity) < 1; }));
   }
   var bgN = ['page', 'surface', 'elevated', 'overlay'];
   ctxKept(ctx.bg, 4).forEach(function (m, i) { addC('color.bg.' + (bgN[i] || ('s' + i)), m.hex, 'semantic', '背景 · 实际大面积填充', m.opacity); });

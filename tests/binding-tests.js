@@ -292,18 +292,19 @@ test('颜色变量作用域放开为 ALL_SCOPES（渐变色标选择器里可挑
   colorVars.forEach(function (v) { assert(v.scopes && v.scopes.indexOf('ALL_SCOPES') >= 0, v.name + ' 作用域应为 ALL_SCOPES, got ' + JSON.stringify(v.scopes)); });
 });
 
-test('彩色背景不被切掉：暗酒红 banner 绑到自己的色、不被吸成灰', async () => {
+test('彩色背景进基础色、不撑大语义层：被切出 bg 的酒红仍绑自己的色，bg 语义≤4', async () => {
   fresh(); const { N, solid } = M;
-  const grays = ['#1A1A1A', '#222222', '#262626', '#2A2A2A', '#303030', '#0E0E0E'].map(function (h, i) { return N({ type: 'FRAME', width: 1400, height: 200, y: i * 210, characters: '', fills: [solid(h)], strokes: [] }); });
-  const banner = N({ type: 'FRAME', width: 1200, height: 300, y: 1300, characters: '', fills: [solid('#4C1A31')], strokes: [], cornerRadius: 16 });
-  const page = N({ type: 'FRAME', width: 1440, height: 1800, characters: '', fills: [solid('#1A1A1A')], strokes: [], children: grays.concat([banner]) });
+  const grays = ['#1A1A1A', '#222222', '#262626', '#2A2A2A', '#303030'].map(function (h, i) { return N({ type: 'FRAME', width: 1400, height: 400, y: i * 410, characters: '', fills: [solid(h)], strokes: [] }); });
+  const banner = N({ type: 'FRAME', width: 300, height: 120, y: 2100, characters: '', fills: [solid('#4C1A31')], strokes: [], cornerRadius: 16 }); // 小面积 → 被切出 bg 语义层
+  const page = N({ type: 'FRAME', width: 1440, height: 2400, characters: '', fills: [solid('#0A0A0A')], strokes: [], children: grays.concat([banner]) });
+  const data = rebuildToData(buildRebuildPlan(harvestSelection([page], 20000)));
+  const bgCount = Object.keys(data.colorTokens).filter(function (k) { return k.indexOf('color.bg.') === 0; }).length;
+  assert(bgCount <= 4, 'bg 语义色应≤4(不膨胀), got ' + bgCount);
+  assert(Object.keys(data.colorTokens).some(function (k) { return k.indexOf('color.palette.') === 0 && auditDeltaE(data.colorTokens[k].light, '#4C1A31') < 2; }), '酒红应进基础色 palette');
   const root = await bind(page);
-  const v = ref(root.children[6].fills[0]);
-  assert(v, '酒红 banner 应绑到变量');
-  const val = M.varValue(v);
   function hx(c) { function h(x) { return ('0' + Math.round(x * 255).toString(16)).slice(-2); } return ('#' + h(c.r) + h(c.g) + h(c.b)).toUpperCase(); }
-  const dE = auditDeltaE(hx(val), '#4C1A31');
-  assert(dE < 3, 'banner 应绑到酒红色(ΔE<3)，实际 ' + hx(val) + ' ΔE ' + dE.toFixed(1));
+  const v = ref(root.children[5].fills[0]);
+  assert(v && auditDeltaE(hx(M.varValue(v)), '#4C1A31') < 3, '酒红 banner 应绑到自己的色(经基础色), got ' + (v && hx(M.varValue(v))));
 });
 
 test('极小不透明度(0.01%)不被舍成 0：触发背景模糊的填充保留 alpha', async () => {
