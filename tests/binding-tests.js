@@ -354,6 +354,25 @@ test('悬空/外部样式引用：图层剥离并提升成本地样式，不保�
   eq(root.children[8].fillStyleId, newStyle.id, '图层应改引用本地新样式(不再是悬空 id)');
 });
 
+test('换主色：brand/primary 跟到输入主色实际落的那一档', async () => {
+  fresh();
+  const prim = M.figma.variables.createVariableCollection('Primitives');
+  prim.renameMode(prim.modes[0].modeId, 'Light'); const pm = prim.modes[0].modeId;
+  function mkc(name, hex) { const v = M.figma.variables.createVariable(name, prim); const c = M.rgb(hex); v.setValueForMode(pm, { r: c.r, g: c.g, b: c.b, a: 1 }); return v; }
+  const pv = ['#FFE0B0', '#FFC080', '#FFA040', '#FF8000', '#FF6000', '#CC4000'].map(function (h, i) { return mkc('color/palette/primary/' + i, h); });
+  const tok = M.figma.variables.createVariableCollection('Tokens'); tok.renameMode(tok.modes[0].modeId, 'Light'); tok.addMode('Dark');
+  const bp = M.figma.variables.createVariable('color/brand/primary', tok);
+  bp.setValueForMode(tok.modes[0].modeId, M.figma.variables.createVariableAlias(pv[2])); // 初始别名到 primary/2
+  bp.setValueForMode(tok.modes[1].modeId, M.figma.variables.createVariableAlias(pv[2]));
+  await pluginOnMessage({ type: 'reverse-recolor', color: '#FF24D7' });
+  const alias = Object.values(bp.valuesByMode)[0];
+  assert(alias && alias.type === 'VARIABLE_ALIAS', 'brand/primary 应是别名');
+  const target = M.varById(alias.id);
+  function hx(c) { function h(x) { return ('0' + Math.round(x * 255).toString(16)).slice(-2); } return ('#' + h(c.r) + h(c.g) + h(c.b)).toUpperCase(); }
+  const tv = Object.values(target.valuesByMode)[0];
+  assert(auditDeltaE(hx(tv), '#FF24D7') < 3, 'brand/primary 应指向≈输入主色的那档, got ' + hx(tv) + ' (' + target.name + ')');
+});
+
 // --- run -------------------------------------------------------------------
 (async function () {
   for (const t of tests) {

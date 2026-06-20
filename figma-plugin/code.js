@@ -2536,6 +2536,13 @@ figma.ui.onmessage = async (msg) => {
       if (!newVals) { figma.ui.postMessage({ type: 'error', message: '换主色失败：颜色解析错误' }); return; }
       var changed = 0;
       primaryVars.forEach(function (v, i) { if (newVals[i]) { rcSetAll(v, newVals[i]); changed++; } });
+      // 把 color/brand/primary 重新指向「输入主色实际落在的那一档」——换主色后主色落在哪个 primary 档，brand/primary 就跟到哪档
+      var mainIdx = -1, mainBd = Infinity;
+      for (var mi = 0; mi < newVals.length; mi++) { if (!newVals[mi]) continue; var dM = auditDeltaE(figmaRgbToHex(newVals[mi]), newColor); if (dM < mainBd) { mainBd = dM; mainIdx = mi; } }
+      var brandPrim = allVars.find(function (v) { return v.name === 'color/brand/primary'; });
+      if (brandPrim && mainIdx >= 0 && primaryVars[mainIdx]) {
+        try { var bcol = rcColById[brandPrim.variableCollectionId], bms = (bcol && bcol.modes) ? bcol.modes : [], al = figma.variables.createVariableAlias(primaryVars[mainIdx]); for (var bm = 0; bm < bms.length; bm++) brandPrim.setValueForMode(bms[bm].modeId, al); } catch (e) {}
+      }
       // ② 其它「同老主色色相」的基础色（被聚类散到 red/orange 等族的品牌色）：旋到新主色色相、保各自明度/饱和
       var newHue = rcRgbToOklch(rcHexToRgb255(newColor)).H, extra = 0;
       if (oldBrandHue != null) {
