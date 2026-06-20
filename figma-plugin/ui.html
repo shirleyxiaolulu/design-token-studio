@@ -125,9 +125,9 @@
       <span class="subtitle" style="margin:0;">预览/绑定主题</span>
       <span class="seg-group"><span class="seg-btn seg-on" id="themeAuto" data-theme="auto">自动</span><span class="seg-btn" id="themeLight" data-theme="light">浅色</span><span class="seg-btn" id="themeDark" data-theme="dark">深色</span></span>
     </div>
-    <button class="btn btn-outline" id="auditBtn" style="margin-top:8px;" disabled>① 扫描选中内容 · 生成审计</button>
+    <button class="btn btn-outline" id="auditBtn" style="margin-top:8px;">① 扫描选中内容 · 生成审计</button>
     <div class="audit-result" id="auditResult"></div>
-    <button class="btn btn-outline" id="rebuildBtn" style="margin-top:8px;" disabled>② 整理出设计 token（保真）</button>
+    <button class="btn btn-outline" id="rebuildBtn" style="margin-top:8px;">② 整理出设计 token（保真）</button>
     <div class="audit-result" id="rebuildResult"></div>
 
     <div style="margin-top:14px; padding-top:12px; border-top:1px solid rgba(255,255,255,0.08);">
@@ -381,18 +381,14 @@
       });
       requestRecolorPreview(); // 进面板先试一次：已建库则直接出预览，未建库则显示「先跑④」提示
     })();
-    parent.postMessage({ pluginMessage: { type: 'ui-ready' } }, '*'); // 请插件回推初始选区状态，驱动 ①②④ 门控
 
     // 反推交互：异步时锁全部反推按钮（防双击重跑/重复建页），完成或出错再恢复
     var REVERSE_BTN_IDS = ['auditBtn', 'rebuildBtn', 'genReversePreviewBtn', 'reverseBindBtn', 'recolorBtn'];
     var currentReverseStep = null;
-    // 步骤门控状态：①②④ 需要画布选区；换主色需要已有主色变量(已建库)。状态变化时按门控刷新可点性。
-    var reverseState = { hasSelection: false, paletteExists: false };
+    // 门控：换主色需要已有主色变量(已建库)，由预览是否回有效色阶判定。①②④ 不门控——没选区时插件已有清晰报错。
+    var reverseState = { paletteExists: false };
     function gateBtn(id, ok, why) { var el = document.getElementById(id); if (!el) return; el.disabled = !ok; if (ok) el.removeAttribute('title'); else el.title = why; }
     function applyReverseGating() {
-      gateBtn('auditBtn', reverseState.hasSelection, '请先在画布选中要扫描的画板/图层');
-      gateBtn('rebuildBtn', reverseState.hasSelection, '请先在画布选中画板/图层');
-      gateBtn('reverseBindBtn', reverseState.hasSelection, '请先在画布选中要绑定的画板/图层');
       gateBtn('recolorBtn', reverseState.paletteExists, '先跑 ④ 复制副本并绑定变量，生成主色变量后再换主色');
     }
     function setReverseBusy(busy) { REVERSE_BTN_IDS.forEach(function (id) { var el = document.getElementById(id); if (el) el.disabled = busy; }); if (!busy) applyReverseGating(); }
@@ -432,9 +428,6 @@
         currentReverseStep = null;
       } else if (msg.type === 'reverse-recolor-preview-result') {
         renderRecolorPreview(msg);
-      } else if (msg.type === 'selection') {
-        reverseState.hasSelection = (msg.count > 0);
-        applyReverseGating();
       } else if (msg.type === 'reverse-export-result') {
         var rexOut = document.getElementById('rexOutput'), rexCp = document.getElementById('rexCopyBtn');
         var label = msg.format === 'w3c' ? 'W3C Tokens' : msg.format === 'css' ? 'CSS' : 'Tailwind';
