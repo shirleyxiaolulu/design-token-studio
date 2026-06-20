@@ -1843,8 +1843,10 @@ function rebuildToData(plan) {
   function addD(key, value, extra) { var o = { figmaName: fn(key), tier: 'primitive', value: value, type: 'dimension', usage: '' }; if (extra) for (var k in extra) o[k] = extra[k]; dimTokens[key] = o; }
   var C = plan.colors, ctx = plan.context || { text: [], bg: [], border: [] };
 
+  // 主色阶按「明度浅→深」排序，下标即明度档位(0=最浅、N-1=最深)——这样品牌阶名 50-900 与明度严格对齐、换肤也好对齐。
+  var primSorted = C.primary.slice().sort(function (a, b) { return auditHexToLab(b.hex).L - auditHexToLab(a.hex).L; });
   // 基础色 primitives：全部真实检测色（generatePreview 用 primary 大色块 + gray + 七色族）
-  C.primary.forEach(function (t, i) { addC('color.palette.primary.' + i, t.hex, 'primitive'); });
+  primSorted.forEach(function (t, i) { addC('color.palette.primary.' + i, t.hex, 'primitive'); });
   C.neutral.forEach(function (t, i) { addC('color.palette.gray.' + i, t.hex, 'primitive'); });
   var famN = {};
   function toFam(hex) { var f = rebuildHueFamily(rebuildHueDeg(hex)); famN[f] = famN[f] || 0; addC('color.palette.' + f + '.' + famN[f], hex, 'primitive'); famN[f]++; }
@@ -1872,19 +1874,17 @@ function rebuildToData(plan) {
   // 品牌色：每个主色阶都给一个语义角色，避免多余主色阶绑回基础色
   if (C.primary.length) {
     var pr = C.primary.slice().sort(function (a, b) { return (b.count * auditChroma(b.hex)) - (a.count * auditChroma(a.hex)); })[0];
-    // 按明度浅→深排序，标准阶名 50-900 按「明度档位」重新分配（不沿用旧档号——否则换肤后阶名与明度错位、用错色）。
-    // 阶号随明度递增：最浅=50、最深=900。primary 另作主色别名，放最后、不强排第一。
+    // 品牌阶按明度浅→深用标准阶名 50-900；最鲜艳那档(主色)只命名为 primary、占住自己的明度档位、不再额外给数字阶(去重复)。
     var STD = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900];
-    var sortedP = C.primary.slice().sort(function (a, b) { return auditHexToLab(b.hex).L - auditHexToLab(a.hex).L; });
-    var nP = sortedP.length, usedStep = {};
-    sortedP.forEach(function (t, r) {
+    var nP = primSorted.length, usedStep = {};
+    primSorted.forEach(function (t, r) {
       var si = (nP <= 1) ? 5 : Math.round(r * (STD.length - 1) / (nP - 1));
-      while (usedStep[STD[si]] && si < STD.length - 1) si++;
-      while (usedStep[STD[si]] && si > 0) si--;
-      usedStep[STD[si]] = true;
-      addC('color.brand.' + STD[si], t.hex, 'semantic', '品牌色 · ' + STD[si]);
+      while (usedStep[si] && si < STD.length - 1) si++;
+      while (usedStep[si] && si > 0) si--;
+      usedStep[si] = true;
+      if (t.hex === pr.hex) addC('color.brand.primary', t.hex, 'semantic', '主色 · 主操作');
+      else addC('color.brand.' + STD[si], t.hex, 'semantic', '品牌色 · ' + STD[si]);
     });
-    addC('color.brand.primary', pr.hex, 'semantic', '主色 · 主操作');
   }
   var fname = { success: 'success', warning: 'warning', error: 'danger', info: 'info' };
   var fusage = { success: '成功', warning: '警告', error: '危险 / 错误', info: '信息' };
@@ -2059,29 +2059,34 @@ function rcOklchToRgb01(L, C, H) { // 返回 0-1 的 {r,g,b}，超 sRGB 色域�
 var RC_OKLCH_L = [0.971, 0.936, 0.882, 0.808, 0.730, 0.648, 0.567, 0.482, 0.397, 0.318];
 var RC_OKLCH_C = [0.18, 0.34, 0.55, 0.75, 0.92, 1.00, 0.96, 0.86, 0.73, 0.60];
 // 以 anchorHex 为锚生成 n 档 OKLCH 色阶（沿 10 档 profile 均匀取样），返回 [{L, rgb01}]（亮→暗）。
-function rcBuildScaleN(anchorHex, n) {
+function rcInterp(arr, t) { var lo = Math.floor(t), hi = Math.min(arr.length - 1, lo + 1), f = t - lo; return arr[lo] + (arr[hi] - arr[lo]) * f; }
+// 生成 n 档色阶。anchorRank 指定输入色落在第几档(0=最浅)：profile 锚到该档，让该档明度=输入色明度；
+// 不传则锚在中段(原行为)。返回 [{L, rgb01}]，按明度浅→深。
+function rcBuildScaleN(anchorHex, n, anchorRank) {
   var rgb = rcHexToRgb255(anchorHex); if (!rgb || n < 1) return null;
-  var o = rcRgbToOklch(rgb), Cbase = o.C / RC_OKLCH_C[5], Loff = o.L - RC_OKLCH_L[5], out = [];
+  var o = rcRgbToOklch(rgb);
+  var aPos = (anchorRank == null || n <= 1) ? 5 : rcClamp(anchorRank * 9 / (n - 1), 0, 9); // 锚色在 0..9 profile 上的位置
+  var Cbase = o.C / rcInterp(RC_OKLCH_C, aPos), Loff = o.L - rcInterp(RC_OKLCH_L, aPos), out = [];
   for (var k = 0; k < n; k++) {
-    var t = (n === 1) ? 5 : (k * 9 / (n - 1)); // 0..9 上均匀取样
-    var lo = Math.floor(t), hi = Math.min(9, lo + 1), f = t - lo;
-    var L0 = RC_OKLCH_L[lo] + (RC_OKLCH_L[hi] - RC_OKLCH_L[lo]) * f;
-    var C0 = RC_OKLCH_C[lo] + (RC_OKLCH_C[hi] - RC_OKLCH_C[lo]) * f;
-    var blend = Math.max(0, 1 - Math.abs(t - 5) * 0.16);
+    var t = (n === 1) ? aPos : (k * 9 / (n - 1)); // 0..9 上均匀取样
+    var L0 = rcInterp(RC_OKLCH_L, t), C0 = rcInterp(RC_OKLCH_C, t);
+    var blend = Math.max(0, 1 - Math.abs(t - aPos) * 0.16);
     var L = rcClamp(L0 + Loff * blend, 0.05, 0.99);
     out.push({ L: L, rgb01: rcOklchToRgb01(L, Cbase * C0, o.H) });
   }
   return out;
 }
 // 换主色：生成同档数的均匀色阶（含输入色本身），按「现有档位的明度排名」对齐——亮档拿亮、暗档拿暗，
-// 不重复、不乱序。返回 0-1 的 {r,g,b} 数组（与 shadeHexes 同序）。
-function reverseRecolorRamp(shadeHexes, newHex) {
-  var n = shadeHexes.length; var ramp = rcBuildScaleN(newHex, n); if (!ramp) return null;
-  // 把最接近输入色明度的那一档替换成输入色本身，保证主色一定原样出现
-  var ninO = rcRgbToOklch(rcHexToRgb255(newHex)), bi = 0, bd = Infinity;
-  for (var i = 0; i < ramp.length; i++) { var d = Math.abs(ramp[i].L - ninO.L); if (d < bd) { bd = d; bi = i; } }
+// 不重复、不乱序。anchorRank 指定输入主色固定落在第几档(与原稿主色档位对齐)；不传则取明度最接近的档。
+// 返回 0-1 的 {r,g,b} 数组（与 shadeHexes 同序）。
+function reverseRecolorRamp(shadeHexes, newHex, anchorRank) {
+  var n = shadeHexes.length; var ramp = rcBuildScaleN(newHex, n, anchorRank); if (!ramp) return null;
+  // 把锚档替换成输入色本身，保证主色一定原样出现：指定 anchorRank 时锚在该档，否则取明度最接近的档
+  var bi;
+  if (anchorRank != null && anchorRank >= 0 && anchorRank < n) { bi = anchorRank; }
+  else { var ninO = rcRgbToOklch(rcHexToRgb255(newHex)); bi = 0; var bd = Infinity; for (var i = 0; i < ramp.length; i++) { var d = Math.abs(ramp[i].L - ninO.L); if (d < bd) { bd = d; bi = i; } } }
   var ic = hexToFigmaRgb(newHex); if (ic) ramp[bi].rgb01 = { r: ic.r, g: ic.g, b: ic.b };
-  // 现有档位按明度从亮到暗排名，第 r 名拿 ramp[r]（ramp 已亮→暗）
+  // 现有档位按明度从亮到暗排名，第 r 名拿 ramp[r]（ramp 已亮→暗）——保证结果始终明度单调、自动纠正轻微乱序
   var ranked = shadeHexes.map(function (h, idx) { var r = rcHexToRgb255(h); return { idx: idx, L: r ? rcRgbToOklch(r).L : 0 }; })
     .sort(function (a, b) { return b.L - a.L; });
   var result = new Array(n);
@@ -2542,15 +2547,24 @@ figma.ui.onmessage = async (msg) => {
       // 功能色语义引用到的基础色 id（保护：不被换主色波及）
       var funcIds = {};
       allVars.forEach(function (v) { if (v.name.indexOf('color/function/') === 0) Object.keys(v.valuesByMode).forEach(function (m) { var val = v.valuesByMode[m]; if (val && val.type === 'VARIABLE_ALIAS') funcIds[val.id] = true; }); });
-      // ① 主色阶：以输入色为锚的标准色阶
-      var newVals = reverseRecolorRamp(primaryVars.map(function (v) { return rcCurHex(v) || '#000000'; }), newColor);
+      // brand/primary 当前指向第几档 primary/R——把新主色锚在同一档，换肤后主色档位与原稿对齐(不漂移)
+      var brandPrim = allVars.find(function (v) { return v.name === 'color/brand/primary'; });
+      var anchorRank = null;
+      if (brandPrim) {
+        var bpv0 = Object.values(brandPrim.valuesByMode)[0];
+        if (bpv0 && bpv0.type === 'VARIABLE_ALIAS') {
+          var bpTgt = allVars.find(function (v) { return v.id === bpv0.id; });
+          if (bpTgt) { var bpm = bpTgt.name.match(/^color\/palette\/primary\/(\d+)$/); if (bpm) { var ar = parseInt(bpm[1], 10); var pidx = primaryVars.indexOf(bpTgt); if (pidx >= 0) anchorRank = pidx; else if (ar < primaryVars.length) anchorRank = ar; } }
+        }
+      }
+      // ① 主色阶：以输入色为锚的标准色阶，输入主色固定落在 anchorRank 档（与原稿主色档位对齐）
+      var newVals = reverseRecolorRamp(primaryVars.map(function (v) { return rcCurHex(v) || '#000000'; }), newColor, anchorRank);
       if (!newVals) { figma.ui.postMessage({ type: 'error', message: '换主色失败：颜色解析错误' }); return; }
       var changed = 0;
       primaryVars.forEach(function (v, i) { if (newVals[i]) { rcSetAll(v, newVals[i]); changed++; } });
-      // 把 color/brand/primary 重新指向「输入主色实际落在的那一档」——换主色后主色落在哪个 primary 档，brand/primary 就跟到哪档
+      // 把 color/brand/primary 重新指向「输入主色实际落在的那一档」——已锚在 anchorRank，这里兜底确认主色档一致
       var mainIdx = -1, mainBd = Infinity;
       for (var mi = 0; mi < newVals.length; mi++) { if (!newVals[mi]) continue; var dM = auditDeltaE(figmaRgbToHex(newVals[mi]), newColor); if (dM < mainBd) { mainBd = dM; mainIdx = mi; } }
-      var brandPrim = allVars.find(function (v) { return v.name === 'color/brand/primary'; });
       if (brandPrim && mainIdx >= 0 && primaryVars[mainIdx]) {
         try { var bcol = rcColById[brandPrim.variableCollectionId], bms = (bcol && bcol.modes) ? bcol.modes : [], al = figma.variables.createVariableAlias(primaryVars[mainIdx]); for (var bm = 0; bm < bms.length; bm++) brandPrim.setValueForMode(bms[bm].modeId, al); } catch (e) {}
       }

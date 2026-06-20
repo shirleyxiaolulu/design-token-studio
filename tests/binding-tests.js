@@ -354,7 +354,7 @@ test('悬空/外部样式引用：图层剥离并提升成本地样式，不保�
   eq(root.children[8].fillStyleId, newStyle.id, '图层应改引用本地新样式(不再是悬空 id)');
 });
 
-test('换主色：brand/primary 跟到输入主色实际落的那一档', async () => {
+test('换主色：主色锚在原主色档位(与原稿对齐、不漂移)、该档值=输入主色', async () => {
   fresh();
   const prim = M.figma.variables.createVariableCollection('Primitives');
   prim.renameMode(prim.modes[0].modeId, 'Light'); const pm = prim.modes[0].modeId;
@@ -368,9 +368,13 @@ test('换主色：brand/primary 跟到输入主色实际落的那一档', async 
   const alias = Object.values(bp.valuesByMode)[0];
   assert(alias && alias.type === 'VARIABLE_ALIAS', 'brand/primary 应是别名');
   const target = M.varById(alias.id);
+  assert(target.name === 'color/palette/primary/2', 'brand/primary 应仍锚在 primary/2(档位与原稿对齐), got ' + target.name);
   function hx(c) { function h(x) { return ('0' + Math.round(x * 255).toString(16)).slice(-2); } return ('#' + h(c.r) + h(c.g) + h(c.b)).toUpperCase(); }
   const tv = Object.values(target.valuesByMode)[0];
-  assert(auditDeltaE(hx(tv), '#FF24D7') < 3, 'brand/primary 应指向≈输入主色的那档, got ' + hx(tv) + ' (' + target.name + ')');
+  assert(auditDeltaE(hx(tv), '#FF24D7') < 3, '锚档值应≈输入主色, got ' + hx(tv) + ' (' + target.name + ')');
+  // 换肤后各档仍明度单调(浅→深)，无乱序/倒置
+  const ls = pv.map(function (v) { const c = Object.values(v.valuesByMode)[0]; return auditHexToLab(hx(c)).L; });
+  for (let i = 1; i < ls.length; i++) assert(ls[i] <= ls[i - 1] + 1, '换肤后主色阶应明度浅→深单调, L=' + ls.map(function (x) { return x.toFixed(0); }).join(','));
 });
 
 test('品牌语义色按标准阶 50-900 命名、明度浅→深、阶号递增', async () => {
@@ -389,6 +393,12 @@ test('品牌语义色按标准阶 50-900 命名、明度浅→深、阶号递增
   for (let i = 1; i < steps.length; i++) assert(steps[i] > steps[i - 1], '阶号应随明度递增 50→900, got ' + steps.join(','));
   steps.forEach(function (s) { assert([50, 100, 200, 300, 400, 500, 600, 700, 800, 900].indexOf(s) >= 0, '阶号应是标准阶, got ' + s); });
   assert(data.colorTokens['color.brand.primary'], '应有 brand/primary 主色别名');
+  // primary 占住自己的明度档位、不再额外给数字阶——主色色值不应同时出现在某个数字阶(去重复)
+  const primHex = data.colorTokens['color.brand.primary'].light;
+  stepKeys.forEach(function (k) { assert(auditDeltaE(data.colorTokens[k].light, primHex) > 0.5, '主色不应再重复成数字阶 ' + k + '(' + data.colorTokens[k].light + ')'); });
+  // primary 的明度应落在数字阶序列中间(占住其档位)，不在最浅/最深端
+  const pL = auditHexToLab(primHex).L;
+  assert(pL < Math.max.apply(null, Ls) && pL > Math.min.apply(null, Ls), 'primary 明度应落在阶序列内、占住中间档位');
 });
 
 // --- run -------------------------------------------------------------------
