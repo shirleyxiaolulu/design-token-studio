@@ -318,6 +318,19 @@ test('极小不透明度(0.01%)不被舍成 0：触发背景模糊的填充保�
   assert(val && val.a > 0 && val.a < 0.001, '变量 alpha 应保留极小值(>0, ~0.0001), got ' + (val && val.a));
 });
 
+test('白色图标不让白色进背景色：矢量类不算背景', async () => {
+  fresh();
+  const icons = []; for (let i = 0; i < 12; i++) icons.push({ hex: '#FFFFFF', opacity: 1, nodeType: 'VECTOR', area: 24 * 24 });
+  const obs = { fills: [{ hex: '#1A1A1A', opacity: 1, nodeType: 'FRAME', area: 1440 * 3000 }].concat(icons), strokes: [], texts: [{ size: 14 }], radii: [8], spacings: [8], shadows: [] };
+  const data = rebuildToData(buildRebuildPlan(obs));
+  const bgWhite = Object.keys(data.colorTokens).filter(function (k) { return k.indexOf('color.bg.') === 0 && data.colorTokens[k].light.toUpperCase() === '#FFFFFF'; });
+  eq(bgWhite.length, 0, '白色矢量图标不应让白色进背景色, got ' + bgWhite.join(','));
+  // 但白色矩形(真实白卡/面)仍算背景
+  const obs2 = { fills: [{ hex: '#1A1A1A', opacity: 1, nodeType: 'FRAME', area: 1440 * 3000 }, { hex: '#FFFFFF', opacity: 1, nodeType: 'RECTANGLE', area: 1000 * 600 }], strokes: [], texts: [{ size: 14 }], radii: [8], spacings: [8], shadows: [] };
+  const data2 = rebuildToData(buildRebuildPlan(obs2));
+  assert(Object.keys(data2.colorTokens).some(function (k) { return k.indexOf('color.bg.') === 0 && data2.colorTokens[k].light.toUpperCase() === '#FFFFFF'; }), '白色矩形(白卡)仍应算背景');
+});
+
 // --- run -------------------------------------------------------------------
 (async function () {
   for (const t of tests) {

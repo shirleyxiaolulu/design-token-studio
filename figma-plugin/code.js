@@ -1817,7 +1817,9 @@ function rebuildContextColors(obs) {
   var fills = obs.fills || [], strokes = obs.strokes || [], map = {};
   // 颜色身份 = hex + 不透明度：白@5% 与 白@100% 是不同的色（半透明绑定后靠变量自带 alpha 还原）
   function rec(hex, op) { var key = hex + '@' + op; if (!map[key]) map[key] = { hex: hex, opacity: op, textArea: 0, bgArea: 0, strokeCount: 0 }; return map[key]; }
-  fills.forEach(function (f) { var m = rec(f.hex, rebuildOpacity(f.opacity)); if (f.fromGradient) m.fromGradient = true; if (f.nodeType === 'TEXT') m.textArea += (f.area || 1); else m.bgArea += (f.area || 1); });
+  // 图标/矢量类不算「背景」——否则深色 UI 里成片的白色图标会把白色顶进背景色。它们的色仍会进 palette（聚类），绑定照常。
+  function isIconType(t) { return t === 'VECTOR' || t === 'BOOLEAN_OPERATION' || t === 'STAR' || t === 'LINE' || t === 'REGULAR_POLYGON' || t === 'POLYGON'; }
+  fills.forEach(function (f) { var m = rec(f.hex, rebuildOpacity(f.opacity)); if (f.fromGradient) m.fromGradient = true; if (f.nodeType === 'TEXT') m.textArea += (f.area || 1); else if (!isIconType(f.nodeType)) m.bgArea += (f.area || 1); });
   strokes.forEach(function (s) { var m = rec(s.hex, rebuildOpacity(s.opacity)); if (s.fromGradient) m.fromGradient = true; m.strokeCount++; });
   var all = Object.keys(map).map(function (k) { return map[k]; });
   return {
