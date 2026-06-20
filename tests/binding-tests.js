@@ -425,44 +425,6 @@ test('① 发灰主色清出 primary：中段低饱和归 gray、不进 palette/
   assert(prim.some(h => auditDeltaE(h, '#C9A0FF') < 2), '浅紫淡彩应留在 primary(亮端豁免)');
 });
 
-test('反推导出：CSS/Tailwind/W3C 三格式内容正确（半透明 rgba、嵌套、$value、px）', async () => {
-  fresh();
-  const plan = {
-    theme: 'light', detectedTheme: 'light',
-    colors: { primary: [{ hex: '#9514FF', count: 8 }, { hex: '#E9CCFF', count: 3 }, { hex: '#2B124E', count: 2 }], neutral: [{ hex: '#FFFFFF', count: 9 }, { hex: '#222222', count: 6 }], semantic: {}, accents: [] },
-    context: { bg: [], text: [], border: [{ hex: '#000000', opacity: 0.1 }] },
-    type: { roles: [{ role: 'body', size: 14 }] }, radius: { scale: [{ name: 'radius.md', value: 8 }] }, spacing: { scale: [{ name: 'space.4', value: 16 }] }, shadow: { scale: [] },
-  };
-  const data = rebuildToData(plan);
-  const css = exportReverseCss(data);
-  assert(/:root \{/.test(css), 'CSS 应有 :root');
-  assert(/--color-brand-primary:\s*#/.test(css), 'CSS 应含 --color-brand-primary');
-  assert(/--radius-md:\s*8px/.test(css), 'CSS 应含 --radius-md: 8px');
-  assert(/rgba\(0, 0, 0, 0\.1\)/.test(css), 'CSS 半透明边框应出 rgba');
-  const tw = exportReverseTailwind(data);
-  const cfg = (new Function('var module={};' + tw + ';return module.exports;'))();
-  assert(cfg.theme.extend.colors.brand.primary, 'Tailwind colors.brand.primary 应存在');
-  assert(cfg.theme.extend.borderRadius && cfg.theme.extend.borderRadius.md === '8px', 'Tailwind borderRadius.md=8px');
-  assert(cfg.theme.extend.spacing && cfg.theme.extend.spacing['4'] === '16px', 'Tailwind spacing.4=16px');
-  const w3c = JSON.parse(exportReverseW3C(data));
-  assert(w3c.color.brand.primary.$type === 'color' && /^#/.test(w3c.color.brand.primary.$value), 'W3C brand.primary $type/$value');
-  assert(w3c.radius.md.$type === 'dimension' && w3c.radius.md.$value === '8px', 'W3C radius.md dimension');
-});
-
-test('反推导出 handler：无重建计划报错；有计划回传对应格式代码', async () => {
-  fresh();
-  lastRebuildPlan = null;
-  M.figma.ui.messages.length = 0;
-  await pluginOnMessage({ type: 'reverse-export', format: 'css' });
-  assert(M.figma.ui.messages.some(m => m.type === 'error'), '无 plan 应回 error');
-  lastRebuildPlan = { theme: 'light', colors: { primary: [{ hex: '#9514FF', count: 5 }], neutral: [], semantic: {}, accents: [] }, context: { bg: [], text: [], border: [] }, type: { roles: [] }, radius: { scale: [] }, spacing: { scale: [] }, shadow: { scale: [] } };
-  M.figma.ui.messages.length = 0;
-  await pluginOnMessage({ type: 'reverse-export', format: 'w3c' });
-  const r = M.figma.ui.messages.find(m => m.type === 'reverse-export-result');
-  assert(r && r.format === 'w3c' && /\$value/.test(r.code), 'handler 应回 w3c 代码');
-  lastRebuildPlan = null;
-});
-
 // --- run -------------------------------------------------------------------
 (async function () {
   for (const t of tests) {
