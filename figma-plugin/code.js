@@ -1872,8 +1872,11 @@ function rebuildToData(plan) {
   // 品牌色：每个主色阶都给一个语义角色，避免多余主色阶绑回基础色
   if (C.primary.length) {
     var pr = C.primary.slice().sort(function (a, b) { return (b.count * auditChroma(b.hex)) - (a.count * auditChroma(a.hex)); })[0];
-    addC('color.brand.primary', pr.hex, 'semantic', '主色 · 主操作');
-    C.primary.forEach(function (t) { if (t.hex !== pr.hex) addC('color.brand.' + t.step, t.hex, 'semantic', '品牌色 · ' + t.step); });
+    // 收集所有品牌档后按「明度：浅→深」排序再创建（变量按创建顺序显示）。primary 也按自身明度落位，不强排第一。
+    var brandList = [{ key: 'color.brand.primary', hex: pr.hex, usage: '主色 · 主操作' }];
+    C.primary.forEach(function (t) { if (t.hex !== pr.hex) brandList.push({ key: 'color.brand.' + t.step, hex: t.hex, usage: '品牌色 · ' + t.step }); });
+    brandList.sort(function (a, b) { return auditHexToLab(b.hex).L - auditHexToLab(a.hex).L; });
+    brandList.forEach(function (e) { addC(e.key, e.hex, 'semantic', e.usage); });
   }
   var fname = { success: 'success', warning: 'warning', error: 'danger', info: 'info' };
   var fusage = { success: '成功', warning: '警告', error: '危险 / 错误', info: '信息' };
