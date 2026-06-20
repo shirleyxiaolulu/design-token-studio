@@ -58,7 +58,7 @@ test('半透明填充绑到带 alpha 的变量、引用生效、paint.opacity=1'
 test('半透明描边绑到 border 变量且 alpha 保真', async () => {
   fresh(); const root = await bind(darkBusyPage());
   const stroke = root.children[5].strokes[0];
-  assert(ref(stroke) && ref(stroke).indexOf('color/border') === 0, '描边引用 border 变量, got ' + ref(stroke));
+  assert(ref(stroke) && ref(stroke).indexOf('color/palette/') === 0 && ref(stroke).indexOf('-alpha') >= 0, '半透明描边应绑到半透明基础色, got ' + ref(stroke));
   near(M.varValue(ref(stroke)).a, 0.10, '变量值 alpha = 0.10');
 });
 
@@ -69,14 +69,13 @@ test('不透明文字仍绑到 text 变量、opacity=1', async () => {
   eq(txt.opacity, 1, 'opacity=1');
 });
 
-test('两层模型：半透明语义色别名引用半透明基础色（palette *-alpha）', async () => {
+test('半透明色直接绑到半透明基础色（palette *-alpha），不进语义层、alpha 保真', async () => {
   fresh(); const root = await bind(darkBusyPage());
-  const semName = ref(root.children[5].fills[0]); // 白@5% 填充绑到的 bg 语义色
-  const raw = M.varRaw(semName);
-  assert(raw && raw.type === 'VARIABLE_ALIAS', '半透明语义色应是别名(两层联动), got ' + JSON.stringify(raw));
-  const prim = M.varById(raw.id);
-  assert(prim && prim.name.indexOf('color/palette/') === 0 && prim.name.indexOf('-alpha') >= 0, '应别名到半透明 palette 基础色, got ' + (prim && prim.name));
-  near(M.varValue(semName).a, 0.05, '解析后 alpha=0.05');
+  const name = ref(root.children[5].fills[0]); // 白@5% 填充绑到的变量
+  assert(name && name.indexOf('color/palette/') === 0 && name.indexOf('-alpha') >= 0, '应绑到半透明基础色, got ' + name);
+  near(M.varValue(name).a, 0.05, 'alpha=0.05');
+  const raw = M.varRaw(name);
+  assert(raw && raw.type !== 'VARIABLE_ALIAS', '半透明基础色应是直接 RGBA 值(不进语义层、非别名), got ' + JSON.stringify(raw));
 });
 
 test('返回的绑定 paint 是只读冻结对象（代码不得依赖其可变性）', async () => {
@@ -329,6 +328,19 @@ test('白色图标不让白色进背景色：矢量类不算背景', async () =>
   const obs2 = { fills: [{ hex: '#1A1A1A', opacity: 1, nodeType: 'FRAME', area: 1440 * 3000 }, { hex: '#FFFFFF', opacity: 1, nodeType: 'RECTANGLE', area: 1000 * 600 }], strokes: [], texts: [{ size: 14 }], radii: [8], spacings: [8], shadows: [] };
   const data2 = rebuildToData(buildRebuildPlan(obs2));
   assert(Object.keys(data2.colorTokens).some(function (k) { return k.indexOf('color.bg.') === 0 && data2.colorTokens[k].light.toUpperCase() === '#FFFFFF'; }), '白色矩形(白卡)仍应算背景');
+});
+
+test('成片半透明蒙层不撑大背景色：bg 语义≤4、不含白色、蒙层进 palette *-alpha', async () => {
+  fresh();
+  const overlays = [];
+  [0.05, 0.1, 0.2, 0.3, 0.4].forEach(function (op) { overlays.push({ hex: '#000000', opacity: op, nodeType: 'FRAME', area: 500 * 500 }); });
+  [0.05, 0.1, 0.2].forEach(function (op) { overlays.push({ hex: '#FFFFFF', opacity: op, nodeType: 'FRAME', area: 500 * 500 }); });
+  const obs = { fills: [{ hex: '#0A0A0A', opacity: 1, nodeType: 'FRAME', area: 1440 * 3000 }, { hex: '#1C1D24', opacity: 1, nodeType: 'FRAME', area: 800 * 800 }].concat(overlays), strokes: [], texts: [{ size: 14 }], radii: [8], spacings: [8], shadows: [] };
+  const data = rebuildToData(buildRebuildPlan(obs));
+  const bgKeys = Object.keys(data.colorTokens).filter(function (k) { return k.indexOf('color.bg.') === 0; });
+  assert(bgKeys.length <= 4, 'bg 语义应≤4, got ' + bgKeys.length + ': ' + bgKeys.join(','));
+  assert(!bgKeys.some(function (k) { return data.colorTokens[k].light.toUpperCase() === '#FFFFFF'; }), 'bg 不应含白色');
+  assert(Object.keys(data.colorTokens).some(function (k) { return k.indexOf('color.palette.') === 0 && /-alpha/.test(k) && data.colorTokens[k].light.toUpperCase() === '#FFFFFF'; }), '白色蒙层应进 palette *-alpha');
 });
 
 // --- run -------------------------------------------------------------------

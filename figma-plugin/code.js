@@ -1881,11 +1881,10 @@ function rebuildToData(plan) {
   // 不透明色取前 N 个给语义角色名；半透明色「全部保留」——它们是设计里真实存在的独立色，
   // 绑定时必须有同 alpha 的变量可命中，被 slice 切掉就会让图层绑不上变量（只剩裸色值）。
   function ctxKept(list, n) {
-    var dd = rebuildDedupeColors(list, 1.0);
-    // 语义层(预览要干净)：不透明色只取前 N 个拿角色名；半透明色全部保留（真实背景/描边、绑定需同色变量）。
-    // 彩色不在这里全留——它们改为进「基础色(palette)」层（见下方 ensureChromaticPrim），绑定靠基础色精确命中、不污染背景/边框语义栏。
-    return dd.filter(function (m) { return rebuildOpacity(m.opacity) >= 1; }).slice(0, n)
-      .concat(dd.filter(function (m) { return rebuildOpacity(m.opacity) < 1; }));
+    // 语义层(预览要干净)：只保留「不透明」的前 N 个拿角色名。
+    // 半透明色 + 彩色都不进语义层——它们改为进「基础色(palette)」层（半透明=*-alpha，彩色=按色族）。
+    // 否则成片的黑白蒙层(各种透明度)会把背景/边框栏撑爆、且看着像重复(#000000 不同透明度)；绑定靠基础色精确命中。
+    return rebuildDedupeColors(list, 1.0).filter(function (m) { return rebuildOpacity(m.opacity) >= 1; }).slice(0, n);
   }
   var bgN = ['page', 'surface', 'elevated', 'overlay'];
   ctxKept(ctx.bg, 4).forEach(function (m, i) { addC('color.bg.' + (bgN[i] || ('s' + i)), m.hex, 'semantic', '背景 · 实际大面积填充', m.opacity); });
