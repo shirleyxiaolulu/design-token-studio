@@ -2357,8 +2357,15 @@ async function bindReverseVariables(plan) {
       return p.type + '|' + stops + '|' + JSON.stringify(p.gradientTransform || []);
     } catch (e) { return null; }
   }
-  // 整个填充栈的签名（含渐变的多填充也能分组）：渐变用 gradSig、纯色用色值+不透明度、其它用类型。
-  function paintSig(p) { return isGradientPaint(p) ? ('G|' + gradSig(p)) : (p && p.type === 'SOLID' ? ('S:' + figmaRgbToHex(p.color) + '@' + Math.round((p.opacity == null ? 1 : p.opacity) * 100)) : (p ? (p.type || 'X') : 'X')); }
+  // 整个填充栈的签名（含渐变的多填充也能分组）。每个填充都带「显隐+不透明度+混合模式」元信息——
+  // 否则「同色标同角度但 paint 不透明度/显隐不同」会被判成同一渐变而合并样式、互相串透明度(实测踩到)。
+  function paintSig(p) {
+    if (!p) return 'X';
+    var meta = (p.visible === false ? 'H' : 'V') + Math.round((p.opacity == null ? 1 : p.opacity) * 100) + (p.blendMode || '');
+    if (typeof p.type === 'string' && p.type.indexOf('GRADIENT_') === 0 && Array.isArray(p.gradientStops)) return 'G' + meta + '|' + gradSig(p);
+    if (p.type === 'SOLID') return 'S' + meta + ':' + figmaRgbToHex(p.color);
+    return (p.type || 'X') + meta;
+  }
   function fillsSig(fills) { try { return fills.map(paintSig).join('||'); } catch (e) { return null; } }
   // 收集「含渐变的填充层」：按整组填充签名分组、存整组 paints（多填充一起打包进同一个样式）。
   function collectGradient(node) { var sig = fillsSig(node.fills); if (!sig) { bindPaints(node, 'fills', 'fills', 'fill'); return; } (gradGroups[sig] = gradGroups[sig] || { paints: node.fills, nodes: [] }).nodes.push(node); }

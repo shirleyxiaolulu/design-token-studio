@@ -470,6 +470,22 @@ test('与功能色相近的彩色基础色也补 auxiliary（功能色不算覆�
   assert(aux.some(k => auditDeltaE(tk[k].light, '#FD7E14') < 2), '与功能色相近的彩色基础色也应补 auxiliary（渐变排除功能色、须有非功能语义可绑）, aux=' + aux.map(k => tk[k].light).join());
 });
 
+test('渐变样式按 paint 不透明度区分：同色阶不同不透明度 → 不同样式，不互相串透明度', async () => {
+  fresh(); const { N, solid, grad } = M;
+  const tags = []; for (let i = 0; i < 8; i++) tags.push(N({ type: 'FRAME', width: 120, height: 40, y: i * 50, characters: '', fills: [solid('#FF6B00')], strokes: [] }));
+  function gop(op) { var g = grad('#FFA559', '#FF6B00'); g.opacity = op; return g; }
+  const b100 = N({ type: 'FRAME', width: 1200, height: 90, y: 2100, characters: '', fills: [gop(1)], strokes: [], cornerRadius: 16 });
+  const b30 = N({ type: 'FRAME', width: 1200, height: 90, y: 2200, characters: '', fills: [gop(0.3)], strokes: [], cornerRadius: 16 });
+  const page = N({ type: 'FRAME', width: 1440, height: 2400, characters: '', fills: [solid('#1A1A1A')], strokes: [], children: tags.concat([b100, b30]) });
+  const root = await bind(page);
+  const r100 = root.children[8], r30 = root.children[9];
+  assert(r100.fillStyleId && r30.fillStyleId, '两个渐变都应应用样式');
+  assert(r100.fillStyleId !== r30.fillStyleId, '同渐变但不透明度不同 → 必须是两个样式(不合并、不串透明度)');
+  const ps100 = M.PAINT_STYLES.find(s => s.id === r100.fillStyleId), ps30 = M.PAINT_STYLES.find(s => s.id === r30.fillStyleId);
+  near(ps100.paints[0].opacity, 1, '100% 那份样式渐变不透明度保持 1');
+  near(ps30.paints[0].opacity, 0.3, '30% 那份样式渐变不透明度保持 0.3');
+});
+
 // --- run -------------------------------------------------------------------
 (async function () {
   for (const t of tests) {
