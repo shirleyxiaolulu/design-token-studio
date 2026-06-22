@@ -111,6 +111,21 @@ test('渐变：非品牌蓝紫色标也能经聚类绑上、颜色不变', async
   eq(hex(g.gradientStops[1].color), '#A855F7', '紫色原色不变');
 });
 
+test('渐变提升：多填充图层(渐变+叠加纯色)也整组提升成样式、应用样式、渐变色标绑变量', async () => {
+  fresh(); const { N, solid, grad } = M;
+  const btns = []; for (let i = 0; i < 3; i++) btns.push(N({ type: 'FRAME', width: 1200, height: 90, y: i * 100, characters: '', fills: [grad('#FFA559', '#FF6B00'), solid('#FFFFFF', 0.08)], strokes: [], cornerRadius: 16 }));
+  const tags = []; for (let i = 0; i < 8; i++) tags.push(N({ type: 'FRAME', width: 120, height: 40, y: 400 + i * 50, characters: '', fills: [solid('#FF6B00')], strokes: [] }));
+  const page = N({ type: 'FRAME', width: 1440, height: 1200, characters: '', fills: [solid('#1A1A1A')], strokes: [], children: btns.concat(tags) });
+  const root = await bind(page);
+  const ps = M.PAINT_STYLES.find(function (s) { return s.name.indexOf('反推渐变/') === 0; });
+  assert(ps, '含渐变的多填充层应提升成共享样式');
+  eq(ps.paints.length, 2, '样式应保留两层填充(渐变+叠加纯色)');
+  assert(typeof ps.paints[0].type === 'string' && ps.paints[0].type.indexOf('GRADIENT_') === 0, '第一层应是渐变');
+  assert(ref(ps.paints[0].gradientStops[0]) && ref(ps.paints[0].gradientStops[1]), '渐变色标应绑到变量');
+  eq(root.children[0].fillStyleId, ps.id, '多填充按钮应应用该样式（不再是本地渐变）');
+  eq(root.children[1].fillStyleId, ps.id, '同签名的另一个按钮共用同一样式');
+});
+
 test('角色路由：背景填充→bg、描边→border、文字→text', async () => {
   fresh(); const root = await bind(darkBusyPage());
   const page = root; // 顶层暗底

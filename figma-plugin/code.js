@@ -2338,11 +2338,15 @@ async function bindReverseVariables(plan) {
       return p.type + '|' + stops + '|' + JSON.stringify(p.gradientTransform || []);
     } catch (e) { return null; }
   }
-  function collectGradient(node) { var p = node.fills[0], sig = gradSig(p); if (!sig) { bindPaints(node, 'fills', 'fills', 'fill'); return; } (gradGroups[sig] = gradGroups[sig] || { paint: p, nodes: [] }).nodes.push(node); }
+  // 整个填充栈的签名（含渐变的多填充也能分组）：渐变用 gradSig、纯色用色值+不透明度、其它用类型。
+  function paintSig(p) { return isGradientPaint(p) ? ('G|' + gradSig(p)) : (p && p.type === 'SOLID' ? ('S:' + figmaRgbToHex(p.color) + '@' + Math.round((p.opacity == null ? 1 : p.opacity) * 100)) : (p ? (p.type || 'X') : 'X')); }
+  function fillsSig(fills) { try { return fills.map(paintSig).join('||'); } catch (e) { return null; } }
+  // 收集「含渐变的填充层」：按整组填充签名分组、存整组 paints（多填充一起打包进同一个样式）。
+  function collectGradient(node) { var sig = fillsSig(node.fills); if (!sig) { bindPaints(node, 'fills', 'fills', 'fill'); return; } (gradGroups[sig] = gradGroups[sig] || { paints: node.fills, nodes: [] }).nodes.push(node); }
   async function promoteGradientsToStyles() {
     var keys = Object.keys(gradGroups);
     for (var i = 0; i < keys.length; i++) {
-      var g = gradGroups[keys[i]], r = mapPaints([g.paint], 'fill'), style;
+      var g = gradGroups[keys[i]], r = mapPaints(g.paints, 'fill'), style;
       try { style = figma.createPaintStyle(); style.name = '反推渐变/' + (i + 1); style.paints = r.next; } catch (e) { continue; }
       for (var n = 0; n < g.nodes.length; n++) {
         var nd = g.nodes[n];
@@ -2357,7 +2361,7 @@ async function bindReverseVariables(plan) {
     // 文本填充统一留到后面「先加载字体再绑」，否则 Figma 不刷新渲染（点了才出现）
     if (node.type !== 'TEXT' && 'fills' in node && node.fills !== figma.mixed) {
       // 单一渐变填充 → 收集后提升成共享样式（改一处全局生效）；其余（纯色/多 paint）照常本地绑。
-      if (!usesStyle(node, 'fills') && Array.isArray(node.fills) && node.fills.length === 1 && isGradientPaint(node.fills[0])) collectGradient(node);
+      if (!usesStyle(node, 'fills') && Array.isArray(node.fills) && node.fills.length && node.fills.some(isGradientPaint)) collectGradient(node);
       else bindPaints(node, 'fills', 'fills', 'fill');
     }
     if ('strokes' in node) bindPaints(node, 'strokes', 'strokes', 'border');
