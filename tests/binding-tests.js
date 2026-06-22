@@ -486,6 +486,20 @@ test('渐变样式按 paint 不透明度区分：同色阶不同不透明度 →
   near(ps30.paints[0].opacity, 0.3, '30% 那份样式渐变不透明度保持 0.3');
 });
 
+test('渐变描边也提升成共享样式（反推描边渐变/N，setStrokeStyleId 应用、色标绑变量、同签名共用）', async () => {
+  fresh(); const { N, solid, grad } = M;
+  const tags = []; for (let i = 0; i < 8; i++) tags.push(N({ type: 'FRAME', width: 120, height: 40, y: i * 50, characters: '', fills: [solid('#FF6B00')], strokes: [] }));
+  const cards = []; for (let i = 0; i < 3; i++) cards.push(N({ type: 'FRAME', width: 400, height: 200, y: 2000 + i * 220, characters: '', fills: [solid('#1A1A1A')], strokes: [grad('#FFA559', '#FF6B00')], strokeWeight: 2, cornerRadius: 12 }));
+  const page = N({ type: 'FRAME', width: 1440, height: 3000, characters: '', fills: [solid('#1A1A1A')], strokes: [], children: tags.concat(cards) });
+  const root = await bind(page);
+  const ps = M.PAINT_STYLES.find(function (s) { return s.name.indexOf('反推描边渐变/') === 0; });
+  assert(ps, '含渐变的描边应提升成共享样式（反推描边渐变/N）');
+  assert(typeof ps.paints[0].type === 'string' && ps.paints[0].type.indexOf('GRADIENT_') === 0, '描边样式应是渐变');
+  assert(ref(ps.paints[0].gradientStops[0]) && ref(ps.paints[0].gradientStops[1]), '渐变色标应绑到变量');
+  eq(root.children[8].strokeStyleId, ps.id, '渐变描边应应用该描边样式(strokeStyleId)');
+  eq(root.children[9].strokeStyleId, ps.id, '同签名的另一个描边共用同一样式');
+});
+
 // --- run -------------------------------------------------------------------
 (async function () {
   for (const t of tests) {

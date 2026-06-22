@@ -2348,8 +2348,8 @@ async function bindReverseVariables(plan) {
     } catch (e) {}
   }
   // 本地渐变 → 提升成共享样式：相同渐变的图层共用一个样式、样式色标绑变量、图层应用样式。
-  // 这样「改一处样式（或换主色）全局生效」，不必逐个图层改绑定。
-  var gradGroups = {};
+  // 这样「改一处样式（或换主色）全局生效」，不必逐个图层改绑定。填充、描边各一组。
+  var gradGroups = { fills: {}, strokes: {} };
   function isGradientPaint(p) { return p && p.visible !== false && typeof p.type === 'string' && p.type.indexOf('GRADIENT_') === 0 && Array.isArray(p.gradientStops); }
   function gradSig(p) {
     try {
@@ -2367,18 +2367,29 @@ async function bindReverseVariables(plan) {
     return (p.type || 'X') + meta;
   }
   function fillsSig(fills) { try { return fills.map(paintSig).join('||'); } catch (e) { return null; } }
-  // 收集「含渐变的填充层」：按整组填充签名分组、存整组 paints（多填充一起打包进同一个样式）。
-  function collectGradient(node) { var sig = fillsSig(node.fills); if (!sig) { bindPaints(node, 'fills', 'fills', 'fill'); return; } (gradGroups[sig] = gradGroups[sig] || { paints: node.fills, nodes: [] }).nodes.push(node); }
+  // 收集「含渐变的填充/描边层」：按整组签名分组、存整组 paints（多 paint 一起打包进同一个样式）。
+  // prop = 'fills' | 'strokes'，复用同一套签名(fillsSig)与映射(mapPaints)。
+  function collectGradient(node, prop) {
+    var paints = node[prop], sig = fillsSig(paints);
+    if (!sig) { bindPaints(node, prop, prop, prop === 'strokes' ? 'border' : 'fill'); return; }
+    (gradGroups[prop][sig] = gradGroups[prop][sig] || { paints: paints, nodes: [] }).nodes.push(node);
+  }
   async function promoteGradientsToStyles() {
-    var keys = Object.keys(gradGroups);
-    for (var i = 0; i < keys.length; i++) {
-      var g = gradGroups[keys[i]], r = mapPaints(g.paints, 'fill'), style;
-      try { style = figma.createPaintStyle(); style.name = '反推渐变/' + (i + 1); style.paints = r.next; } catch (e) { continue; }
-      for (var n = 0; n < g.nodes.length; n++) {
-        var nd = g.nodes[n];
-        try { if (typeof nd.setFillStyleIdAsync === 'function') await nd.setFillStyleIdAsync(style.id); else nd.fillStyleId = style.id; } catch (e) {}
+    var defs = [{ prop: 'fills', name: '反推渐变/', role: 'fill' }, { prop: 'strokes', name: '反推描边渐变/', role: 'border' }];
+    for (var d = 0; d < defs.length; d++) {
+      var prop = defs[d].prop, groups = gradGroups[prop], keys = Object.keys(groups);
+      for (var i = 0; i < keys.length; i++) {
+        var g = groups[keys[i]], r = mapPaints(g.paints, defs[d].role), style;
+        try { style = figma.createPaintStyle(); style.name = defs[d].name + (i + 1); style.paints = r.next; } catch (e) { continue; }
+        for (var n = 0; n < g.nodes.length; n++) {
+          var nd = g.nodes[n];
+          try {
+            if (prop === 'strokes') { if (typeof nd.setStrokeStyleIdAsync === 'function') await nd.setStrokeStyleIdAsync(style.id); else nd.strokeStyleId = style.id; }
+            else { if (typeof nd.setFillStyleIdAsync === 'function') await nd.setFillStyleIdAsync(style.id); else nd.fillStyleId = style.id; }
+          } catch (e) {}
+        }
+        bound.styles = (bound.styles || 0) + 1;
       }
-      bound.styles = (bound.styles || 0) + 1;
     }
   }
   function bindNum(node, field, vr) { if (!vr) return; try { node.setBoundVariable(field, vr); return true; } catch (e) { return false; } }
@@ -2387,10 +2398,14 @@ async function bindReverseVariables(plan) {
     // 文本填充统一留到后面「先加载字体再绑」，否则 Figma 不刷新渲染（点了才出现）
     if (node.type !== 'TEXT' && 'fills' in node && node.fills !== figma.mixed) {
       // 单一渐变填充 → 收集后提升成共享样式（改一处全局生效）；其余（纯色/多 paint）照常本地绑。
-      if (!usesStyle(node, 'fills') && Array.isArray(node.fills) && node.fills.length && node.fills.some(isGradientPaint)) collectGradient(node);
+      if (!usesStyle(node, 'fills') && Array.isArray(node.fills) && node.fills.length && node.fills.some(isGradientPaint)) collectGradient(node, 'fills');
       else bindPaints(node, 'fills', 'fills', 'fill');
     }
-    if ('strokes' in node) bindPaints(node, 'strokes', 'strokes', 'border');
+    if ('strokes' in node) {
+      // 含渐变的描边 → 同样提升成共享样式（反推描边渐变/N，setStrokeStyleId 应用）；其余本地绑。
+      if (!usesStyle(node, 'strokes') && Array.isArray(node.strokes) && node.strokes.length && node.strokes.some(isGradientPaint)) collectGradient(node, 'strokes');
+      else bindPaints(node, 'strokes', 'strokes', 'border');
+    }
     if (radiusVars.length && 'cornerRadius' in node && node.cornerRadius !== figma.mixed && typeof node.cornerRadius === 'number' && node.cornerRadius > 0) {
       // 大圆角(≥100)统一绑 radius.full（rebuildRadius 把 ≥100 收成一个 full、值取最大），
       // 否则按数值最近——避免 150 这种「胶囊」被吸到数值更近的小圆角刻度。

@@ -50,6 +50,7 @@ function setup() {
       setBoundVariable: function (field, v) { this._bound[field] = v; },
       setExplicitVariableModeForCollection: function (col, modeId) { this._explicitModes[col.id || col] = modeId; },
       setFillStyleIdAsync: function (id) { this.fillStyleId = id; return Promise.resolve(); },
+      setStrokeStyleIdAsync: function (id) { this.strokeStyleId = id; return Promise.resolve(); },
       remove: function () { var i = ROOT.children.indexOf(this); if (i >= 0) ROOT.children.splice(i, 1); },
       setRangeFills: function (s, e, f) { this._ranges.push({ start: s, end: e, fills: f }); },
       getStyledTextSegments: function () { return this._segments || []; },
