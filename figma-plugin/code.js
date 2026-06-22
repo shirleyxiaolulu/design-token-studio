@@ -1929,6 +1929,23 @@ function rebuildToData(plan) {
   var bdN = ['default', 'subtle', 'strong'];
   ctxKept(ctx.border, 3).forEach(function (m, i) { addC('color.border.' + (bdN[i] || ('b' + i)), m.hex, 'semantic', '边框 · 实际用作描边', m.opacity); });
 
+  // 彩色基础色补语义：每个「不透明 + 彩色(非中性)」的基础色，若没有任何语义色覆盖它(ΔE<1.5)，
+  // 补一个 auxiliary 辅助色语义引用它——让图层引用语义色而非基础色(值不变、别名到精确基础色)。
+  // 灰/中性不补(硬塞「辅助色」语义错)；半透明不补(已有 *-alpha 基础色)。彩色含渐变色标、强调横幅等。
+  (function () {
+    var semHexes = Object.keys(colorTokens).filter(function (k) { var t = colorTokens[k]; return t.tier === 'semantic' && !(t.alpha != null && t.alpha < 1); }).map(function (k) { return colorTokens[k].light; });
+    var auxN = 0; Object.keys(colorTokens).forEach(function (k) { if (k.indexOf('color.auxiliary.') === 0) auxN++; });
+    Object.keys(colorTokens).forEach(function (k) {
+      if (k.indexOf('color.palette.') !== 0) return;
+      var t = colorTokens[k];
+      if (t.alpha != null && t.alpha < 1) return;
+      if (auditIsNeutral(t.light)) return;
+      if (semHexes.some(function (h) { return auditDeltaE(h, t.light) < 1.5; })) return;
+      auxN++; addC('color.auxiliary.' + auxN, t.light, 'semantic', '辅助 / 强调');
+      semHexes.push(t.light);
+    });
+  })();
+
   // 尺寸（plan 已规整为整数）
   plan.type.roles.forEach(function (r) { addD('font.size.' + r.role, r.size, { role: r.role.charAt(0).toUpperCase() + r.role.slice(1), weight: 400, lineHeight: Math.round(r.size * 1.5) }); });
   plan.radius.scale.forEach(function (s) { addD(s.name, s.value); });

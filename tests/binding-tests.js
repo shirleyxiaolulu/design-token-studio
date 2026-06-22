@@ -109,6 +109,8 @@ test('渐变：非品牌蓝紫色标也能经聚类绑上、颜色不变', async
   const g = M.PAINT_STYLES.find(function (s) { return s.name.indexOf('反推渐变/') === 0; }).paints[0];
   assert(ref(g.gradientStops[0]) && ref(g.gradientStops[1]), '蓝、紫色标都应绑上');
   eq(hex(g.gradientStops[1].color), '#A855F7', '紫色原色不变');
+  // 非品牌彩色应绑到「语义色(auxiliary)」而非基础色(palette)
+  assert((ref(g.gradientStops[1]) || '').indexOf('color/auxiliary') === 0, '非品牌色标应绑 auxiliary 语义, got ' + ref(g.gradientStops[1]));
 });
 
 test('渐变提升：多填充图层(渐变+叠加纯色)也整组提升成样式、应用样式、渐变色标绑变量', async () => {
@@ -438,6 +440,21 @@ test('① 发灰主色清出 primary：中段低饱和归 gray、不进 palette/
   assert(gray.some(h => auditDeltaE(h, '#695B77') < 2), '发灰的 695B77 应归到 gray 族(仍是基础色、可绑定)');
   assert(prim.some(h => auditDeltaE(h, '#9514FF') < 2), '鲜艳主色应留在 primary');
   assert(prim.some(h => auditDeltaE(h, '#C9A0FF') < 2), '浅紫淡彩应留在 primary(亮端豁免)');
+});
+
+test('彩色基础色补 auxiliary 语义、灰不补（图层据此引用语义而非基础色）', async () => {
+  fresh();
+  const plan = {
+    theme: 'light', detectedTheme: 'light',
+    colors: { primary: [{ hex: '#9514FF', count: 8 }], neutral: [{ hex: '#888888', count: 5 }], semantic: {}, accents: [] },
+    context: { bg: [{ hex: '#111111', opacity: 1 }, { hex: '#222222', opacity: 1 }, { hex: '#333333', opacity: 1 }, { hex: '#444444', opacity: 1 }, { hex: '#14B8A6', opacity: 1 }], text: [], border: [] },
+    type: { roles: [] }, radius: { scale: [] }, spacing: { scale: [] }, shadow: { scale: [] },
+  };
+  const tk = rebuildToData(plan).colorTokens;
+  const aux = Object.keys(tk).filter(k => /^color\.auxiliary\./.test(k));
+  assert(aux.some(k => auditDeltaE(tk[k].light, '#14B8A6') < 3), '彩色 teal 应补 auxiliary 语义, aux=' + aux.map(k => tk[k].light).join());
+  assert(!aux.some(k => auditDeltaE(tk[k].light, '#888888') < 3), '灰 #888888 不应补 auxiliary（灰留基础色）');
+  assert(Object.keys(tk).some(k => /^color\.palette\./.test(k) && auditDeltaE(tk[k].light, '#14B8A6') < 3), 'teal 仍应有对应基础色（语义别名它、值不变）');
 });
 
 // --- run -------------------------------------------------------------------
