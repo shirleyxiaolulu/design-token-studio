@@ -2367,10 +2367,28 @@ async function bindReverseVariables(plan) {
     return (p.type || 'X') + meta;
   }
   function fillsSig(fills) { try { return fills.map(paintSig).join('||'); } catch (e) { return null; } }
+  // 「完全不透明、会遮住下层」的填充：100% + 正常混合 + (纯色/渐变)所有色不透明。图片/视频保守不算(避免误删)。
+  function isOpaqueCovering(p) {
+    if (!p || p.visible === false) return false;
+    if (p.opacity != null && p.opacity < 1) return false;
+    if (p.blendMode && p.blendMode !== 'NORMAL' && p.blendMode !== 'PASS_THROUGH') return false;
+    if (p.type === 'SOLID') return !(p.color && p.color.a != null && p.color.a < 1);
+    if (typeof p.type === 'string' && p.type.indexOf('GRADIENT_') === 0 && Array.isArray(p.gradientStops)) return p.gradientStops.every(function (s) { return !(s.color && s.color.a != null && s.color.a < 1); });
+    return false;
+  }
+  // 删掉「被上层不透明填充完全遮挡、根本看不见」的填充（fills[0] 在最底、末位在最顶）：
+  // 找最高的不透明填充，它下面的全删——视觉零变化，但让「同渐变只是底下垫了不同颜色」的图层能合并成一个样式。
+  function stripOccluded(paints) {
+    if (!Array.isArray(paints) || paints.length < 2) return paints;
+    var k = -1;
+    for (var i = paints.length - 1; i >= 0; i--) { if (isOpaqueCovering(paints[i])) { k = i; break; } }
+    return k > 0 ? paints.slice(k) : paints;
+  }
   // 收集「含渐变的填充/描边层」：按整组签名分组、存整组 paints（多 paint 一起打包进同一个样式）。
   // prop = 'fills' | 'strokes'，复用同一套签名(fillsSig)与映射(mapPaints)。
   function collectGradient(node, prop) {
-    var paints = node[prop], sig = fillsSig(paints);
+    var paints = stripOccluded(node[prop]); // 先删掉被完全遮挡(看不见)的填充：同渐变能合并、视觉零变化
+    var sig = paints.some(isGradientPaint) ? fillsSig(paints) : null; // 剥离后已无渐变 → 不提升、退回本地绑
     if (!sig) { bindPaints(node, prop, prop, prop === 'strokes' ? 'border' : 'fill'); return; }
     (gradGroups[prop][sig] = gradGroups[prop][sig] || { paints: paints, nodes: [] }).nodes.push(node);
   }

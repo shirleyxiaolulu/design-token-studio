@@ -500,6 +500,20 @@ test('渐变描边也提升成共享样式（反推描边渐变/N，setStrokeSty
   eq(root.children[9].strokeStyleId, ps.id, '同签名的另一个描边共用同一样式');
 });
 
+test('剥离被遮挡填充：上层不透明渐变盖住下层 → 下层删掉、同渐变合并成一个样式（视觉不变）', async () => {
+  fresh(); const { N, solid, grad } = M;
+  const tags = []; for (let i = 0; i < 8; i++) tags.push(N({ type: 'FRAME', width: 120, height: 40, y: i * 50, characters: '', fills: [solid('#FF6B00')], strokes: [] }));
+  // A：下蓝渐变 + 上橙渐变(不透明，盖住蓝)；B：仅橙渐变。橙相同 → A 剥离蓝后应与 B 合并成一个样式
+  const A = N({ type: 'FRAME', width: 1200, height: 90, y: 2000, characters: '', fills: [grad('#3B82F6', '#A855F7'), grad('#FFA559', '#FF6B00')], strokes: [], cornerRadius: 16 });
+  const B = N({ type: 'FRAME', width: 1200, height: 90, y: 2100, characters: '', fills: [grad('#FFA559', '#FF6B00')], strokes: [], cornerRadius: 16 });
+  const page = N({ type: 'FRAME', width: 1440, height: 2400, characters: '', fills: [solid('#1A1A1A')], strokes: [], children: tags.concat([A, B]) });
+  const root = await bind(page);
+  eq(root.children[8].fillStyleId, root.children[9].fillStyleId, 'A(剥离被遮挡的蓝后)与 B 应共用同一个样式');
+  const ps = M.PAINT_STYLES.find(s => s.id === root.children[8].fillStyleId);
+  eq(ps.paints.length, 1, '剥离被遮挡的蓝后，样式只剩橙渐变一层');
+  assert(ps.paints[0].type.indexOf('GRADIENT_') === 0 && ref(ps.paints[0].gradientStops[0]), '剩下的橙渐变色标仍绑变量');
+});
+
 // --- run -------------------------------------------------------------------
 (async function () {
   for (const t of tests) {
