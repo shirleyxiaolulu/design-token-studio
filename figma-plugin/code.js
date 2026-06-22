@@ -1933,7 +1933,9 @@ function rebuildToData(plan) {
   // 补一个 auxiliary 辅助色语义引用它——让图层引用语义色而非基础色(值不变、别名到精确基础色)。
   // 灰/中性不补(硬塞「辅助色」语义错)；半透明不补(已有 *-alpha 基础色)。彩色含渐变色标、强调横幅等。
   (function () {
-    var semHexes = Object.keys(colorTokens).filter(function (k) { var t = colorTokens[k]; return t.tier === 'semantic' && !(t.alpha != null && t.alpha < 1); }).map(function (k) { return colorTokens[k].light; });
+    // 覆盖判定排除「功能色」：渐变绑定刻意避开 function(success/warning/danger/info)，
+    // 若某彩色只与功能色相近，仍要补一个 auxiliary，否则渐变没有非功能语义可绑、只能落基础色。
+    var semHexes = Object.keys(colorTokens).filter(function (k) { var t = colorTokens[k]; return t.tier === 'semantic' && k.indexOf('color.function.') !== 0 && !(t.alpha != null && t.alpha < 1); }).map(function (k) { return colorTokens[k].light; });
     var auxN = 0; Object.keys(colorTokens).forEach(function (k) { if (k.indexOf('color.auxiliary.') === 0) auxN++; });
     Object.keys(colorTokens).forEach(function (k) {
       if (k.indexOf('color.palette.') !== 0) return;

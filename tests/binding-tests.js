@@ -457,6 +457,19 @@ test('彩色基础色补 auxiliary 语义、灰不补（图层据此引用语义
   assert(Object.keys(tk).some(k => /^color\.palette\./.test(k) && auditDeltaE(tk[k].light, '#14B8A6') < 3), 'teal 仍应有对应基础色（语义别名它、值不变）');
 });
 
+test('与功能色相近的彩色基础色也补 auxiliary（功能色不算覆盖；渐变不绑功能色、须有非功能语义可绑）', async () => {
+  fresh();
+  const plan = {
+    theme: 'light', detectedTheme: 'light',
+    colors: { primary: [{ hex: '#2F9E44', count: 8 }], neutral: [{ hex: '#888888', count: 5 }], semantic: { warning: { hex: '#FD7E14' } }, accents: [] },
+    context: { bg: [], text: [], border: [] },
+    type: { roles: [] }, radius: { scale: [] }, spacing: { scale: [] }, shadow: { scale: [] },
+  };
+  const tk = rebuildToData(plan).colorTokens;
+  const aux = Object.keys(tk).filter(k => /^color\.auxiliary\./.test(k));
+  assert(aux.some(k => auditDeltaE(tk[k].light, '#FD7E14') < 2), '与功能色相近的彩色基础色也应补 auxiliary（渐变排除功能色、须有非功能语义可绑）, aux=' + aux.map(k => tk[k].light).join());
+});
+
 // --- run -------------------------------------------------------------------
 (async function () {
   for (const t of tests) {
