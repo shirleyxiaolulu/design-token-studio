@@ -118,8 +118,8 @@ function currentAuxiliaryColors() {
     const colorInput = row.querySelector("[data-aux-color]");
     const textInput = row.querySelector("[data-aux-text]");
     return {
-      id: row.dataset.auxId || `auxiliary-${index + 1}`,
-      name: nameInput.value.trim() || `Auxiliary ${index + 1}`,
+      id: row.dataset.auxId || `${index + 1}`,
+      name: nameInput.value.trim() || `辅助色 ${index + 1}`,
       color: DesignTokens.normalizeHex(textInput.value || colorInput.value),
     };
   });
@@ -132,7 +132,7 @@ function renderAuxiliaryControls(colors) {
     return `
       <div class="auxiliary-item" data-aux-id="${item.id}">
         <input data-aux-color type="color" value="${item.color}">
-        <input data-aux-name type="text" value="${item.name}" aria-label="辅助色名称">
+        <input data-aux-name type="text" value="${item.name}" placeholder="备注（可选）" aria-label="辅助色备注（可选，不影响变量名）">
         <input data-aux-text type="text" value="${item.color}" aria-label="辅助色色值">
         <button class="auxiliary-delete" type="button" data-delete-auxiliary="${item.id}" aria-label="删除 ${item.name}">×</button>
       </div>
@@ -239,8 +239,8 @@ function renderPalette(palette) {
 function renderModePreview(tokens, mode, target) {
   const rows = [
     "color.brand.primary",
-    "color.auxiliary.purple",
-    "color.auxiliary.cyan",
+    "color.auxiliary.1",
+    "color.auxiliary.2",
     "color.text.primary",
     "color.text.secondary",
     "color.text.tertiary",
@@ -1191,8 +1191,8 @@ function bindEvents() {
     guardVersionEdit(() => {
       const colors = currentAuxiliaryColors();
       colors.push({
-        id: `auxiliary-${colors.length + 1}`,
-        name: `Auxiliary ${colors.length + 1}`,
+        id: `${colors.length + 1}`,
+        name: `辅助色 ${colors.length + 1}`,
         color: "#8B5CF6",
       });
       renderAuxiliaryControls(colors);

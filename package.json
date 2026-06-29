@@ -1,6 +1,6 @@
 {
   "name": "design-token-studio",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "从品牌色一键生成完整 Design Token 体系，导出 JSON / CSS / TS / Tailwind / DTCG，并同步 Figma。",
   "private": true,
   "scripts": {

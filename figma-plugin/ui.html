@@ -9,6 +9,7 @@
       font-size: 12px; color: #333; padding: 16px; background: #fff;
     }
     h2 { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+    .ver-tag { font-size: 10px; color: #6533E8; background: #f1ecfd; padding: 1px 6px; border-radius: 8px; font-weight: 600; vertical-align: 2px; }
     .subtitle { font-size: 11px; color: #999; margin-bottom: 16px; }
     .field { margin-bottom: 12px; }
     .field label { display: block; font-size: 11px; color: #666; margin-bottom: 4px; font-weight: 500; }
@@ -98,7 +99,7 @@
   </style>
 </head>
 <body>
-  <h2>Design System v2</h2>
+  <h2>Design System v2 <span class="ver-tag">v2.1.0</span></h2>
   <p class="subtitle">从 Web 端导入 JSON，同步变量并生成预览页</p>
 
   <div class="field">
@@ -120,7 +121,7 @@
   <div class="divider"></div>
 
   <div class="reverse-section">
-    <div class="reverse-title">反推设计规范 <span class="reverse-badge">实验 · 2.0</span><button class="mini-btn" id="reverseResetBtn" style="margin-left:auto;" title="清空审计/重建结果与勾选，从 ① 重新开始（换主色独立保留）">重置</button></div>
+    <div class="reverse-title">反推设计规范 <span class="reverse-badge">实验 · 2.1</span><button class="mini-btn" id="reverseResetBtn" style="margin-left:auto;" title="清空审计/重建结果与勾选，从 ① 重新开始（换主色独立保留）">重置</button></div>
     <div style="margin-top:8px; display:flex; align-items:center; gap:8px;">
       <span class="subtitle" style="margin:0;">请选择默认界面模式</span>
       <span class="seg-group"><span class="seg-btn seg-on" id="themeAuto" data-theme="auto">自动</span><span class="seg-btn" id="themeLight" data-theme="light">浅色</span><span class="seg-btn" id="themeDark" data-theme="dark">深色</span></span>

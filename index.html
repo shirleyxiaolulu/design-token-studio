@@ -76,6 +76,7 @@
     .brand img { width: 34px; height: 34px; border-radius: 9px; }
     .brand b { font-size: 16px; font-weight: 700; letter-spacing: 0.2px; }
     .brand span { display: block; font-size: 11px; color: var(--faint); font-weight: 400; }
+    .ver-pill { display: inline-block; margin-left: 5px; padding: 1px 7px; border-radius: 999px; background: rgba(124, 92, 255, 0.14); border: 1px solid rgba(124, 92, 255, 0.3); color: var(--brand-3); font-size: 10.5px; font-weight: 700; letter-spacing: 0.3px; vertical-align: 2px; }
     .nav-links { display: flex; align-items: center; gap: 28px; }
     .nav-links a { font-size: 14px; color: var(--muted); transition: color 0.2s; }
     .nav-links a:hover { color: var(--text); }
@@ -270,11 +271,14 @@
     .modal h3 i { color: var(--brand-3); }
     .modal-note { color: var(--muted); font-size: 14px; margin: 12px 0 18px; }
     .modal-note strong { color: var(--text); }
-    .modal-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+    .modal-actions { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 20px; }
+    .modal-ver { font-size: 12.5px; color: var(--muted); }
+    .modal-ver strong { color: var(--brand-3); font-weight: 700; }
     .modal-steps { color: var(--muted); font-size: 14px; line-height: 1.85; padding-left: 20px; display: grid; gap: 6px; }
     .modal-steps strong { color: var(--text); }
     .modal-steps code { font-family: "SF Mono", Menlo, monospace; font-size: 12.5px; background: rgba(124, 92, 255, 0.12); border: 1px solid rgba(124, 92, 255, 0.22); color: var(--brand-3); padding: 1px 6px; border-radius: 6px; }
     .modal-foot { margin-top: 16px; font-size: 12px; color: var(--faint); }
+    .modal-foot strong { color: var(--brand-3); font-weight: 700; }
   </style>
 </head>
 <body>
@@ -283,7 +287,7 @@
     <div class="wrap nav-inner">
       <a class="brand" href="#top">
         <img src="./logo.png" alt="Logo" />
-        <div><b>设计规范生成器</b><span>Design Token Studio</span></div>
+        <div><b>设计规范生成器 <span class="ver-pill">v2.1.0</span></b><span>Design Token Studio</span></div>
       </a>
       <div class="nav-links">
         <a href="#pain">痛点</a>
@@ -511,6 +515,7 @@
       <p class="modal-note">插件目前为<strong>本地安装</strong>（尚未发布到 Figma 社区）。下载后按下面步骤导入即可使用。</p>
       <div class="modal-actions">
         <a class="btn btn-primary" href="./figma-plugin.zip" download><i class="ri-download-2-line"></i> 下载插件 (.zip)</a>
+        <span class="modal-ver">最新版本 <strong>v2.1.0</strong></span>
       </div>
       <ol class="modal-steps">
         <li>下载并<strong>解压</strong>压缩包，得到 <code>figma-plugin</code> 文件夹。</li>
@@ -519,7 +524,7 @@
         <li>在任意文件中按 <code>Cmd + /</code> 搜索「Design System」运行插件。</li>
         <li>在本工具导出 JSON，粘贴进插件 →「同步 Figma 变量」/「生成预览页」。</li>
       </ol>
-      <p class="modal-foot">需要 Figma 桌面端；网页版不支持开发插件导入。</p>
+      <p class="modal-foot">运行插件后，标题「Design System v2」旁会显示版本号；与上方 <strong>v2.1.0</strong> 一致即为最新版。需要 Figma 桌面端；网页版不支持开发插件导入。</p>
     </div>
   </div>
 

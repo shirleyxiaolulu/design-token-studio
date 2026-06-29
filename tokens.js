@@ -22,11 +22,11 @@
   ];
 
   const defaultAuxiliaryColors = [
-    { id: "purple", name: "Purple", color: "#8B5CF6" },
-    { id: "cyan", name: "Cyan", color: "#06B6D4" },
-    { id: "pink", name: "Pink", color: "#EC4899" },
-    { id: "gold", name: "Gold", color: "#F59E0B" },
-    { id: "teal", name: "Teal", color: "#10B981" },
+    { id: "1", name: "辅助色 1", color: "#8B5CF6" },
+    { id: "2", name: "辅助色 2", color: "#06B6D4" },
+    { id: "3", name: "辅助色 3", color: "#EC4899" },
+    { id: "4", name: "辅助色 4", color: "#F59E0B" },
+    { id: "5", name: "辅助色 5", color: "#10B981" },
   ];
 
   const fontStacks = {
@@ -194,13 +194,6 @@
     return `#${raw}`.toUpperCase();
   }
 
-  function slugifyAuxiliaryName(name, fallback) {
-    const raw = String(name || fallback || "auxiliary").trim().toLowerCase();
-    const slug = raw
-      .replace(/[^a-z0-9\u4e00-\u9fa5]+/g, "-")
-      .replace(/^-+|-+$/g, "");
-    return slug || fallback || "auxiliary";
-  }
 
   function deriveAuxiliaryDark(hex) {
     const hsl = rgbToHsl(hexToRgb(hex));
@@ -279,13 +272,12 @@
 
   function normalizeAuxiliaryColors(items) {
     const source = Array.isArray(items) && items.length ? items : defaultAuxiliaryColors;
-    const used = {};
     return source.map((item, index) => {
-      const fallback = defaultAuxiliaryColors[index]?.id || `auxiliary-${index + 1}`;
-      const name = String(item?.name || fallback).trim() || fallback;
-      let id = slugifyAuxiliaryName(item?.id || name, fallback);
-      if (used[id]) id = `${id}-${index + 1}`;
-      used[id] = true;
+      // 变量名用稳定的「位置编号」（color.auxiliary.1/2…），与反推端命名一致。
+      // 换色不破：第 N 个槽位永远是 .N，无论它这版是红还是绿；入参 item.id 被忽略。
+      // name 仅作 UI 显示 / 备注，不进变量名。
+      const id = String(index + 1);
+      const name = String(item?.name || `辅助色 ${index + 1}`).trim() || `辅助色 ${index + 1}`;
       return {
         id,
         name,
