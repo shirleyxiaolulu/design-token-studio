@@ -275,7 +275,7 @@ function renderComponentPreview(tokens, defaultMode) {
     return DesignTokens.tokenValue(token, defaultMode, tokens) || fallback;
   };
   const primary = value("color.brand.primary", "#3366FF");
-  const primaryHover = value("color.brand.primary.hover", primary);
+  const primaryHover = value("color.brand.hover", primary);
   const primarySoft = value("color.brand.soft", value("color.bg.brand", "#EDF2FF"));
   const surface = value("color.bg.surface", "#FFFFFF");
   const page = value("color.bg.page", "#F6F7F8");

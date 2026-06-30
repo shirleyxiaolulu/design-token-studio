@@ -256,8 +256,8 @@
       "Button/Primary": {
         background: "color/brand/primary",
         text: "color/constant/white",
-        backgroundHover: "color/brand/primary/hover",
-        backgroundActive: "color/brand/primary/active",
+        backgroundHover: "color/brand/hover",
+        backgroundActive: "color/brand/active",
         radius: "radius/md",
         paddingX: "space/4",
         paddingY: "space/2",
