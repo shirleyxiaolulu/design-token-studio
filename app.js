@@ -119,7 +119,7 @@ function currentAuxiliaryColors() {
     const textInput = row.querySelector("[data-aux-text]");
     return {
       id: row.dataset.auxId || `${index + 1}`,
-      name: nameInput.value.trim() || `辅助色 ${index + 1}`,
+      name: nameInput.value.trim() || `Auxiliary ${index + 1}`,
       color: DesignTokens.normalizeHex(textInput.value || colorInput.value),
     };
   });
@@ -1192,7 +1192,7 @@ function bindEvents() {
       const colors = currentAuxiliaryColors();
       colors.push({
         id: `${colors.length + 1}`,
-        name: `辅助色 ${colors.length + 1}`,
+        name: `Auxiliary ${colors.length + 1}`,
         color: "#8B5CF6",
       });
       renderAuxiliaryControls(colors);

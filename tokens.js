@@ -22,11 +22,11 @@
   ];
 
   const defaultAuxiliaryColors = [
-    { id: "1", name: "辅助色 1", color: "#8B5CF6" },
-    { id: "2", name: "辅助色 2", color: "#06B6D4" },
-    { id: "3", name: "辅助色 3", color: "#EC4899" },
-    { id: "4", name: "辅助色 4", color: "#F59E0B" },
-    { id: "5", name: "辅助色 5", color: "#10B981" },
+    { id: "1", name: "Auxiliary 1", color: "#8B5CF6" },
+    { id: "2", name: "Auxiliary 2", color: "#06B6D4" },
+    { id: "3", name: "Auxiliary 3", color: "#EC4899" },
+    { id: "4", name: "Auxiliary 4", color: "#F59E0B" },
+    { id: "5", name: "Auxiliary 5", color: "#10B981" },
   ];
 
   const fontStacks = {
@@ -270,14 +270,23 @@
     return buildScale(hsl.h, hsl.s, "color", hsl.l, hsl.s);
   }
 
+  // 旧版自动命名：色相名（Purple/Cyan/Pink/Gold/Teal）或一度用过的中文「辅助色 N」。
+  // 这些都是要淘汰的占位名，统一迁移成英文「Auxiliary N」（与变量名 color.auxiliary.N 一致）；
+  // 用户自填的真备注予以保留。
+  const legacyAuxLabels = ["purple", "cyan", "pink", "gold", "teal"];
+  function isLegacyAuxLabel(name) {
+    const s = String(name || "").trim().toLowerCase();
+    return !s || legacyAuxLabels.indexOf(s) >= 0 || /^(auxiliary|aux)\s*\d+$/.test(s) || /^辅助色\s*\d+$/.test(s);
+  }
   function normalizeAuxiliaryColors(items) {
     const source = Array.isArray(items) && items.length ? items : defaultAuxiliaryColors;
     return source.map((item, index) => {
       // 变量名用稳定的「位置编号」（color.auxiliary.1/2…），与反推端命名一致。
       // 换色不破：第 N 个槽位永远是 .N，无论它这版是红还是绿；入参 item.id 被忽略。
-      // name 仅作 UI 显示 / 备注，不进变量名。
+      // name 仅作 UI 显示 / 备注，不进变量名；旧占位名迁移成「Auxiliary N」。
       const id = String(index + 1);
-      const name = String(item?.name || `辅助色 ${index + 1}`).trim() || `辅助色 ${index + 1}`;
+      const fallback = `Auxiliary ${index + 1}`;
+      const name = isLegacyAuxLabel(item?.name) ? fallback : String(item.name).trim();
       return {
         id,
         name,
