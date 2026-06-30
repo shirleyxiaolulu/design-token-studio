@@ -704,7 +704,7 @@ async function generatePreview(data) {
   frame.resize(1180, 100);
 
   // Mode-aware color palette
-  var CANVAS_BG, CARD_BG, CARD_BORDER, SWATCH_INNER, TEXT_BRIGHT, TEXT_DIM, TEXT_MUTED, TEXT_SHADOW, BAR_GREEN, SWATCH_BORDER;
+  var CANVAS_BG, CARD_BG, CARD_BORDER, SWATCH_INNER, TEXT_BRIGHT, TEXT_DIM, TEXT_MUTED, TEXT_SHADOW, BAR_GREEN, SWATCH_BORDER, TEXT_INVERSE;
 
   if (IS_LIGHT) {
     // Light mode colors
@@ -713,6 +713,7 @@ async function generatePreview(data) {
     CARD_BORDER = { r: 228/255, g: 231/255, b: 236/255 };  // #E4E7EC
     SWATCH_INNER = { r: 243/255, g: 244/255, b: 246/255 }; // #F3F4F6
     TEXT_BRIGHT = { r: 17/255, g: 24/255, b: 39/255 };     // #111827
+    TEXT_INVERSE = { r: 1, g: 1, b: 1 };                   // 反色文字（深底上用）：浅色模式=白
     TEXT_DIM    = { r: 107/255, g: 114/255, b: 128/255 };  // #6B7280
     TEXT_MUTED  = { r: 156/255, g: 163/255, b: 175/255 };  // #9CA3AF
     TEXT_SHADOW = { r: 75/255, g: 85/255, b: 99/255 };     // #4B5563
@@ -725,6 +726,7 @@ async function generatePreview(data) {
     CARD_BORDER = { r: 32/255, g: 38/255, b: 47/255 };     // #20262F
     SWATCH_INNER = { r: 21/255, g: 27/255, b: 35/255 };    // #151B23
     TEXT_BRIGHT = { r: 248/255, g: 250/255, b: 252/255 };   // #F8FAFC
+    TEXT_INVERSE = { r: 17/255, g: 24/255, b: 39/255 };     // 反色文字（浅底上用）：深色模式=深
     TEXT_DIM    = { r: 167/255, g: 176/255, b: 190/255 };   // #A7B0BE
     TEXT_MUTED  = { r: 104/255, g: 115/255, b: 132/255 };   // #687384
     TEXT_SHADOW = { r: 182/255, g: 193/255, b: 206/255 };   // #B6C1CE
@@ -763,6 +765,7 @@ async function generatePreview(data) {
   colorVarMap.set(CARD_BG, 'color/bg/surface');
   colorVarMap.set(CARD_BORDER, 'color/border/subtle');
   colorVarMap.set(TEXT_BRIGHT, 'color/text/primary');
+  colorVarMap.set(TEXT_INVERSE, 'color/text/inverse');
   colorVarMap.set(TEXT_DIM, 'color/text/secondary');
   colorVarMap.set(TEXT_MUTED, 'color/text/tertiary');
   colorVarMap.set(TEXT_SHADOW, 'color/text/secondary');
@@ -848,7 +851,7 @@ async function generatePreview(data) {
     return y + (desc ? 100 : 64);
   }
 
-  async function makeSwatch(parent, x, y, w, h, label, hex, varName, lightText) {
+  async function makeSwatch(parent, x, y, w, h, label, hex, varName, lightText, darkHex) {
     const rgb = hexToFigmaRgb(hex);
     if (!rgb) return;
     const sf = figma.createFrame();
@@ -858,9 +861,18 @@ async function generatePreview(data) {
     sf.fills = [{ type: 'SOLID', color: rgb }];
     const v = allVars[varName];
     if (v) { sf.fills = [figma.variables.setBoundVariableForPaint(sf.fills[0], 'color', v)]; }
-    const tc = lightText ? { r: 0.1, g: 0.1, b: 0.1 } : W;
+    // 文字色绑变量、随模式翻转：低档(浅底)用 text/primary(浅模式深字、深模式浅字)，
+    // 高档(深底)用 text/inverse(反过来)，与色块填充的明暗镜像一一对应，两个模式下都有对比、不会看不清。
+    const tc = lightText ? TEXT_BRIGHT : TEXT_INVERSE;
     addText(sf, 10, 10, label, 11, 'Regular', tc, 0.9);
-    addText(sf, 10, h - 22, hex, 10, 'Regular', tc, 0.5);
+    // 色块填充绑定了变量、随明暗模式切换；深浅值不同时分两行标「浅/深」hex，
+    // 这样无论在哪个模式查看，标注都和实际填充对得上（避免「深色填充 vs 浅色标注」错位）。
+    if (darkHex && String(darkHex).toUpperCase() !== String(hex).toUpperCase()) {
+      addText(sf, 10, h - 36, '浅 ' + hex, 10, 'Regular', tc, 0.5);
+      addText(sf, 10, h - 20, '深 ' + darkHex, 10, 'Regular', tc, 0.5);
+    } else {
+      addText(sf, 10, h - 22, hex, 10, 'Regular', tc, 0.5);
+    }
   }
 
   async function addColorRow(parent, y, name, lightHex, darkHex, usage, varName) {
@@ -940,7 +952,7 @@ async function generatePreview(data) {
       const col = i % cols, row = Math.floor(i / cols);
       const x = startX + col * (sw + gap);
       const y = Y + row * (sh + (isExtended ? 8 : 24));
-      await makeSwatch(frame, x, y, sw, sh, `${label}/${i}`, t.light, t.figmaName, i < Math.ceil(tokens.length / 2));
+      await makeSwatch(frame, x, y, sw, sh, `${label}/${i}`, t.light, t.figmaName, i < Math.ceil(tokens.length / 2), t.dark);
     }
 
     const rows = Math.ceil(tokens.length / cols);
@@ -958,7 +970,7 @@ async function generatePreview(data) {
       addText(frame, 64, Y, fam, 11, 'Regular', TEXT_BRIGHT, 0.5);
       for (let i = 0; i < tokens.length; i++) {
         const t = tokens[i];
-        await makeSwatch(frame, startX + i * 102, Y + 18, 94, 70, `${fam}/${i}`, t.light, t.figmaName, i < 4);
+        await makeSwatch(frame, startX + i * 102, Y + 18, 94, 70, `${fam}/${i}`, t.light, t.figmaName, i < 4, t.dark);
       }
       Y += 96;
     }
