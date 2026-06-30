@@ -704,7 +704,7 @@ async function generatePreview(data) {
   frame.resize(1180, 100);
 
   // Mode-aware color palette
-  var CANVAS_BG, CARD_BG, CARD_BORDER, SWATCH_INNER, TEXT_BRIGHT, TEXT_DIM, TEXT_MUTED, TEXT_SHADOW, BAR_GREEN, SWATCH_BORDER, TEXT_INVERSE;
+  var CANVAS_BG, CARD_BG, CARD_BORDER, SWATCH_INNER, TEXT_BRIGHT, TEXT_DIM, TEXT_MUTED, TEXT_SHADOW, BAR_GREEN, SWATCH_BORDER;
 
   if (IS_LIGHT) {
     // Light mode colors
@@ -713,7 +713,6 @@ async function generatePreview(data) {
     CARD_BORDER = { r: 228/255, g: 231/255, b: 236/255 };  // #E4E7EC
     SWATCH_INNER = { r: 243/255, g: 244/255, b: 246/255 }; // #F3F4F6
     TEXT_BRIGHT = { r: 17/255, g: 24/255, b: 39/255 };     // #111827
-    TEXT_INVERSE = { r: 1, g: 1, b: 1 };                   // 反色文字（深底上用）：浅色模式=白
     TEXT_DIM    = { r: 107/255, g: 114/255, b: 128/255 };  // #6B7280
     TEXT_MUTED  = { r: 156/255, g: 163/255, b: 175/255 };  // #9CA3AF
     TEXT_SHADOW = { r: 75/255, g: 85/255, b: 99/255 };     // #4B5563
@@ -726,7 +725,6 @@ async function generatePreview(data) {
     CARD_BORDER = { r: 32/255, g: 38/255, b: 47/255 };     // #20262F
     SWATCH_INNER = { r: 21/255, g: 27/255, b: 35/255 };    // #151B23
     TEXT_BRIGHT = { r: 248/255, g: 250/255, b: 252/255 };   // #F8FAFC
-    TEXT_INVERSE = { r: 17/255, g: 24/255, b: 39/255 };     // 反色文字（浅底上用）：深色模式=深
     TEXT_DIM    = { r: 167/255, g: 176/255, b: 190/255 };   // #A7B0BE
     TEXT_MUTED  = { r: 104/255, g: 115/255, b: 132/255 };   // #687384
     TEXT_SHADOW = { r: 182/255, g: 193/255, b: 206/255 };   // #B6C1CE
@@ -765,12 +763,26 @@ async function generatePreview(data) {
   colorVarMap.set(CARD_BG, 'color/bg/surface');
   colorVarMap.set(CARD_BORDER, 'color/border/subtle');
   colorVarMap.set(TEXT_BRIGHT, 'color/text/primary');
-  colorVarMap.set(TEXT_INVERSE, 'color/text/inverse');
   colorVarMap.set(TEXT_DIM, 'color/text/secondary');
   colorVarMap.set(TEXT_MUTED, 'color/text/tertiary');
   colorVarMap.set(TEXT_SHADOW, 'color/text/secondary');
   colorVarMap.set(SWATCH_BORDER, 'color/border/subtle');
   colorVarMap.set(brandRgb, 'color/brand/primary');
+
+  // 色块内文字绑「同在 Primitives 集合、随模式镜像翻转」的 gray 端：低档(浅底)→gray 最深端、
+  // 高档(深底)→gray 最浅端。关键：和色块填充(也是 palette/Primitives)同集合同模式，
+  // 即便单独切某个集合的模式也不会错位（修复深↔浅切换后浅底浅字/深底深字看不清）。按实际 figmaName 查找、不写死。
+  var SW_TX_LO = { r: 0.12, g: 0.12, b: 0.14 };  // 低档文字（静态兜底=深；绑 gray 后随模式翻）
+  var SW_TX_HI = { r: 0.95, g: 0.95, b: 0.96 };  // 高档文字（静态兜底=浅）
+  var _grayIdx = Object.keys(data.colorTokens || {})
+    .filter(function (k) { return /^color\.palette\.gray\.\d+$/.test(k); })
+    .map(function (k) { return parseInt(k.split('.').pop(), 10); });
+  if (_grayIdx.length) {
+    var _grayLoName = (data.colorTokens['color.palette.gray.' + Math.max.apply(null, _grayIdx)] || {}).figmaName;
+    var _grayHiName = (data.colorTokens['color.palette.gray.' + Math.min.apply(null, _grayIdx)] || {}).figmaName;
+    if (_grayLoName) colorVarMap.set(SW_TX_LO, _grayLoName);
+    if (_grayHiName) colorVarMap.set(SW_TX_HI, _grayHiName);
+  }
 
   function bindFill(node, colorRef) {
     var varName = colorVarMap.get(colorRef);
@@ -861,9 +873,12 @@ async function generatePreview(data) {
     sf.fills = [{ type: 'SOLID', color: rgb }];
     const v = allVars[varName];
     if (v) { sf.fills = [figma.variables.setBoundVariableForPaint(sf.fills[0], 'color', v)]; }
-    // 文字色绑变量、随模式翻转：低档(浅底)用 text/primary(浅模式深字、深模式浅字)，
-    // 高档(深底)用 text/inverse(反过来)，与色块填充的明暗镜像一一对应，两个模式下都有对比、不会看不清。
-    const tc = lightText ? TEXT_BRIGHT : TEXT_INVERSE;
+    // 描边：浅色块在浅底上、深色块在深底上都容易「融进背景」，加一道细描边定边界。
+    sf.strokes = [{ type: 'SOLID', color: SWATCH_BORDER }]; sf.strokeWeight = 1; sf.strokeAlign = 'INSIDE';
+    bindStroke(sf, SWATCH_BORDER);
+    // 文字色绑「同集合(Primitives)的 gray 端」、随模式翻转：低档(浅底)用 gray 深端、高档(深底)用 gray 浅端，
+    // 和色块填充同集合同模式，任何切换下都和底色有对比、不会看不清（修复浅色模式浅底浅字看不清）。
+    const tc = lightText ? SW_TX_LO : SW_TX_HI;
     addText(sf, 10, 10, label, 11, 'Regular', tc, 0.9);
     // 色块填充绑定了变量、随明暗模式切换；深浅值不同时分两行标「浅/深」hex，
     // 这样无论在哪个模式查看，标注都和实际填充对得上（避免「深色填充 vs 浅色标注」错位）。
