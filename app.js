@@ -100,7 +100,7 @@ function currentSeed() {
   return {
     specName: els.specName.value.trim() || "未命名设计规范",
     platform: els.platform.value,
-    pxScale: els.pxScale ? Number(els.pxScale.value) || 1 : 1,
+    pxScale: (els.platform.value === "ios-app" && els.pxScale) ? Number(els.pxScale.value) || 1 : 1,
     defaultMode: els.defaultMode.value,
     primaryColor: color,
     auxiliaryColors: currentAuxiliaryColors(),
@@ -610,6 +610,9 @@ function render() {
 
   if (els.topProjectName) els.topProjectName.textContent = seed.specName;
   if (els.platformMeta) els.platformMeta.textContent = platformName;
+  // 输出倍率只对纯「iOS App」场景有意义：Web 恒为 1x（CSS px）、App+Web 同步共用一套 token 不能整体翻倍，故隐藏（锁 1x）。
+  var pxField = document.getElementById("pxScaleField");
+  if (pxField) pxField.style.display = (seed.platform === "ios-app") ? "" : "none";
   if (els.primaryMeta) els.primaryMeta.textContent = seed.primaryColor;
   if (els.defaultModeMeta) els.defaultModeMeta.textContent = modeName;
   if (els.tokenCount) els.tokenCount.textContent = `${Object.keys(tokens).length} tokens`;
