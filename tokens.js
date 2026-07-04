@@ -658,6 +658,37 @@
     };
   }
 
+  // 输出倍率：2 倍图设计时把所有 px 尺寸 ×倍率（字号+行高、间距、圆角、阴影几何 x/y/blur/spread），
+  // 颜色 / 透明度 / 动效时长 / 字重不动。统一在此后处理，保证预览、CSS/JSON、Figma 同步全部一致。
+  function applyPxScale(tokens, k) {
+    if (!(k > 1)) return;
+    function scaleDim(v) {
+      if (typeof v === "number") return v * k;
+      if (typeof v === "string") {
+        const m = v.match(/^(-?[\d.]+)(px)?$/);
+        if (m) return m[2] ? parseFloat(m[1]) * k + "px" : String(parseFloat(m[1]) * k);
+      }
+      return v;
+    }
+    Object.keys(tokens).forEach((name) => {
+      const t = tokens[name];
+      if (name.indexOf("font.size.") === 0) {
+        t.value = scaleDim(t.value);
+        if (typeof t.lineHeight === "number") t.lineHeight = t.lineHeight * k;
+      } else if (name === "font.lineHeight.body" || name.indexOf("radius.") === 0 || name.indexOf("space.") === 0) {
+        t.value = scaleDim(t.value);
+      } else if (t.type === "shadow" && t.value && typeof t.value === "object") {
+        ["light", "dark"].forEach((mode) => {
+          if (Array.isArray(t.value[mode])) {
+            t.value[mode] = t.value[mode].map((ly) =>
+              Object.assign({}, ly, { x: ly.x * k, y: ly.y * k, blur: ly.blur * k, spread: ly.spread * k })
+            );
+          }
+        });
+      }
+    });
+  }
+
   function generateTokens(seed) {
     const palette = makePalette(seed);
     const tokens = {};
@@ -869,6 +900,7 @@
       });
     });
 
+    applyPxScale(tokens, Number(seed.pxScale) === 2 ? 2 : 1);
     return { palette, tokens };
   }
 

@@ -13,6 +13,7 @@ const state = {
 const els = {
   specName: document.querySelector("#specName"),
   platform: document.querySelector("#platform"),
+  pxScale: document.querySelector("#pxScale"),
   defaultMode: document.querySelector("#defaultMode"),
   primaryColor: document.querySelector("#primaryColor"),
   primaryColorText: document.querySelector("#primaryColorText"),
@@ -99,6 +100,7 @@ function currentSeed() {
   return {
     specName: els.specName.value.trim() || "未命名设计规范",
     platform: els.platform.value,
+    pxScale: els.pxScale ? Number(els.pxScale.value) || 1 : 1,
     defaultMode: els.defaultMode.value,
     primaryColor: color,
     auxiliaryColors: currentAuxiliaryColors(),
@@ -143,6 +145,7 @@ function renderAuxiliaryControls(colors) {
 function applySeed(seed) {
   els.specName.value = seed.specName || "未命名设计规范";
   els.platform.value = seed.platform || "ios-app";
+  if (els.pxScale) els.pxScale.value = String(seed.pxScale || 1);
   els.defaultMode.value = seed.defaultMode || "light";
   els.primaryColor.value = DesignTokens.normalizeHex(seed.primaryColor || "#5314FF");
   els.primaryColorText.value = DesignTokens.normalizeHex(seed.primaryColor || "#5314FF");
@@ -423,7 +426,8 @@ function renderTypeShowcase(seed, tokens) {
   els.typeIntro.textContent = label.intro;
   els.fontCjkName.textContent = label.cjk;
   els.fontLatinName.textContent = label.latin;
-  els.typeScaleMeta.textContent = `BASE · 14px`;
+  const baseSz = (tokens["font.size.body"] || tokens["font.size.md"] || tokens["font.size.callout"] || {}).value;
+  els.typeScaleMeta.textContent = `BASE · ${baseSz || 14}px` + (Number(seed.pxScale) === 2 ? " · @2x" : "");
 
   // Each font shows its own weight ladder (label.weights) + its own stack text
   const fontWeights = label.weights || [["Light", 300], ["Regular", 400], ["Medium", 500], ["Semibold", 600], ["Bold", 700]];
@@ -1119,6 +1123,7 @@ function bindEvents() {
   [
     els.specName,
     els.platform,
+    els.pxScale,
     els.defaultMode,
     els.neutralStrategy,
     els.paletteEngine,
