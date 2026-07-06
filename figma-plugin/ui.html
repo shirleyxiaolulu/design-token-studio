@@ -68,6 +68,10 @@
     .reverse-badge { font-size: 10px; color: #6533E8; background: #f1ecfd; padding: 1px 6px; border-radius: 8px; font-weight: 500; }
     .audit-result { margin-top: 12px; display: none; }
     .audit-result.show { display: block; }
+    .oldvars-warn { margin: 10px 0; padding: 9px 11px; border-radius: 8px; background: #FEF3E2; border: 1px solid #F5C77E; font-size: 11px; line-height: 1.7; color: #7A4A0E; }
+    .oldvars-warn b { color: #B45309; }
+    .oldvars-warn .mini-btn { margin-left: 4px; }
+    .oldvars-warn.ok { background: #E8F7EE; border-color: #8FD6A9; color: #116B3A; }
     .audit-summary { font-size: 10px; color: #888; margin-bottom: 8px; line-height: 1.5; }
     .audit-flags { margin-bottom: 8px; }
     .flag { font-size: 11px; padding: 6px 8px; border-radius: 6px; margin-bottom: 4px; line-height: 1.45; }
@@ -156,6 +160,7 @@
 
   <script>
     const jsonInput = document.getElementById('jsonInput');
+    const PLUGIN_VERSION = '2.1.0'; // 与标题 ver-tag、网页端 GENERATOR_VERSION 保持一致
     const jsonMeta = document.getElementById('jsonMeta');
     const syncBtn = document.getElementById('syncBtn');
     const generateBtn = document.getElementById('generateBtn');
@@ -203,6 +208,12 @@
         var modeLabel = parsedData.defaultMode === 'light' ? 'Light' : 'Dark';
         jsonMeta.textContent = `✓ ${parsedData.name} · ${modeLabel} · v${parsedData.version} · 颜色 ${parsedData.colorCount} · 尺寸 ${parsedData.dimCount}`;
         if (parsedData.dimCount === 0) jsonMeta.textContent += ' ⚠️ 尺寸变量为0，请检查JSON格式';
+        // 版本握手：网页端导出的 JSON 带 generator 字段；缺失或与插件不一致时提醒重新复制（插件自产的反推 JSON 除外）
+        if (data.version !== 'reverse') {
+          if (!data.generator) jsonMeta.textContent += ' ⚠️ 未带生成器版本（可能是旧版 JSON），建议回网页端重新复制';
+          else if (data.generator !== PLUGIN_VERSION) jsonMeta.textContent += ` ⚠️ JSON 来自 v${data.generator}、插件为 v${PLUGIN_VERSION}，命名可能有差异，建议回网页端重新复制`;
+          else jsonMeta.textContent += ' · 生成器 ✓';
+        }
         syncBtn.disabled = false;
         generateBtn.disabled = false;
       } catch (e) {
@@ -385,10 +396,41 @@
       } else if (msg.type === 'progress') {
         showStatus(`⏳ ${msg.message}`, 'progress');
       } else if (msg.type === 'audit-result') {
-        auditResult.innerHTML = renderAudit(msg.report);
+        // 旧变量预警：文件里已有本工具的变量集时，预览/绑定会按名字复用旧值 → 提示清理或换干净文件
+        var ovHtml = '';
+        if (msg.oldVars) {
+          ovHtml = '<div class="oldvars-warn" id="oldVarsWarn">⚠️ 检测到文件已有变量集（Primitives ' + msg.oldVars.primitives + ' · Tokens ' + msg.oldVars.tokens + ' 个变量）。预览与绑定会按名字复用旧变量，<b>旧值可能导致颜色错乱</b>。建议在干净文件运行，或' +
+            '<button class="mini-btn" id="clearOldVarsBtn">一键清理</button>' +
+            '<span id="clearConfirmWrap" style="display:none">将删除 Primitives + Tokens 两个变量集（可 ⌘Z 撤销）' +
+            '<button class="mini-btn" id="clearYesBtn">确认删除</button>' +
+            '<button class="mini-btn" id="clearNoBtn">取消</button></span></div>';
+        }
+        auditResult.innerHTML = ovHtml + renderAudit(msg.report);
         auditResult.className = 'audit-result show';
         setReverseBusy(false); markStepDone('auditBtn'); currentReverseStep = null;
         showStatus('✅ 审计完成（只读，未改动文件）', 'success');
+        var ovBtn = document.getElementById('clearOldVarsBtn');
+        if (ovBtn) ovBtn.addEventListener('click', function () {
+          ovBtn.style.display = 'none';
+          document.getElementById('clearConfirmWrap').style.display = 'inline';
+        });
+        var ovYes = document.getElementById('clearYesBtn');
+        if (ovYes) ovYes.addEventListener('click', function () {
+          showStatus('⏳ 正在清理旧变量集...', 'progress');
+          parent.postMessage({ pluginMessage: { type: 'reverse-clear-vars' } }, '*');
+        });
+        var ovNo = document.getElementById('clearNoBtn');
+        if (ovNo) ovNo.addEventListener('click', function () {
+          document.getElementById('clearConfirmWrap').style.display = 'none';
+          ovBtn.style.display = 'inline-block';
+        });
+      } else if (msg.type === 'reverse-vars-cleared') {
+        var ovWarn = document.getElementById('oldVarsWarn');
+        var clearedTxt = (msg.removed && msg.removed.length)
+          ? '✅ 已删除变量集：' + msg.removed.join('、') + '（误删可 ⌘Z 撤销），可以继续 ②③④。'
+          : '文件里没有需要清理的变量集。';
+        if (ovWarn) { ovWarn.className = 'oldvars-warn ok'; ovWarn.innerHTML = clearedTxt; }
+        showStatus(clearedTxt, 'success');
       } else if (msg.type === 'rebuild-result') {
         rebuildJson = msg.json;
         rebuildResult.innerHTML = renderRebuild(msg.plan);

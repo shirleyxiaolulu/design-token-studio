@@ -39,6 +39,7 @@ function setup() {
       renameMode: function (id, nm) { var x = this.modes.find(function (z) { return z.modeId === id; }); if (x) x.name = nm; },
       addMode: function (nm) { var id = 'mode-' + (idc++); this.modes.push({ modeId: id, name: nm }); return id; },
       removeMode: function (id) { if (this.modes.length <= 1) throw new Error('cannot remove last mode'); this.modes = this.modes.filter(function (m) { return m.modeId !== id; }); },
+      remove: function () { var i = COLS.indexOf(this); if (i >= 0) COLS.splice(i, 1); var self = this; Object.keys(_vid).forEach(function (id) { if (_vid[id].variableCollectionId === self.id) delete _vid[id]; }); },
     };
   }
 
@@ -70,7 +71,7 @@ function setup() {
 
   var figma = {
     mixed: MIXED,
-    showUI: function () {}, ui: { messages: [], postMessage: function (m) { this.messages.push(m); }, _onmessage: null, set onmessage(v) { this._onmessage = v; }, get onmessage() { return this._onmessage; } },
+    showUI: function () {}, ui: { messages: [], postMessage: function (m) { this.messages.push(m); }, resize: function () {}, _onmessage: null, set onmessage(v) { this._onmessage = v; }, get onmessage() { return this._onmessage; } },
     notify: function () {},
     loadFontAsync: function () { return Promise.resolve(); },
     getLocalPaintStylesAsync: function () { return Promise.resolve(PAINT_STYLES); },

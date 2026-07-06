@@ -514,6 +514,43 @@ test('剥离被遮挡填充：上层不透明渐变盖住下层 → 下层删掉
   assert(ps.paints[0].type.indexOf('GRADIENT_') === 0 && ref(ps.paints[0].gradientStops[0]), '剩下的橙渐变色标仍绑变量');
 });
 
+test('反推预检：文件有旧 Primitives/Tokens → audit 捎带 oldVars；一键清理删除集合、再审计无提醒', async () => {
+  fresh(); const pc = M.figma.variables.createVariableCollection('Primitives');
+  M.figma.variables.createVariable('color/gray/0', pc);
+  const tc = M.figma.variables.createVariableCollection('Tokens');
+  M.figma.variables.createVariable('color/text/primary', tc);
+  M.figma.variables.createVariable('color/bg/page', tc);
+  M.figma.currentPage.selection = [darkBusyPage()];
+  M.figma.ui.messages.length = 0;
+  await pluginOnMessage({ type: 'audit' });
+  const ar = M.figma.ui.messages.find(m => m.type === 'audit-result');
+  assert(ar && ar.oldVars, 'audit-result 应带 oldVars, got ' + JSON.stringify(ar && ar.oldVars));
+  eq(ar.oldVars.primitives, 1, 'Primitives 变量数');
+  eq(ar.oldVars.tokens, 2, 'Tokens 变量数');
+  M.figma.ui.messages.length = 0;
+  await pluginOnMessage({ type: 'reverse-clear-vars' });
+  const cl = M.figma.ui.messages.find(m => m.type === 'reverse-vars-cleared');
+  assert(cl && cl.removed.indexOf('Primitives') >= 0 && cl.removed.indexOf('Tokens') >= 0, '应删除两个集合, got ' + JSON.stringify(cl && cl.removed));
+  eq(M.COLS.length, 0, '集合已从文件移除');
+  M.figma.ui.messages.length = 0;
+  await pluginOnMessage({ type: 'audit' });
+  const ar2 = M.figma.ui.messages.find(m => m.type === 'audit-result');
+  assert(ar2 && !ar2.oldVars, '清理后再审计不应提醒, got ' + JSON.stringify(ar2 && ar2.oldVars));
+});
+
+test('反推预检：干净文件 audit 不带 oldVars；清理空文件回包 removed=[]', async () => {
+  fresh();
+  M.figma.currentPage.selection = [darkBusyPage()];
+  M.figma.ui.messages.length = 0;
+  await pluginOnMessage({ type: 'audit' });
+  const ar = M.figma.ui.messages.find(m => m.type === 'audit-result');
+  assert(ar && !ar.oldVars, '干净文件不应提醒, got ' + JSON.stringify(ar && ar.oldVars));
+  M.figma.ui.messages.length = 0;
+  await pluginOnMessage({ type: 'reverse-clear-vars' });
+  const cl = M.figma.ui.messages.find(m => m.type === 'reverse-vars-cleared');
+  assert(cl && cl.removed.length === 0, '空文件清理应回 removed=[]');
+});
+
 // --- run -------------------------------------------------------------------
 (async function () {
   for (const t of tests) {

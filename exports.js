@@ -1,9 +1,13 @@
 (function () {
+  // 生成器版本，写进导出 JSON 供插件粘贴时握手校验（提示用户 JSON 是否过时）
+  const GENERATOR_VERSION = "2.1.0";
+
   function exportJson(seed, tokens, version) {
     return JSON.stringify({
       name: seed.specName,
       platform: seed.platform,
       version,
+      generator: GENERATOR_VERSION,
       seed,
       tokens,
     }, null, 2);

@@ -2579,7 +2579,32 @@ figma.ui.onmessage = async (msg) => {
       figma.ui.resize(360, 640);
       var auditObs = harvestSelection(sel, 20000);
       var auditReport = buildAuditReport(auditObs, { colorDelta: (msg.colorDelta || 2.5) });
-      figma.ui.postMessage({ type: 'audit-result', report: auditReport });
+      // 旧变量预检：文件里已有本工具的变量集时，后续预览/绑定会按名字复用旧值（可能串色），
+      // 把数量捎给 UI 弹提醒。检测失败不影响审计本身。
+      var auditOldVars = null;
+      try {
+        var ovCols = await figma.variables.getLocalVariableCollectionsAsync();
+        var ovP = 0, ovT = 0;
+        for (var ovi = 0; ovi < ovCols.length; ovi++) {
+          if (ovCols[ovi].name === 'Primitives') ovP = (ovCols[ovi].variableIds || []).length;
+          else if (ovCols[ovi].name === 'Tokens') ovT = (ovCols[ovi].variableIds || []).length;
+        }
+        if (ovP || ovT) auditOldVars = { primitives: ovP, tokens: ovT };
+      } catch (eOv) {}
+      figma.ui.postMessage({ type: 'audit-result', report: auditReport, oldVars: auditOldVars });
+    }
+    else if (msg.type === 'reverse-clear-vars') {
+      // 反推前的一键清理：只删本工具创建的 Primitives / Tokens 两个变量集（可 ⌘Z 撤销），
+      // 不碰其他集合。用于排除旧变量导致预览/绑定串色。
+      var ccCols = await figma.variables.getLocalVariableCollectionsAsync();
+      var ccTargets = [];
+      for (var cci = 0; cci < ccCols.length; cci++) {
+        if (ccCols[cci].name === 'Primitives' || ccCols[cci].name === 'Tokens') ccTargets.push(ccCols[cci]);
+      }
+      var ccRemoved = [];
+      for (var ccj = 0; ccj < ccTargets.length; ccj++) { ccRemoved.push(ccTargets[ccj].name); ccTargets[ccj].remove(); }
+      figma.ui.postMessage({ type: 'reverse-vars-cleared', removed: ccRemoved });
+      figma.notify(ccRemoved.length ? ('已删除变量集：' + ccRemoved.join('、') + '（可 ⌘Z 撤销）') : '没有需要清理的变量集');
     }
     else if (msg.type === 'rebuild') {
       // 2.0 反推 · 阶段②：聚类重建干净 token（草案，只读，不改文件）
