@@ -4,7 +4,7 @@
   "description": "从品牌色一键生成完整 Design Token 体系，导出 JSON / CSS / TS / Tailwind / DTCG，并同步 Figma。",
   "private": true,
   "scripts": {
-    "test": "node tests/run-tests.js && node tests/binding-tests.js",
+    "test": "node tests/run-tests.js && node tests/binding-tests.js && node tests/preview-smoke.js",
     "zip:plugin": "rm -f figma-plugin.zip && zip -r figma-plugin.zip figma-plugin -x '*.DS_Store'"
   }
 }
