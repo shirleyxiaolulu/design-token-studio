@@ -67,6 +67,16 @@ function planVarOrphans(existingNames, expectedNames) {
   return out;
 }
 
+function figmaNumberValue(tokenKey, token, value) {
+  var figmaName = token && token.figmaName ? String(token.figmaName) : '';
+  var key = tokenKey ? String(tokenKey) : '';
+  var isOpacity = key.indexOf('opacity.') === 0 || figmaName.indexOf('opacity/') === 0;
+  if (isOpacity && typeof value === 'number' && value >= 0 && value <= 1) {
+    return Number((value * 100).toFixed(4));
+  }
+  return value;
+}
+
 async function syncVariables(data) {
   const collections = await figma.variables.getLocalVariableCollectionsAsync();
 
@@ -241,9 +251,11 @@ async function syncVariables(data) {
   // Sync dimension tokens
   var dimEntries = Object.entries(data.dimTokens || {});
   for (var j = 0; j < dimEntries.length; j++) {
+    var dKey = dimEntries[j][0];
     var dToken = dimEntries[j][1];
     var val = dToken.value;
     if (typeof val === 'string' && val.endsWith('px')) val = parseFloat(val);
+    val = figmaNumberValue(dKey, dToken, val);
 
     if (typeof val === 'number') {
       var numResult = syncVar(dToken.figmaName, 'FLOAT', dToken.tier);

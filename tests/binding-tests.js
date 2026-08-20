@@ -84,6 +84,22 @@ test('返回的绑定 paint 是只读冻结对象（代码不得依赖其可变�
   assert(Object.isFrozen(fill), '绑定 paint 应为冻结对象');
 });
 
+test('同步 opacity FLOAT 变量时写入百分制数字，其他 number 保持原值', async () => {
+  fresh();
+  await syncVariables({
+    name: 'Opacity fixture',
+    colorTokens: {},
+    dimTokens: {
+      'opacity.5': { figmaName: 'opacity/5', tier: 'semantic', value: 0.05, type: 'number' },
+      'opacity.80': { figmaName: 'opacity/80', tier: 'semantic', value: 0.8, type: 'number' },
+      'font.size.body': { figmaName: 'font/size/body', tier: 'semantic', value: 16, type: 'number' },
+    },
+  });
+  eq(M.varValue('opacity/5'), 5, 'opacity/5 应写入 5');
+  eq(M.varValue('opacity/80'), 80, 'opacity/80 应写入 80');
+  eq(M.varValue('font/size/body'), 16, '普通 number 不应被转换');
+});
+
 test('渐变：同色色标绑各自变量、颜色不变；无近似色标保留原色', async () => {
   fresh(); const { N, solid, grad } = M;
   const tags = []; for (let i = 0; i < 8; i++) tags.push(N({ type: 'FRAME', width: 120, height: 40, y: i * 50, characters: '', fills: [solid('#FF6B00')], strokes: [] }));
