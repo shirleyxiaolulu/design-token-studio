@@ -8,7 +8,7 @@ edit load fresh, so testers never chase phantom cache bugs.
 """
 import os
 import sys
-from http.server import HTTPServer, SimpleHTTPRequestHandler
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 
 class NoCacheHandler(SimpleHTTPRequestHandler):
@@ -23,7 +23,7 @@ def main():
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 5500
     # Always serve the directory this script lives in (the project root)
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
-    httpd = HTTPServer(("", port), NoCacheHandler)
+    httpd = ThreadingHTTPServer(("", port), NoCacheHandler)
     print(f"  (no-cache) serving on port {port}")
     try:
         httpd.serve_forever()
